@@ -31,7 +31,7 @@ observability = [
   "opentelemetry-exporter-otlp-proto-http>=1.39,<2",
 ]
 auth = [
-  "cryptography>=48.0.1,<50",
+  "cryptography>=50.0.0,<51",
   "PyJWT[crypto]>=2.10,<3",
 ]
 redis = [
