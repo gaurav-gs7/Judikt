@@ -30,6 +30,8 @@ Prefer absolute paths for the Judikt executable, policy, upstream executable, an
 }
 ```
 
+Claude Code reads project-scoped servers from `.mcp.json`. Cursor reads project-scoped servers from `.cursor/mcp.json`. Both accept the `mcpServers` object shown above. Project-scoped servers may require an explicit trust or approval action before the client starts them; preserve that prompt rather than bypassing it.
+
 Some clients place global options more reliably before the subcommand. This equivalent form is valid:
 
 ```json

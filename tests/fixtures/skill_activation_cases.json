@@ -1,0 +1,14 @@
+{
+  "positive": [
+    "Wrap this local Postgres MCP server with Judikt and create a least-privilege policy.",
+    "Configure an MCP client to connect to a Judikt-protected upstream.",
+    "Run a read-only smoke test and assess the audit evidence for this MCP gateway.",
+    "Troubleshoot why Judikt blocks this MCP tool call."
+  ],
+  "negative": [
+    "Explain the Model Context Protocol at a high level.",
+    "Write a Kubernetes incident-response runbook.",
+    "Review this unrelated Python data-processing script.",
+    "Deploy a static website to AWS."
+  ]
+}
