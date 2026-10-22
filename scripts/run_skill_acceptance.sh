@@ -16,7 +16,6 @@ trap 'rm -rf "${WORK_DIR}"' EXIT
 mkdir -p "${WORK_DIR}/dist" "${WORK_DIR}/home"
 "${PYTHON_BIN}" -m pip wheel \
   --no-deps \
-  --no-build-isolation \
   --wheel-dir "${WORK_DIR}/dist" \
   . >/dev/null
 "${PYTHON_BIN}" -m venv "${WORK_DIR}/venv"
