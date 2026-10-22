@@ -17,7 +17,7 @@ jobs:
           node-version: "22"
       - name: Install project and release-quality tooling
         run: |
-          python -m pip install --upgrade 'pip>=26.1.2'
+          python -m pip install --upgrade 'pip>=26.2.2'
           python -m pip install -e '.[mcp,observability,auth,redis,aws,test,quality]'
       - name: Run static and dependency checks
         run: |
