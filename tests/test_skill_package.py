@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = PROJECT_ROOT / "skills" / "judikt-mcp-security"
 DIAGNOSTIC = SKILL_ROOT / "scripts" / "diagnose.py"
+DISTRIBUTION = PROJECT_ROOT / "dist" / "judikt-mcp-security.zip"
 
 
 class SkillPackageTest(unittest.TestCase):
@@ -133,6 +136,26 @@ class SkillPackageTest(unittest.TestCase):
                 "read_only": True,
             },
         )
+
+    def test_distribution_contains_one_current_skill_folder(self) -> None:
+        expected_files = {
+            "judikt-mcp-security/SKILL.md",
+            "judikt-mcp-security/references/mcp-configuration.md",
+            "judikt-mcp-security/references/security.md",
+            "judikt-mcp-security/references/setup.md",
+            "judikt-mcp-security/scripts/diagnose.py",
+        }
+        with zipfile.ZipFile(DISTRIBUTION) as archive:
+            archived_files = {name for name in archive.namelist() if not name.endswith("/")}
+            self.assertEqual(archived_files, expected_files)
+            self.assertTrue(all(not Path(name).is_absolute() and ".." not in Path(name).parts for name in archived_files))
+            for archived_name in archived_files:
+                relative = Path(archived_name).relative_to("judikt-mcp-security")
+                source = SKILL_ROOT / relative
+                self.assertEqual(
+                    hashlib.sha256(archive.read(archived_name)).digest(),
+                    hashlib.sha256(source.read_bytes()).digest(),
+                )
 
 
 if __name__ == "__main__":
