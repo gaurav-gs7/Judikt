@@ -7,11 +7,15 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from judikt.paths import DEFAULT_POLICY_PATH
 from judikt.policy_init import (
     PolicyInitializationError,
     derive_server_name,
+    initialize_policy,
+    normalize_command,
+    normalize_server_name,
     starter_policy,
 )
 
@@ -109,6 +113,62 @@ class PolicyInitializationTest(unittest.TestCase):
             self.assertNotEqual(repeated.returncode, 0)
             self.assertIn("refusing to overwrite", repeated.stderr)
             self.assertNotIn("Traceback", repeated.stderr)
+
+    def test_initialize_policy_closes_client_and_writes_discovered_catalog(self) -> None:
+        client = mock.Mock()
+        client.list_tools.return_value = [{"name": "issues.read"}]
+        with tempfile.TemporaryDirectory() as directory, mock.patch(
+            "judikt.policy_init.StdioMCPClient", return_value=client
+        ) as client_type:
+            output = Path(directory) / "nested" / "policy.json"
+            report = initialize_policy(
+                ["--", "company-mcp", "--stdio"],
+                server_name="company-tools",
+                output_path=output,
+                identity="operator",
+            )
+
+            policy = json.loads(output.read_text())
+            self.assertEqual(report["tools"], ["issues.read"])
+            self.assertEqual(policy["local_stdio_identity"], "operator")
+            client_type.assert_called_once_with(
+                "company-tools",
+                command=("company-mcp", "--stdio"),
+                inherit_environment=False,
+            )
+            client.close.assert_called_once_with()
+
+    def test_initialize_policy_validates_identity_and_overwrite_before_starting_client(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "policy.json"
+            output.write_text("existing")
+            with mock.patch("judikt.policy_init.StdioMCPClient") as client_type:
+                with self.assertRaisesRegex(PolicyInitializationError, "must not be empty"):
+                    initialize_policy(
+                        ["server"],
+                        server_name="upstream",
+                        output_path=output,
+                        identity=" ",
+                    )
+                with self.assertRaisesRegex(PolicyInitializationError, "refusing to overwrite"):
+                    initialize_policy(
+                        ["server"],
+                        server_name="upstream",
+                        output_path=output,
+                    )
+                client_type.assert_not_called()
+
+    def test_command_and_server_name_validation_is_fail_closed(self) -> None:
+        for command in ([], [""], ["server", ""]):
+            with self.subTest(command=command), self.assertRaisesRegex(
+                PolicyInitializationError, "upstream command is required"
+            ):
+                normalize_command(command)
+        for name in ("", "has spaces", "invalid/slash"):
+            with self.subTest(name=name), self.assertRaisesRegex(
+                PolicyInitializationError, "server name must contain"
+            ):
+                normalize_server_name(name)
 
 
 if __name__ == "__main__":
