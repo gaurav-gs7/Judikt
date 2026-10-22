@@ -13,12 +13,31 @@ from judikt import serverless
 
 class ServerlessGatewayTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.demo_mode = mock.patch("judikt.serverless._demo_mode_enabled", return_value=True)
+        self.demo_mode.start()
+        self.addCleanup(self.demo_mode.stop)
         serverless._POLICY = None
         serverless._CONTENT_GUARD = None
         serverless._PLATFORM_BACKEND = None
         serverless._KUBERNETES_BACKEND = None
         serverless._INCIDENT_BACKEND = None
         serverless._SECRET_CACHE.clear()
+
+    def test_demo_tools_are_not_listed_or_callable_by_default(self) -> None:
+        self.demo_mode.stop()
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(serverless._list_tools(), {})
+            result = serverless.tool_handler(
+                {
+                    "server": "platform-ops",
+                    "tool": "platform.health",
+                    "arguments": {"service": "payments-api"},
+                },
+                object(),
+            )
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "unknown server: platform-ops")
+        self.demo_mode.start()
 
     @staticmethod
     def event(path: str, method: str = "GET", body: object | None = None) -> dict[str, object]:

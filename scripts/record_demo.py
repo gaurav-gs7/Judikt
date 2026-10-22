@@ -212,6 +212,7 @@ def capture_live_demo() -> list[CommandCapture]:
             "JUDIKT_AUDIT_SINK": "none",
             "JUDIKT_TELEMETRY": "disabled",
             "JUDIKT_UPSTREAM_CONFIG": str(upstream_path),
+            "JUDIKT_DEMO_MODE": "true",
             "JUDIKT_TOOL_PIN_PATH": str(temp / "tool-pins.json"),
             "JUDIKT_FINDING_SINK": "none",
             "JUDIKT_ALLOW_DIRECT_APPROVAL": "true",

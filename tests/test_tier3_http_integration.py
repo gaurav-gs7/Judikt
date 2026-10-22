@@ -121,7 +121,11 @@ class Tier3HTTPIntegrationTest(unittest.TestCase):
             },
             clear=True,
         ):
-            runtime = JudiktOpsRuntime(POLICY, Path(directory) / "audit.db")
+            runtime = JudiktOpsRuntime(
+                POLICY,
+                Path(directory) / "audit.db",
+                include_demo_servers=True,
+            )
             try:
                 result = runtime.call_tool(
                     "platform-ops",

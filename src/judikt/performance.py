@@ -45,7 +45,11 @@ def run_gateway_benchmark(
                 lambda index: baseline.call("platform.health", arguments),
             )
 
-            runtime = JudiktOpsRuntime(benchmark_policy, root / "audit.db")
+            runtime = JudiktOpsRuntime(
+                benchmark_policy,
+                root / "audit.db",
+                include_demo_servers=True,
+            )
             try:
                 for index in range(warmup):
                     result = runtime.call_tool(

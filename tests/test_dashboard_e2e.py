@@ -37,7 +37,11 @@ class DashboardEndToEndTest(unittest.TestCase):
             clear=True,
         )
         self.environment.start()
-        self.runtime = JudiktRuntime(PROJECT_ROOT / "config" / "policies.yaml", root / "audit.db")
+        self.runtime = JudiktRuntime(
+            PROJECT_ROOT / "config" / "policies.yaml",
+            root / "audit.db",
+            include_demo_servers=True,
+        )
         self.server = DashboardServer(
             ("127.0.0.1", 0), self.runtime, api_token="dashboard-token"
         )

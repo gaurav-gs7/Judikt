@@ -49,6 +49,7 @@ class JudiktOpsRuntime:
         policy_path: Path,
         audit_path: Path,
         *,
+        include_demo_servers: bool = False,
         circuit_failure_threshold: int = 3,
         circuit_cooldown_seconds: int = 300,
     ) -> None:
@@ -62,13 +63,14 @@ class JudiktOpsRuntime:
         )
         self.metrics = Metrics()
         self.telemetry = Telemetry()
-        self.platform = PlatformOpsBackend()
-        self.kubernetes = KubernetesBackend()
-        self.incidents = IncidentBackend()
+        self.demo_servers_enabled = include_demo_servers
+        self.platform = PlatformOpsBackend() if include_demo_servers else None
+        self.kubernetes = KubernetesBackend() if include_demo_servers else None
+        self.incidents = IncidentBackend() if include_demo_servers else None
         self.external_clients: dict[str, StdioMCPClient] = {}
         for upstream in load_upstream_servers():
-            if upstream.name in {"platform-ops", "kubernetes", "incident"}:
-                raise ValueError(f"upstream MCP server name collides with built-in server: {upstream.name}")
+            if include_demo_servers and upstream.name in {"platform-ops", "kubernetes", "incident"}:
+                raise ValueError(f"upstream MCP server name collides with demo server: {upstream.name}")
             self.external_clients[upstream.name] = StdioMCPClient(
                 upstream.name,
                 command=upstream.command,
@@ -94,11 +96,15 @@ class JudiktOpsRuntime:
         return definitions
 
     def _all_tool_definitions(self) -> dict[str, list[dict[str, Any]]]:
-        definitions = {
-            "platform-ops": [tool.as_mcp() for tool in PLATFORM_TOOLS],
-            "kubernetes": [tool.as_mcp() for tool in KUBERNETES_TOOLS],
-            "incident": [tool.as_mcp() for tool in INCIDENT_TOOLS],
-        }
+        definitions = {}
+        if self.demo_servers_enabled:
+            definitions.update(
+                {
+                    "platform-ops": [tool.as_mcp() for tool in PLATFORM_TOOLS],
+                    "kubernetes": [tool.as_mcp() for tool in KUBERNETES_TOOLS],
+                    "incident": [tool.as_mcp() for tool in INCIDENT_TOOLS],
+                }
+            )
         definitions.update(
             {server: client.list_tools() for server, client in self.external_clients.items()}
         )
@@ -332,11 +338,11 @@ class JudiktOpsRuntime:
         self.audit.close()
 
     def _execute(self, server: str, tool: str, arguments: dict[str, Any]) -> Any:
-        if server == "platform-ops":
+        if server == "platform-ops" and self.platform is not None:
             return self.platform.call(tool, arguments)
-        if server == "kubernetes":
+        if server == "kubernetes" and self.kubernetes is not None:
             return self.kubernetes.call(tool, arguments)
-        if server == "incident":
+        if server == "incident" and self.incidents is not None:
             return self.incidents.call(tool, arguments)
         client = self.external_clients.get(server)
         if client is not None:
@@ -370,6 +376,8 @@ class JudiktOpsRuntime:
         result: Any,
     ) -> Any:
         if decision.risk_level not in {"high", "critical"}:
+            return result
+        if self.incidents is None:
             return result
         incident_id = arguments.get("incident_id")
         if not incident_id and arguments.get("auto_create_incident") is True:

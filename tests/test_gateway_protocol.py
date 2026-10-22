@@ -16,6 +16,8 @@ from judikt.policy import PolicyEngine
 class GatewayProtocolTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
+        environment = os.environ.copy()
+        environment["JUDIKT_DEMO_MODE"] = "true"
         self.process = subprocess.Popen(
             [
                 sys.executable,
@@ -30,7 +32,7 @@ class GatewayProtocolTest(unittest.TestCase):
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
-            env=os.environ.copy(),
+            env=environment,
         )
 
     def tearDown(self) -> None:

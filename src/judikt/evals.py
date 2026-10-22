@@ -120,7 +120,11 @@ CASES = [
 
 def run_evals(policy_path: Path = DEFAULT_POLICY_PATH) -> dict[str, Any]:
     with tempfile.TemporaryDirectory() as temp_dir:
-        runtime = JudiktRuntime(policy_path, Path(temp_dir) / "evals.db")
+        runtime = JudiktRuntime(
+            policy_path,
+            Path(temp_dir) / "evals.db",
+            include_demo_servers=True,
+        )
         try:
             results = []
             for case in CASES:

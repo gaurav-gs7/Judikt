@@ -28,6 +28,7 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
             "JUDIKT_TELEMETRY": "disabled",
             "JUDIKT_TOOL_PIN_PATH": str(root / "pins.json"),
             "JUDIKT_UPSTREAM_CONFIG": "",
+            "JUDIKT_DEMO_MODE": "true",
             "GROQ_API_KEY": "",
         }
         self.client = StdioMCPClient(
@@ -215,6 +216,7 @@ class StdioServerResilienceTest(unittest.TestCase):
                 "JUDIKT_TELEMETRY": "disabled",
                 "JUDIKT_TOOL_PIN_PATH": str(Path(directory) / "pins.json"),
                 "JUDIKT_UPSTREAM_CONFIG": "",
+                "JUDIKT_DEMO_MODE": "true",
             }
             process = subprocess.Popen(
                 [

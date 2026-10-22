@@ -26,6 +26,7 @@ def run_failure_tests(policy_path: Path = DEFAULT_POLICY_PATH) -> dict[str, Any]
         runtime = JudiktOpsRuntime(
             policy_path,
             Path(tmp) / "failure-drill.db",
+            include_demo_servers=True,
             circuit_failure_threshold=2,
             circuit_cooldown_seconds=60,
         )

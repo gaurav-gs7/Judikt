@@ -179,7 +179,11 @@ class FindingDispatcherTest(unittest.TestCase):
             "judikt.findings.urllib.request.urlopen",
             side_effect=_capture_urlopen(captured),
         ):
-            runtime = JudiktOpsRuntime(POLICY, Path(directory) / "audit.db")
+            runtime = JudiktOpsRuntime(
+                POLICY,
+                Path(directory) / "audit.db",
+                include_demo_servers=True,
+            )
             try:
                 result = runtime.call_tool(
                     "platform-ops",

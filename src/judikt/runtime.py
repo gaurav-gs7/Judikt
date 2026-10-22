@@ -20,7 +20,13 @@ from .upstreams import load_upstream_servers
 
 
 class JudiktRuntime:
-    def __init__(self, policy_path: Path, audit_path: Path) -> None:
+    def __init__(
+        self,
+        policy_path: Path,
+        audit_path: Path,
+        *,
+        include_demo_servers: bool = False,
+    ) -> None:
         self.policy = PolicyEngine(policy_path)
         self.content_guard = ContentGuard.from_policy(self.policy.config)
         self.audit = AuditStore(audit_path)
@@ -28,14 +34,19 @@ class JudiktRuntime:
         self.metrics = Metrics()
         self.telemetry = Telemetry()
         self.analyst = IncidentAnalyst(telemetry=self.telemetry)
-        self.clients = {
-            "platform-ops": StdioMCPClient("platform-ops"),
-            "incident": StdioMCPClient("incident"),
-            "kubernetes": StdioMCPClient("kubernetes"),
-        }
+        self.demo_servers_enabled = include_demo_servers
+        self.clients = {}
+        if include_demo_servers:
+            self.clients.update(
+                {
+                    "platform-ops": StdioMCPClient("platform-ops"),
+                    "incident": StdioMCPClient("incident"),
+                    "kubernetes": StdioMCPClient("kubernetes"),
+                }
+            )
         for upstream in load_upstream_servers():
             if upstream.name in self.clients:
-                raise ValueError(f"upstream MCP server name collides with built-in server: {upstream.name}")
+                raise ValueError(f"upstream MCP server name collides with demo server: {upstream.name}")
             self.clients[upstream.name] = StdioMCPClient(
                 upstream.name,
                 command=upstream.command,

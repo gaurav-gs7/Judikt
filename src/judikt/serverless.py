@@ -34,6 +34,7 @@ _KUBERNETES_BACKEND: KubernetesBackend | None = None
 _INCIDENT_BACKEND: IncidentBackend | None = None
 _SECRET_CACHE: dict[str, str] = {}
 _CONTENT_GUARD: ContentGuard | None = None
+_DEMO_SERVERS = {"platform-ops", "kubernetes", "incident"}
 
 
 def gateway_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -114,6 +115,8 @@ def tool_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     arguments = event.get("arguments") or {}
     if not isinstance(arguments, dict):
         return {"ok": False, "error": "tool arguments must be an object", "failure_class": "ValueError"}
+    if server in _DEMO_SERVERS and not _demo_mode_enabled():
+        return {"ok": False, "error": f"unknown server: {server}"}
 
     try:
         if server == "platform-ops":
@@ -148,6 +151,11 @@ def _call_guarded_tool(
     allowed = decision.allowed
     reason = decision.reason
     rule = decision.rule
+
+    if server in _DEMO_SERVERS and not _demo_mode_enabled():
+        allowed = False
+        rule = "unknown_server"
+        reason = f"server is not configured: {server}"
 
     if allowed:
         if decision.action in {"DRY_RUN_ONLY", "SHADOW_MODE"}:
@@ -364,11 +372,17 @@ def _kubernetes_backend() -> KubernetesBackend:
 
 
 def _list_tools() -> dict[str, list[dict[str, Any]]]:
+    if not _demo_mode_enabled():
+        return {}
     return {
         "platform-ops": [tool.as_mcp() for tool in PLATFORM_TOOLS],
         "kubernetes": [tool.as_mcp() for tool in KUBERNETES_TOOLS],
         "incident": [tool.as_mcp() for tool in INCIDENT_TOOLS],
     }
+
+
+def _demo_mode_enabled() -> bool:
+    return os.getenv("JUDIKT_DEMO_MODE", "").lower() in {"1", "true", "yes"}
 
 
 def _issue_approval(body: dict[str, Any]) -> dict[str, Any]:

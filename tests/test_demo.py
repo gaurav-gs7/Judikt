@@ -61,7 +61,11 @@ class TerminalDemoTest(unittest.TestCase):
                 "GROQ_API_KEY": "",
             }
             with patch.dict(os.environ, environment), redirect_stdout(io.StringIO()) as output:
-                runtime = JudiktRuntime(policy_path, root / "audit.db")
+                runtime = JudiktRuntime(
+                    policy_path,
+                    root / "audit.db",
+                    include_demo_servers=True,
+                )
                 try:
                     run_demo(runtime)
                     integrity = runtime.audit.verify_chain()

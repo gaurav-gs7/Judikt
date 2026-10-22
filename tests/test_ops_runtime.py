@@ -24,7 +24,48 @@ class JudiktOpsRuntimeTest(unittest.TestCase):
 
     def runtime(self) -> JudiktOpsRuntime:
         db = Path(self.temp_dir.name) / "audit.db"
-        return JudiktOpsRuntime(POLICY, db, circuit_failure_threshold=2, circuit_cooldown_seconds=60)
+        return JudiktOpsRuntime(
+            POLICY,
+            db,
+            include_demo_servers=True,
+            circuit_failure_threshold=2,
+            circuit_cooldown_seconds=60,
+        )
+
+    def test_demo_adapters_are_not_loaded_by_default(self) -> None:
+        runtime = JudiktOpsRuntime(POLICY, Path(self.temp_dir.name) / "neutral.db")
+        try:
+            self.assertFalse(runtime.demo_servers_enabled)
+            self.assertIsNone(runtime.platform)
+            self.assertIsNone(runtime.kubernetes)
+            self.assertIsNone(runtime.incidents)
+            self.assertEqual(runtime.list_tools(), {})
+        finally:
+            runtime.close()
+
+    def test_real_mcp_registration_omits_demo_tools_by_default(self) -> None:
+        class FakeMCP:
+            def __init__(self) -> None:
+                self.tools: dict[str, object] = {}
+
+            def tool(self, *, name: str, description: str):
+                def register(function: object) -> object:
+                    self.tools[name] = function
+                    return function
+
+                return register
+
+        runtime = JudiktOpsRuntime(POLICY, Path(self.temp_dir.name) / "registration.db")
+        mcp = FakeMCP()
+        try:
+            register_tools(mcp, runtime)
+            self.assertIn("judikt.call_upstream", mcp.tools)
+            self.assertIn("judikt.runtime_state", mcp.tools)
+            self.assertNotIn("platform.health", mcp.tools)
+            self.assertNotIn("incident.create", mcp.tools)
+            self.assertNotIn("kubernetes.get_pod", mcp.tools)
+        finally:
+            runtime.close()
 
     def test_real_runtime_allows_health_and_audits_call(self) -> None:
         runtime = self.runtime()

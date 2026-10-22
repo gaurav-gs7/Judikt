@@ -44,6 +44,7 @@ class RealMCPStreamableHTTPEndToEndTest(unittest.TestCase):
             "JUDIKT_TELEMETRY": "disabled",
             "JUDIKT_TOOL_PIN_PATH": str(root / "pins.json"),
             "JUDIKT_UPSTREAM_CONFIG": "",
+            "JUDIKT_DEMO_MODE": "true",
             "JUDIKT_ALLOW_DIRECT_APPROVAL": "true",
             "GROQ_API_KEY": "",
         }
@@ -377,6 +378,7 @@ class RealMCPJWTAuthorizationEndToEndTest(unittest.TestCase):
             "JUDIKT_TELEMETRY": "disabled",
             "JUDIKT_TOOL_PIN_PATH": str(root / "pins.json"),
             "JUDIKT_UPSTREAM_CONFIG": "",
+            "JUDIKT_DEMO_MODE": "true",
             "JUDIKT_ALLOW_DIRECT_APPROVAL": "false",
         }
         cls.process = subprocess.Popen(

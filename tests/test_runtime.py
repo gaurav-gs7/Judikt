@@ -16,11 +16,23 @@ class RuntimeTest(unittest.TestCase):
         self.runtime = JudiktRuntime(
             PROJECT_ROOT / "config" / "policies.yaml",
             Path(self.temp_dir.name) / "audit.db",
+            include_demo_servers=True,
         )
 
     def tearDown(self) -> None:
         self.runtime.close()
         self.temp_dir.cleanup()
+
+    def test_demo_servers_are_not_registered_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = JudiktRuntime(
+                PROJECT_ROOT / "config" / "policies.yaml",
+                Path(directory) / "audit.db",
+            )
+            try:
+                self.assertEqual(runtime.list_tools(), {})
+            finally:
+                runtime.close()
 
     def test_allows_health_check_and_redacts_upstream_secret(self) -> None:
         health = self.runtime.call_tool("platform-ops", "platform.health", {"service": "payments-api"})

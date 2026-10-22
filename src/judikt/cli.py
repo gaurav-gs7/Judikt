@@ -108,6 +108,10 @@ def _add_runtime_options(command: argparse.ArgumentParser) -> None:
     command.add_argument("--audit-db", type=Path, default=argparse.SUPPRESS)
 
 
+def _enabled(name: str) -> bool:
+    return os.getenv(name, "").lower() in {"1", "true", "yes"}
+
+
 def main() -> None:
     args = parser().parse_args()
     if args.command == "backend":
@@ -179,7 +183,11 @@ def main() -> None:
         except AuthError as exc:
             raise SystemExit(f"serve-real-mcp: {exc}") from None
         return
-    runtime = JudiktRuntime(args.policy, args.audit_db)
+    runtime = JudiktRuntime(
+        args.policy,
+        args.audit_db,
+        include_demo_servers=args.command == "demo" or _enabled("JUDIKT_DEMO_MODE"),
+    )
     if args.command == "demo":
         try:
             run_demo(runtime)

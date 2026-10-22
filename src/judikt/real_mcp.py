@@ -20,6 +20,7 @@ def build_runtime(policy_path: Path, audit_path: Path) -> JudiktOpsRuntime:
     return JudiktOpsRuntime(
         policy_path,
         audit_path,
+        include_demo_servers=_enabled("JUDIKT_DEMO_MODE"),
         circuit_failure_threshold=int(os.getenv("JUDIKT_CIRCUIT_FAILURE_THRESHOLD", "3")),
         circuit_cooldown_seconds=int(os.getenv("JUDIKT_CIRCUIT_COOLDOWN_SECONDS", "300")),
     )
@@ -176,21 +177,23 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
             }
         return runtime.call_tool(server, tool, arguments).as_dict()
 
-    @mcp.tool(
+    demo_tool = mcp.tool if runtime.demo_servers_enabled else _skip_tool_registration
+
+    @demo_tool(
         name="platform.health",
         description="Inspect service status, release, replica health, error rate, and latency.",
     )
     def platform_health(service: str) -> dict[str, Any]:
         return runtime.call_tool("platform-ops", "platform.health", {"service": service}).as_dict()
 
-    @mcp.tool(
+    @demo_tool(
         name="platform.read_config",
         description="Read sanitized runtime configuration for a service. Secrets are redacted.",
     )
     def platform_read_config(service: str) -> dict[str, Any]:
         return runtime.call_tool("platform-ops", "platform.read_config", {"service": service}).as_dict()
 
-    @mcp.tool(
+    @demo_tool(
         name="platform.read_logs",
         description="Read recent service logs with a query and bounded result limit.",
     )
@@ -201,7 +204,7 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
             {"service": service, "query": query, "limit": limit},
         ).as_dict()
 
-    @mcp.tool(
+    @demo_tool(
         name="platform.run_diagnostic",
         description="Run an allowlisted diagnostic command such as dependency-health, error-rate, or latency-summary.",
     )
@@ -212,7 +215,7 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
             {"service": service, "command": command},
         ).as_dict()
 
-    @mcp.tool(
+    @demo_tool(
         name="platform.restart_deployment",
         description="Perform a guarded rolling restart. Requires actor, rollback plan, and a signed approval token in production.",
     )
@@ -245,7 +248,7 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
             ),
         ).as_dict()
 
-    @mcp.tool(
+    @demo_tool(
         name="platform.rollback_deployment",
         description="Roll a service back to a known release. Requires actor, rollback plan, and a signed approval token in production.",
     )
@@ -280,7 +283,7 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
             ),
         ).as_dict()
 
-    @mcp.tool(name="kubernetes.get_pod", description="Read Kubernetes pod status through Judikt.")
+    @demo_tool(name="kubernetes.get_pod", description="Read Kubernetes pod status through Judikt.")
     def kubernetes_get_pod(namespace: str, pod: str) -> dict[str, Any]:
         return runtime.call_tool(
             "kubernetes",
@@ -288,7 +291,7 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
             {"namespace": namespace, "pod": pod},
         ).as_dict()
 
-    @mcp.tool(
+    @demo_tool(
         name="kubernetes.restart_pod",
         description="Restart a Kubernetes pod through guarded policy. Requires actor, rollback plan, and approval in production.",
     )
@@ -323,7 +326,7 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
             ),
         ).as_dict()
 
-    @mcp.tool(name="kubernetes.rollout_status", description="Read Kubernetes deployment rollout status.")
+    @demo_tool(name="kubernetes.rollout_status", description="Read Kubernetes deployment rollout status.")
     def kubernetes_rollout_status(namespace: str, deployment: str) -> dict[str, Any]:
         return runtime.call_tool(
             "kubernetes",
@@ -331,7 +334,7 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
             {"namespace": namespace, "deployment": deployment},
         ).as_dict()
 
-    @mcp.tool(name="incident.create", description="Create an operational incident.")
+    @demo_tool(name="incident.create", description="Create an operational incident.")
     def incident_create(title: str, severity: str) -> dict[str, Any]:
         return runtime.call_tool(
             "incident",
@@ -339,7 +342,7 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
             {"title": title, "severity": severity},
         ).as_dict()
 
-    @mcp.tool(name="incident.attach_evidence", description="Attach redacted evidence to an incident timeline.")
+    @demo_tool(name="incident.attach_evidence", description="Attach redacted evidence to an incident timeline.")
     def incident_attach_evidence(incident_id: str, evidence: dict[str, Any]) -> dict[str, Any]:
         return runtime.call_tool(
             "incident",
@@ -347,7 +350,7 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
             {"incident_id": incident_id, "evidence": evidence},
         ).as_dict()
 
-    @mcp.tool(name="incident.timeline", description="Read an incident timeline.")
+    @demo_tool(name="incident.timeline", description="Read an incident timeline.")
     def incident_timeline(incident_id: str) -> dict[str, Any]:
         return runtime.call_tool("incident", "incident.timeline", {"incident_id": incident_id}).as_dict()
 
@@ -483,3 +486,14 @@ def _operation_arguments(
     if auto_create_incident:
         arguments["auto_create_incident"] = True
     return arguments
+
+
+def _skip_tool_registration(*_args: Any, **_kwargs: Any) -> Any:
+    def decorator(function: Any) -> Any:
+        return function
+
+    return decorator
+
+
+def _enabled(name: str) -> bool:
+    return os.getenv(name, "").lower() in {"1", "true", "yes"}
