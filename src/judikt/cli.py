@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import tempfile
 from pathlib import Path
 
 from .attackbench import (
@@ -32,11 +33,30 @@ from .policy_init import PolicyInitializationError, derive_server_name, initiali
 from .protocol import MCPProtocolError
 from .real_mcp import serve_real_mcp
 from .runtime import JudiktRuntime
+from .upstreams import UpstreamServer
+
+
+class _PolicyPathAction(argparse.Action):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Path,
+        option_string: str | None = None,
+    ) -> None:
+        setattr(namespace, self.dest, values)
+        setattr(namespace, "policy_explicit", True)
 
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Judikt runtime firewall")
-    result.add_argument("--policy", type=Path, default=DEFAULT_POLICY_PATH)
+    result.set_defaults(policy_explicit=False)
+    result.add_argument(
+        "--policy",
+        type=Path,
+        action=_PolicyPathAction,
+        default=DEFAULT_POLICY_PATH,
+    )
     result.add_argument("--audit-db", type=Path, default=default_audit_path())
     subparsers = result.add_subparsers(dest="command", required=True)
     demo = subparsers.add_parser("demo", help="run the interview demo")
@@ -116,11 +136,24 @@ def parser() -> argparse.ArgumentParser:
     init.add_argument("--output", type=Path, default=Path("judikt-policy.json"))
     init.add_argument("--force", action="store_true")
     init.add_argument("upstream_command", nargs=argparse.REMAINDER)
+    wrap = subparsers.add_parser(
+        "wrap",
+        help="run a stdio MCP server through Judikt",
+    )
+    _add_runtime_options(wrap)
+    wrap.add_argument("--name", default="")
+    wrap.add_argument("--identity", default="local-operator")
+    wrap.add_argument("upstream_command", nargs=argparse.REMAINDER)
     return result
 
 
 def _add_runtime_options(command: argparse.ArgumentParser) -> None:
-    command.add_argument("--policy", type=Path, default=argparse.SUPPRESS)
+    command.add_argument(
+        "--policy",
+        type=Path,
+        action=_PolicyPathAction,
+        default=argparse.SUPPRESS,
+    )
     command.add_argument("--audit-db", type=Path, default=argparse.SUPPRESS)
 
 
@@ -145,6 +178,9 @@ def main() -> None:
         except (PolicyInitializationError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
             raise SystemExit(f"init: {exc}") from None
         print(json.dumps(report, indent=2))
+        return
+    if args.command == "wrap":
+        _run_wrap(args)
         return
     demo_mode = args.command == "demo" or _enabled("JUDIKT_DEMO_MODE")
     if demo_mode and args.policy == DEFAULT_POLICY_PATH:
@@ -248,6 +284,43 @@ def main() -> None:
             print(token)
         finally:
             runtime.close()
+
+
+def _run_wrap(args: argparse.Namespace) -> None:
+    upstream_command = list(args.upstream_command)
+    if upstream_command and upstream_command[0] == "--":
+        upstream_command = upstream_command[1:]
+    try:
+        server_name = args.name or derive_server_name(upstream_command)
+        upstream = UpstreamServer(
+            name=server_name,
+            command=tuple(upstream_command),
+            environment={},
+        )
+        if args.policy_explicit:
+            runtime = JudiktRuntime(
+                args.policy,
+                args.audit_db,
+                upstream_servers=[upstream],
+            )
+            serve_gateway(runtime)
+            return
+        with tempfile.TemporaryDirectory(prefix="judikt-wrap-") as directory:
+            policy_path = Path(directory) / "policy.json"
+            initialize_policy(
+                upstream_command,
+                server_name=server_name,
+                output_path=policy_path,
+                identity=args.identity,
+            )
+            runtime = JudiktRuntime(
+                policy_path,
+                args.audit_db,
+                upstream_servers=[upstream],
+            )
+            serve_gateway(runtime)
+    except (PolicyInitializationError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"wrap: {exc}") from None
 
 
 if __name__ == "__main__":

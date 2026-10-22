@@ -66,7 +66,7 @@ flowchart LR
     Auth --> Request["Identity + allowlist + risk + rate + approval"]
     Request -->|"deny"| Evidence["Signed audit + metrics + trace"]
     Request -->|"allow"| Integrity["Pinned tool metadata check"]
-    Integrity --> Upstream["Built-in or external MCP server"]
+    Integrity --> Upstream["Operator-selected MCP server"]
     Upstream --> Inspect["Result injection scan"]
     Inspect -->|"quarantine"| Evidence
     Inspect -->|"safe"| Redact["Recursive redaction"]
@@ -77,7 +77,7 @@ flowchart LR
     Finding --> Incident["Argus incident and RCA or SQS/DLQ"]
 ```
 
-The upstream tool servers are separate subprocesses:
+`judikt demo` includes three separate simulated tool servers for a deterministic walkthrough. They are not loaded by normal gateway commands:
 
 - `platform-ops`: production service health, sanitized config, logs, allowlisted diagnostics, rolling restart, and deployment rollback.
 - `kubernetes`: pod status, guarded pod restart, and rollout status. It uses a safe simulator by default and can be pointed at `kubectl` with `JUDIKT_KUBERNETES_MODE=kubectl` for a controlled lab.
@@ -94,6 +94,54 @@ This is defense in depth, not a claim of complete semantic detection. The multil
 ## Quick Start
 
 Requirements: macOS or Linux and Python 3.11+.
+
+Install from a checkout:
+
+```bash
+python3 -m pip install .
+```
+
+Wrap any stdio MCP server with one command. Judikt discovers `tools/list`, creates an ephemeral exact-tool policy, and exposes the guarded catalog over stdio:
+
+```bash
+judikt wrap -- npx -y @modelcontextprotocol/server-filesystem /absolute/safe/path
+```
+
+Use this command directly in an MCP client configuration:
+
+```json
+{
+  "mcpServers": {
+    "guarded-filesystem": {
+      "command": "judikt",
+      "args": [
+        "wrap",
+        "--",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/absolute/safe/path"
+      ]
+    }
+  }
+}
+```
+
+To review and customize a persistent policy first, generate one from the upstream's actual catalog:
+
+```bash
+judikt init \
+  --name filesystem \
+  --output judikt-policy.json \
+  -- npx -y @modelcontextprotocol/server-filesystem /absolute/safe/path
+
+judikt wrap \
+  --policy judikt-policy.json \
+  --name filesystem \
+  -- npx -y @modelcontextprotocol/server-filesystem /absolute/safe/path
+```
+
+The packaged default policy is deliberately neutral and fail-closed. `judikt init` grants the configured local identity only the exact names returned by `tools/list`; it grants anonymous callers nothing and refuses to overwrite an existing file unless `--force` is supplied.
 
 The launch scripts automatically use `.venv/bin/python` when a project virtual environment exists. Otherwise, they use the system `python3`.
 
@@ -137,7 +185,7 @@ Loopback is the only unauthenticated mode. Binding to any other interface fails
 closed unless `JUDIKT_API_TOKEN` is set. The browser asks for the token once
 and keeps it in session storage.
 
-To expose Judikt itself as a stdio MCP server:
+To expose upstreams from a persistent [`config/upstreams.example.json`](config/upstreams.example.json) configuration instead of the one-line wrapper:
 
 ```bash
 ./scripts/run_mcp_gateway.sh
@@ -145,7 +193,7 @@ To expose Judikt itself as a stdio MCP server:
 
 Unauthenticated stdio sessions take their identity from `local_stdio_identity` in the policy file. Caller-supplied `actor`, `user`, and `requested_by` values are removed before policy evaluation, auditing, approval verification, or upstream execution; declared string identity fields receive the configured local identity instead. Use a separate local policy file when different MCP client installations need different principals.
 
-For an MCP client configuration, use:
+For a checkout-based MCP client configuration, use:
 
 ```json
 {
@@ -160,6 +208,8 @@ For an MCP client configuration, use:
 ### External MCP Servers
 
 Set `JUDIKT_UPSTREAM_CONFIG` to a JSON file using the shape in [`config/upstreams.example.json`](config/upstreams.example.json). Commands are executed directly without a shell. Sensitive upstream credentials should use `from_env` or `from_aws_secret`; caller-supplied OAuth tokens are denied recursively by policy.
+
+The `platform-ops`, `kubernetes`, and `incident` adapters are walkthrough fixtures loaded only by `judikt demo` or the explicit `JUDIKT_DEMO_MODE=true` test harness. Production gateway commands load only operator-selected upstream servers.
 
 The test suite launches [`tests/fixtures/external_mcp_server.py`](tests/fixtures/external_mcp_server.py) as an independent process and proves normal and text-only responses, paginated discovery, server-initiated requests, environment isolation, injected-result quarantine, and changed metadata blocking. The versioned [community interoperability harness](docs/COMMUNITY_INTEROP.md) separately targets the official MCP Filesystem and Memory servers plus GitHub's official read-only server.
 

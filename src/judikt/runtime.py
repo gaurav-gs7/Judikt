@@ -4,7 +4,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from .audit import AuditStore
 from .content_guard import ContentGuard, quarantine_result
@@ -16,7 +16,7 @@ from .policy import PolicyEngine
 from .protocol import MCPProtocolError, StdioMCPClient, is_mcp_tool_error
 from .telemetry import Telemetry
 from .tool_integrity import ToolIntegrityError, ToolIntegrityStore, verify_unique_tool_names
-from .upstreams import load_upstream_servers
+from .upstreams import UpstreamServer, load_upstream_servers
 
 
 class JudiktRuntime:
@@ -26,6 +26,7 @@ class JudiktRuntime:
         audit_path: Path,
         *,
         include_demo_servers: bool = False,
+        upstream_servers: Sequence[UpstreamServer] | None = None,
     ) -> None:
         self.policy = PolicyEngine(policy_path)
         self.content_guard = ContentGuard.from_policy(self.policy.config)
@@ -44,7 +45,8 @@ class JudiktRuntime:
                     "kubernetes": StdioMCPClient("kubernetes"),
                 }
             )
-        for upstream in load_upstream_servers():
+        configured_upstreams = load_upstream_servers() if upstream_servers is None else upstream_servers
+        for upstream in configured_upstreams:
             if upstream.name in self.clients:
                 raise ValueError(f"upstream MCP server name collides with demo server: {upstream.name}")
             self.clients[upstream.name] = StdioMCPClient(
