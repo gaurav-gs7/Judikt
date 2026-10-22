@@ -38,3 +38,7 @@ The clients were installed under isolated temporary homes, and no personal clien
 ## Scope
 
 This suite qualifies local stdio onboarding and its safety boundary. Authenticated Streamable HTTP, JWT/OIDC, Redis, Slack, SIEM, observability, and AWS deployment remain covered by the runtime release suite; they are not silently counted as verified by this skill acceptance run.
+
+## Release Contract
+
+`python scripts/build_skill_release.py` validates the skill metadata, folder name, relative references, archive paths, and generated-file exclusions. It creates a deterministic `judikt-mcp-security-v<runtime-version>.zip`. GitHub release CI rejects a tag that does not exactly match `v<project.version>`, keeps the Python artifacts separate from the skill ZIP, and attaches the ZIP to the GitHub release.

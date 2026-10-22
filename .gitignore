@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 data/
 build/
+dist/
 .coverage
 .coverage.*
 .DS_Store

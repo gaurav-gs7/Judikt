@@ -25,6 +25,10 @@ jobs:
           ruff check src tests
           python -m pip check
           pip-audit
+      - name: Validate and build versioned skill package
+        run: python scripts/build_skill_release.py --output-dir build/skill-release
+      - name: Test skill onboarding from a fresh wheel
+        run: ./scripts/run_skill_acceptance.sh
       - name: Run unified Tier 1, 2, and 3 release qualification
         run: ./scripts/run_release_tests.sh
       - uses: actions/upload-artifact@v4
@@ -36,6 +40,7 @@ jobs:
             build/attackbench-smoke.json
             build/performance-smoke.json
             build/community-interop.json
+            build/skill-release/*.zip
 
   terraform:
     runs-on: ubuntu-latest
