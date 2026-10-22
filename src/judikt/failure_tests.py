@@ -7,10 +7,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .ops_runtime import JudiktOpsRuntime
+from .paths import DEFAULT_POLICY_PATH
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_POLICY = PROJECT_ROOT / "config" / "policies.yaml"
 ROLLBACK_PLAN = "verify health checks and restore previous known-good release if errors increase"
 
 
@@ -22,7 +21,7 @@ class FailureCaseResult:
     observed: str
 
 
-def run_failure_tests(policy_path: Path = DEFAULT_POLICY) -> dict[str, Any]:
+def run_failure_tests(policy_path: Path = DEFAULT_POLICY_PATH) -> dict[str, Any]:
     with tempfile.TemporaryDirectory() as tmp:
         runtime = JudiktOpsRuntime(
             policy_path,

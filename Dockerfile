@@ -1,13 +1,11 @@
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    JUDIKT_PROJECT_ROOT=/app
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
 COPY pyproject.toml README.md ./
-COPY config ./config
 COPY scripts ./scripts
 COPY src ./src
 

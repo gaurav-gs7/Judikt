@@ -6,9 +6,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from .paths import DEFAULT_MCP38_COVERAGE_PATH, DEFAULT_POLICY_PATH
 from .runtime import JudiktRuntime
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ROLLBACK_PLAN = "verify service health and restore previous known-good release if errors increase"
 
 
@@ -118,7 +118,7 @@ CASES = [
 ]
 
 
-def run_evals(policy_path: Path = PROJECT_ROOT / "config" / "policies.yaml") -> dict[str, Any]:
+def run_evals(policy_path: Path = DEFAULT_POLICY_PATH) -> dict[str, Any]:
     with tempfile.TemporaryDirectory() as temp_dir:
         runtime = JudiktRuntime(policy_path, Path(temp_dir) / "evals.db")
         try:
@@ -154,14 +154,14 @@ def run_evals(policy_path: Path = PROJECT_ROOT / "config" / "policies.yaml") -> 
             runtime.close()
 
 
-def print_evals(policy_path: Path = PROJECT_ROOT / "config" / "policies.yaml") -> int:
+def print_evals(policy_path: Path = DEFAULT_POLICY_PATH) -> int:
     report = run_evals(policy_path)
     print(json.dumps(report, indent=2))
     return 0 if report["passed"] else 1
 
 
 def load_mcp38_coverage(
-    path: Path = PROJECT_ROOT / "config" / "mcp38_coverage.json",
+    path: Path = DEFAULT_MCP38_COVERAGE_PATH,
 ) -> dict[str, Any]:
     document = json.loads(path.read_text())
     threats = document.get("threats", [])

@@ -14,7 +14,6 @@ mkdir -p "${BUILD_DIR}" "${ROOT_DIR}/build"
 find "${BUILD_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
 cp -R "${ROOT_DIR}/src/judikt" "${BUILD_DIR}/judikt"
-cp -R "${ROOT_DIR}/config" "${BUILD_DIR}/config"
 find "${BUILD_DIR}" -type d -name "__pycache__" -prune -exec rm -rf {} +
 find "${BUILD_DIR}" -type f -name "*.pyc" -delete
 

@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "modelcontextprotocol-filesystem": {
+      "implementation": "@modelcontextprotocol/server-filesystem",
+      "version": "2026.7.10",
+      "source_url": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+      "command": [
+        "npx",
+        "--yes",
+        "@modelcontextprotocol/server-filesystem@2026.7.10",
+        "${SANDBOX}"
+      ],
+      "env": {
+        "NPM_CONFIG_CACHE": "${SANDBOX}/npm-cache",
+        "NO_UPDATE_NOTIFIER": "1"
+      },
+      "expected_tools": [
+        "read_text_file",
+        "list_directory",
+        "list_allowed_directories"
+      ],
+      "safe_call": {
+        "tool": "read_text_file",
+        "arguments": {
+          "path": "${SANDBOX}/interop-fixture.txt"
+        }
+      },
+      "ci": true
+    },
+    "modelcontextprotocol-memory": {
+      "implementation": "@modelcontextprotocol/server-memory",
+      "version": "2026.7.4",
+      "source_url": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
+      "command": [
+        "npx",
+        "--yes",
+        "@modelcontextprotocol/server-memory@2026.7.4"
+      ],
+      "env": {
+        "NPM_CONFIG_CACHE": "${SANDBOX}/npm-cache",
+        "NO_UPDATE_NOTIFIER": "1",
+        "MEMORY_FILE_PATH": "${SANDBOX}/memory.jsonl"
+      },
+      "expected_tools": [
+        "read_graph",
+        "search_nodes"
+      ],
+      "safe_call": {
+        "tool": "read_graph",
+        "arguments": {}
+      },
+      "ci": true
+    },
+    "github-official-readonly": {
+      "implementation": "github/github-mcp-server",
+      "version": "0.31.0",
+      "source_url": "https://github.com/github/github-mcp-server",
+      "command": [
+        "docker",
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "-e",
+        "GITHUB_READ_ONLY",
+        "-e",
+        "GITHUB_TOOLSETS",
+        "ghcr.io/github/github-mcp-server:v0.31.0"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": {
+          "from_env": "GITHUB_PERSONAL_ACCESS_TOKEN"
+        },
+        "GITHUB_READ_ONLY": "1",
+        "GITHUB_TOOLSETS": "context,repos"
+      },
+      "expected_tools": [
+        "get_me"
+      ],
+      "safe_call": {
+        "tool": "get_me",
+        "arguments": {}
+      },
+      "ci": false
+    }
+  }
+}

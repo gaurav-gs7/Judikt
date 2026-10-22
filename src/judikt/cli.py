@@ -22,17 +22,19 @@ from .performance import (
     report_passes as performance_report_passes,
     run_gateway_benchmark,
 )
+from .paths import (
+    DEFAULT_INTEROP_PROFILES_PATH,
+    DEFAULT_POLICY_PATH,
+    default_audit_path,
+)
 from .real_mcp import serve_real_mcp
 from .runtime import JudiktRuntime
 
 
-PROJECT_ROOT = Path(os.getenv("JUDIKT_PROJECT_ROOT", str(Path(__file__).resolve().parents[2])))
-
-
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Judikt runtime firewall")
-    result.add_argument("--policy", type=Path, default=PROJECT_ROOT / "config" / "policies.yaml")
-    result.add_argument("--audit-db", type=Path, default=PROJECT_ROOT / "data" / "judikt.db")
+    result.add_argument("--policy", type=Path, default=DEFAULT_POLICY_PATH)
+    result.add_argument("--audit-db", type=Path, default=default_audit_path())
     subparsers = result.add_subparsers(dest="command", required=True)
     demo = subparsers.add_parser("demo", help="run the interview demo")
     _add_runtime_options(demo)
@@ -66,7 +68,7 @@ def parser() -> argparse.ArgumentParser:
     interop.add_argument(
         "--profiles",
         type=Path,
-        default=PROJECT_ROOT / "config" / "interop_profiles.json",
+        default=DEFAULT_INTEROP_PROFILES_PATH,
     )
     interop.add_argument("--profile", action="append", dest="profiles_selected")
     interop.add_argument("--output", type=Path)

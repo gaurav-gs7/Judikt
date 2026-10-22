@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from judikt.audit import AuditStore
-from judikt.cli import PROJECT_ROOT
 from judikt.content_guard import ContentGuard
 from judikt.runtime import JudiktRuntime
 from judikt.tool_integrity import (
@@ -18,6 +17,9 @@ from judikt.tool_integrity import (
     verify_unique_tool_names,
 )
 from judikt.upstreams import UpstreamConfigError, load_upstream_servers
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class ContentGuardTest(unittest.TestCase):

@@ -18,11 +18,12 @@ from .backends import INCIDENT_TOOLS, KUBERNETES_TOOLS, PLATFORM_TOOLS, Incident
 from .content_guard import ContentGuard, quarantine_result
 from .findings import build_finding_event, should_emit_finding
 from .models import PolicyDecision
+from .paths import DEFAULT_POLICY_PATH
 from .policy import PolicyEngine
 from .risk import RiskEngine
 
 
-POLICY_PATH = Path(os.getenv("JUDIKT_POLICY_PATH", "config/policies.yaml"))
+POLICY_PATH = Path(os.environ["JUDIKT_POLICY_PATH"]) if "JUDIKT_POLICY_PATH" in os.environ else DEFAULT_POLICY_PATH
 NAMESPACE = "Judikt/Serverless"
 MAX_REQUEST_BODY_BYTES = 1_048_576
 MAX_TOOL_RESPONSE_BYTES = 1_048_576

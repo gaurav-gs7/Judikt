@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from judikt.cli import PROJECT_ROOT
 from judikt.runtime import JudiktRuntime
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ROLLBACK_PLAN = "verify health checks and restore previous known-good release if errors increase"
 
 
