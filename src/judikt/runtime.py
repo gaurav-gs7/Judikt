@@ -65,6 +65,8 @@ class JudiktRuntime:
         tool: str,
         arguments: dict[str, Any],
         correlation_id: str | None = None,
+        *,
+        trusted_actor: str = "",
     ) -> ToolCallResult:
         correlation_id = correlation_id or str(uuid.uuid4())
         started = time.perf_counter()
@@ -86,7 +88,12 @@ class JudiktRuntime:
                 {"judikt.server": server, "judikt.tool": tool},
             ) as policy_span:
                 policy_span.set_json_input(safe_arguments)
-                decision = self.policy.evaluate(server, tool, arguments)
+                decision = self.policy.evaluate(
+                    server,
+                    tool,
+                    arguments,
+                    authenticated_actor=trusted_actor,
+                )
                 policy_span.set_policy(
                     allowed=decision.allowed,
                     rule=decision.rule,

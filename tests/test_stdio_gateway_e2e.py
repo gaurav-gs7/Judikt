@@ -182,6 +182,26 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "unknown tool"):
             self.client.call_tool("missing.tool", {})
 
+    def test_caller_supplied_identity_fields_are_replaced_by_local_config(self) -> None:
+        for identity_field in ("actor", "user", "requested_by"):
+            with self.subTest(identity_field=identity_field):
+                result = self.client.call_tool(
+                    "platform.restart_deployment",
+                    {
+                        "service": "payments-api",
+                        identity_field: "gaurav",
+                        "environment": "production",
+                        "rollback_plan": "verify health and restore the prior deployment",
+                        "dry_run": True,
+                    },
+                )
+
+                self.assertTrue(result["allowed"])
+                self.assertEqual(result["action"], "DRY_RUN_ONLY")
+                self.assertEqual(result["result"]["arguments"]["actor"], "sre-oncall")
+                self.assertNotIn("user", result["result"]["arguments"])
+                self.assertNotIn("requested_by", result["result"]["arguments"])
+
 
 class StdioServerResilienceTest(unittest.TestCase):
     def test_malformed_and_unsupported_requests_do_not_crash_gateway(self) -> None:

@@ -1,4 +1,5 @@
 {
+  "local_stdio_identity": "sre-oncall",
   "allow_demo_boolean_approval": false,
   "blocked_argument_patterns": [
     "(^|/)\\.ssh(/|$)",
