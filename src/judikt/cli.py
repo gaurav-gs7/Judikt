@@ -59,7 +59,7 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--audit-db", type=Path, default=default_audit_path())
     subparsers = result.add_subparsers(dest="command", required=True)
-    demo = subparsers.add_parser("demo", help="run the interview demo")
+    demo = subparsers.add_parser("demo", help="run the deterministic local walkthrough")
     _add_runtime_options(demo)
     demo.set_defaults(policy=DEMO_POLICY_PATH)
     gateway = subparsers.add_parser("serve-mcp", help="expose Judikt over JSON-RPC stdio")

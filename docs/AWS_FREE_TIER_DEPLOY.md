@@ -265,9 +265,3 @@ aws ecr batch-delete-image \
   --repository-name "${JUDIKT_ECR_REPOSITORY:-judikt}" \
   --image-ids imageTag="${JUDIKT_IMAGE_TAG:-latest}"
 ```
-
-## Resume Framing
-
-Use this only after you have deployed and tested it:
-
-> Deployed an MCP-based AIOps control plane to AWS Free Tier using Terraform, ECR, EC2, IAM instance roles, security groups, SSM Session Manager, Docker, Prometheus-style metrics, signed approvals, and adversarial safety evals. Also maintained a CloudFormation fallback to compare AWS-native and multi-cloud-style IaC.

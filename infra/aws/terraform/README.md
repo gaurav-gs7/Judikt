@@ -82,6 +82,6 @@ Use the bearer token through an `Authorization: Bearer ...` header when your MCP
 
 Terraform creates the secret containers and IAM permissions. The deploy script writes secret values with AWS CLI so live secret strings are not stored through Terraform-managed secret-version resources.
 
-## Interview Talking Point
+## Infrastructure Choice
 
-Terraform is the stronger resume signal because it shows modular infrastructure as code, stateful provisioning, repeatable cleanup, IAM modeling, and cost-aware cloud operations. CloudFormation remains in this repo as the AWS-native baseline.
+Terraform is the primary deployment path because it provides stateful, repeatable provisioning and cleanup across the EC2, ECR, IAM, networking, secrets, and observability resources. CloudFormation remains available as the AWS-native baseline.

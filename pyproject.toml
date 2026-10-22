@@ -29,9 +29,6 @@ Issues = "https://github.com/gaurav-gs7/Judikt/issues"
 
 [project.scripts]
 judikt = "judikt.cli:main"
-# Compatibility aliases retained for pre-Judikt local configurations.
-gatetrace-mcp = "judikt.cli:main"
-mcp-guard = "judikt.cli:main"
 
 [project.optional-dependencies]
 mcp = [

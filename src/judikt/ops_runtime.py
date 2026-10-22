@@ -413,7 +413,3 @@ class JudiktOpsRuntime:
 
     def _reset_circuit(self, server: str, tool: str) -> None:
         self._circuits[(server, tool)] = CircuitState()
-
-
-# Compatibility aliases for integrations using earlier project names.
-GuardedOpsRuntime = JudiktOpsRuntime

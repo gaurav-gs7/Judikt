@@ -506,7 +506,7 @@ def _verify_captures(captures: list[CommandCapture]) -> None:
         line
         for capture in captures
         for line in capture.output.splitlines()
-        if line.startswith("$ ") or line.startswith("gaurav@")
+        if line.startswith("$ ") or line.startswith("operator@")
     ]
     if pseudo_commands:
         raise SystemExit(f"command output contains pseudo shell prompts: {pseudo_commands}")
@@ -927,7 +927,7 @@ def _line_color(line: str) -> str:
     lowered = line.lower()
     if line.startswith("##") or line.startswith("JUDIKT"):
         return BLUE
-    if line.startswith("$") or line.startswith("gaurav@"):
+    if line.startswith("$") or line.startswith("operator@"):
         return GREEN
     if (
         "quarantine" in lowered

@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/../legacy_env.sh"
-
 ARN="$(aws sts get-caller-identity --query Arn --output text)"
 
 if [[ "${ARN}" == *":root" && "${JUDIKT_ALLOW_ROOT_AWS:-false}" != "true" ]]; then

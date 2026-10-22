@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/../legacy_env.sh"
-
 REGION="${AWS_REGION:-us-east-1}"
 STACK_NAME="${JUDIKT_STACK_NAME:-judikt-free-tier}"
 

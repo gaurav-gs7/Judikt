@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/legacy_env.sh"
-
 MODE="${JUDIKT_MODE:-real-mcp}"
 
 case "${MODE}" in

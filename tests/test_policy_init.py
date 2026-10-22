@@ -29,8 +29,7 @@ class PolicyInitializationTest(unittest.TestCase):
         self.assertEqual(policy["actor_permissions"], {"local-operator": [], "anonymous": []})
         permissions = policy["actor_permissions"]
         self.assertNotIn("*", permissions["local-operator"])
-        self.assertNotIn("gaurav", permissions)
-        self.assertNotIn("interview-demo", permissions)
+        self.assertEqual(set(permissions), {"local-operator", "anonymous"})
 
     def test_starter_policy_uses_exact_discovered_tool_names(self) -> None:
         policy = starter_policy(

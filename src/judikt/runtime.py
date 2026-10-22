@@ -306,7 +306,3 @@ class JudiktRuntime:
             "arguments": safe_arguments,
             "message": "Judikt evaluated policy and intentionally skipped execution.",
         }
-
-
-# Compatibility aliases for integrations using earlier project names.
-MCPGuardRuntime = JudiktRuntime
