@@ -15,9 +15,29 @@ from judikt.attackbench import AttackBenchError, report_passes, run_attackbench
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 POLICY = PROJECT_ROOT / "config" / "policies.yaml"
 FIXTURE = PROJECT_ROOT / "tests" / "fixtures" / "attackbench_smoke.jsonl"
+PUBLISHED_PUBLIC_RESULT = (
+    PROJECT_ROOT
+    / "docs"
+    / "evidence"
+    / "attackbench-gentellab-public-dev-2026-10-22.json"
+)
 
 
 class AttackBenchTest(unittest.TestCase):
+    def test_published_public_result_cannot_claim_the_unreleased_full_corpus(self) -> None:
+        report = json.loads(PUBLISHED_PUBLIC_RESULT.read_text())
+
+        self.assertEqual(report["source"]["sample_count"], 1_053)
+        self.assertEqual(report["evaluation"]["overall"]["samples"], 1_053)
+        self.assertEqual(report["evaluation"]["overall"]["true_positive"], 2)
+        self.assertEqual(report["evaluation"]["overall"]["false_negative"], 430)
+        self.assertEqual(report["full_corpus"]["expected_sample_count"], 70_448)
+        self.assertEqual(
+            report["full_corpus"]["status"],
+            "not_run_corpus_not_publicly_released",
+        )
+        self.assertFalse(report["evaluation"]["privacy"]["raw_payloads_in_report"])
+
     def test_smoke_profile_has_exact_metrics_and_no_raw_payloads(self) -> None:
         report = run_attackbench(
             FIXTURE,

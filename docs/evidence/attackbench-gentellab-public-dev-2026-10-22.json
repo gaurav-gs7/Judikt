@@ -1,0 +1,54 @@
+{
+  "evaluation": {
+    "field_mapping": {
+      "category": "auto",
+      "label": "Label",
+      "payload": "description",
+      "surface": "auto"
+    },
+    "latency_ms": {
+      "max": 17.554958,
+      "mean": 0.210527,
+      "p50": 0.054625,
+      "p95": 0.473375,
+      "p99": 4.46155
+    },
+    "mismatch_count": 430,
+    "overall": {
+      "accuracy": 0.591643,
+      "f1": 0.009217,
+      "false_negative": 430,
+      "false_negative_rate": 0.99537,
+      "false_positive": 0,
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 0.00463,
+      "samples": 1053,
+      "true_negative": 621,
+      "true_positive": 2
+    },
+    "policy_sha256": "37022f11b6cf968bd8ee5fb01d8593e01e35b999b85fb915564eb6c0b7f65fa1",
+    "privacy": {
+      "raw_payloads_in_report": false,
+      "sample_identifiers": "sha256"
+    },
+    "throughput_samples_per_second": 4749.974642
+  },
+  "full_corpus": {
+    "checked_at": "2026-10-22",
+    "evidence": "https://github.com/GenTelLab/MCP-Guard#-todo-list",
+    "expected_sample_count": 70448,
+    "status": "not_run_corpus_not_publicly_released"
+  },
+  "generated_at": "2026-10-22T15:23:37.913181+00:00",
+  "interpretation": "The public file labels broad harmful or unsafe descriptions and supplies no MCP surface or attack-category field. Its score measures Judikt's narrow deterministic MCP controls against that broader binary classification task; it is not a full MCP-AttackBench score.",
+  "schema_version": 1,
+  "source": {
+    "commit": "4bc97790256280480cf827c0a0fdb85e86754dfb",
+    "path": "test_data/dev.csv",
+    "repository": "https://github.com/GenTelLab/MCP-Guard",
+    "sample_count": 1053,
+    "scope": "Public development file in the authors' framework repository; the authors do not identify it as the complete MCP-AttackBench corpus.",
+    "sha256": "b53588fd4390288d309b8489faef85cb207e31c6d2b062aab9382a98becc8667"
+  }
+}

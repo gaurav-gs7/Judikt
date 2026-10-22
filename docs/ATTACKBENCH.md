@@ -4,18 +4,34 @@ Judikt includes a reproducible adapter for labeled MCP security datasets, includ
 
 The [MCP-AttackBench paper](https://arxiv.org/abs/2508.10991) reports 70,448 samples across jailbreak, prompt injection, cross-origin escalation, tool manipulation, command injection, data exfiltration, SQL injection, and related attacks. The [ACL Findings paper](https://aclanthology.org/2026.findings-acl.240/) defines accuracy, precision, recall, F1, and average latency as evaluation metrics.
 
-## Honest Result Scope
+## Published Results And Availability
 
-The repository does not vendor or redistribute the paper's full corpus. The bundled `tests/fixtures/attackbench_smoke.jsonl` file contains eight project-authored adapter checks and must not be presented as an MCP-AttackBench score.
+As of 2026-10-22, the authors' official framework repository still marks release of the MCP-AttackBench data as incomplete. Its only public data file is `test_data/dev.csv`: 1,053 binary-labeled descriptions at commit `4bc97790256280480cf827c0a0fdb85e86754dfb`. The file has no attack-category or MCP-surface field, and the repository does not identify it as the complete corpus.
+
+Judikt evaluated every row in that public file and publishes the reproducible result in [`docs/evidence/attackbench-gentellab-public-dev-2026-10-22.json`](evidence/attackbench-gentellab-public-dev-2026-10-22.json). The result is deliberately reported as an evaluation of the authors' public development file, not as MCP-AttackBench.
 
 | Evidence | Samples | Precision | Recall | F1 | Claim |
 | --- | ---: | ---: | ---: | ---: | --- |
 | Tier 2 CI smoke profile | 8 | 1.0 | 1.0 | 1.0 | Parser, detector, metrics, threshold, and privacy regression only |
-| Full MCP-AttackBench | 70,448 expected | Not published | Not published | Not published | Run after obtaining the independently maintained corpus |
+| GenTelLab public `dev.csv` | 1,053 | 1.0 | 0.004630 | 0.009217 | Complete run of the repository's public development file; broad unsafe-content labels, not the full benchmark |
+| Full MCP-AttackBench | 70,448 expected | Not run | Not run | Not run | Corpus is not publicly released by its authors as of 2026-10-22 |
 
-CI stores the smoke JSON inside the `judikt-ci-evidence` artifact. A full result is publishable only when the report records `sample_count: 70448` and the input digest of the acquired corpus.
+The low public-development recall is not hidden: Judikt detected 2 of 432 positive labels and produced no false positives. This shows that its deterministic MCP injection and exfiltration rules are not a general harmful-intent classifier. The result is useful negative evidence, but it cannot substitute for the categorized MCP benchmark promised by the paper.
 
-## Run It
+CI stores the smoke JSON inside the `judikt-ci-evidence` artifact. A full result is publishable only when the report records `sample_count: 70448` and the input digest of the independently acquired corpus.
+
+## Reproduce The Public Development Run
+
+```bash
+git clone https://github.com/GenTelLab/MCP-Guard /tmp/gentellab-mcp-guard
+PYTHONPATH=src ./scripts/python.sh scripts/run_gentellab_public_eval.py \
+  /tmp/gentellab-mcp-guard \
+  --output build/attackbench-gentellab-public-dev.json
+```
+
+The script pins the upstream commit, SHA-256 digest, and expected 1,053 rows. It fails instead of publishing if any of those inputs drift.
+
+## Run The Full Corpus When Released
 
 JSON, JSONL, NDJSON, and CSV work without another dependency:
 
