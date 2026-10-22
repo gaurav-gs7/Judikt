@@ -1,62 +1,16 @@
 # Judikt
 
-Judikt is a deterministic security and reliability control plane for Model Context Protocol (MCP) tool execution. It governs the request before an external tool runs, inspects the untrusted result before it reaches an agent, and produces tamper-evident operational evidence for both decisions.
+Judikt is a deterministic security and reliability control plane for Model Context Protocol (MCP) tool execution: it governs requests before an external tool runs, inspects untrusted results before they reach an agent, and records tamper-evident evidence for both decisions. Its core runtime needs only Python, no local model or API key, while optional profiles add authenticated Streamable HTTP, Redis, OpenTelemetry/OpenInference, Docker observability, AWS deployment, and LLM-assisted incident summaries without putting an LLM in the allow/deny path.
 
-The core demo runs on an 8 GB laptop with Python only, no local model, and no API key. Optional profiles add the official MCP SDK, Redis, OpenTelemetry/OpenInference, Docker observability, AWS deployment, and a Groq incident summary. No LLM participates in an allow or deny decision.
-
-## Product and Live Terminal Demo
+```bash
+judikt wrap -- npx -y @modelcontextprotocol/server-filesystem /absolute/safe/path
+```
 
 ![Judikt hybrid walkthrough using polished slides for concepts and captured terminal output for real commands, MCP backends, policy processing, tool results, quarantine, metrics, and signed audit verification](docs/assets/judikt-demo.gif)
 
-Every green terminal prompt in this recording is an executable repository command. The recorder launches the real Streamable HTTP MCP server, drives it through the official MCP client, and renders only the arguments, responses, metrics, audit state, failure drills, and benchmark summaries captured from those executions.
-
-## Why This Project
+## Why Judikt
 
 An MCP server can expose operationally powerful tools to an AI agent. The interesting production question is not whether the agent can call a tool. It is whether the platform can constrain, observe, disable, and explain those calls under pressure.
-
-Judikt demonstrates:
-
-- MCP gateway proxying over JSON-RPC stdio
-- Official MCP SDK Streamable HTTP server for production-facing clients
-- Operator-configured proxying to independently built stdio MCP servers
-- Versioned interoperability harness for official Filesystem, Memory, and GitHub MCP servers
-- Minimal subprocess environments that expose only explicitly brokered upstream credentials
-- Recursive tool-description and JSON Schema inspection before trust
-- SHA-256 tool-definition pinning and fail-closed rug-pull detection
-- Deterministic direct and indirect prompt-injection inspection across tool arguments, metadata, and results
-- Evasion-resistant scanning for base64, hex, URL encoding, invisible Unicode, confusables, leetspeak, spaced-letter payloads, and injections split across JSON fields
-- Narrow multilingual rules for common instruction-override and role-reassignment phrases in Spanish, French, German, Portuguese, Chinese, and Russian
-- Quarantine envelopes that do not return malicious text to the agent
-- Policy-as-code allowlists and blocked argument patterns
-- JWT/OIDC resource-server authentication with issuer, audience, group, and scope validation
-- Authenticated-subject binding that rejects caller actor spoofing
-- Operator-bound stdio identity that ignores caller-supplied `actor`, `user`, and `requested_by`
-- OAuth protected-resource metadata and caller-token passthrough denial
-- Scoped OAuth challenges and exact HTTP Origin validation
-- HMAC-signed approval tokens for restart and rollback operations
-- Slack button approvals with signed callbacks, approver allowlists, deduplication, and replay protection
-- Rollback-plan enforcement before production-impacting actions execute
-- Dry-run-only and shadow-mode outcomes for safe agent evaluation
-- Deterministic risk scoring for production actions
-- Secret redaction for audit logs and agent-visible responses
-- Per-tool rate limits and immediate kill switches
-- Optional Redis-backed distributed rate limits for multi-replica deployments
-- Atomic Redis counters with privacy-preserving hashed actor/tool keys and live multi-instance CI
-- Circuit breakers for repeated upstream tool failures
-- Hash-chained and optionally HMAC-signed local audit evidence
-- Fail-closed audit signing and full-chain startup verification for production mode
-- JSONL, S3, generic HTTPS SIEM, or Splunk HEC audit shipping plus individually signed DynamoDB serverless events
-- Reusable AWS Secrets Manager and Vault KV secret brokerage across runtime credentials
-- Correlation IDs, Prometheus metrics, OpenInference/OpenTelemetry traces, and AWS X-Ray
-- Docker Compose observability stack with Prometheus, Grafana, Tempo, Jaeger, and Redis
-- Helm chart for Kubernetes deployment
-- Optional Groq incident analysis with an offline fallback
-- Optional OpenInference-compatible traces exported through OpenTelemetry
-- MCP-38 coverage matrix and adversarial policy regression suite
-- MCP-AttackBench-compatible dataset adapter with per-category metrics and privacy-safe reports
-- Reproducible full-pipeline latency, overhead, throughput, and audit-integrity benchmark
-- Durable blocked-finding export that creates deduplicated incidents in Argus's RCA pipeline
-- AWS Secrets Manager, X-Ray tracing, IAM review, SLOs, runbooks, and failure-mode tests
 
 ## Architecture
 
@@ -213,6 +167,52 @@ The `platform-ops`, `kubernetes`, and `incident` adapters are walkthrough fixtur
 
 The test suite launches [`tests/fixtures/external_mcp_server.py`](tests/fixtures/external_mcp_server.py) as an independent process and proves normal and text-only responses, paginated discovery, server-initiated requests, environment isolation, injected-result quarantine, and changed metadata blocking. The versioned [community interoperability harness](docs/COMMUNITY_INTEROP.md) separately targets the official MCP Filesystem and Memory servers plus GitHub's official read-only server.
 
+## Security and Operations Controls
+
+Judikt includes:
+
+- MCP gateway proxying over JSON-RPC stdio
+- Official MCP SDK Streamable HTTP server for production-facing clients
+- Operator-configured proxying to independently built stdio MCP servers
+- Versioned interoperability harness for official Filesystem, Memory, and GitHub MCP servers
+- Minimal subprocess environments that expose only explicitly brokered upstream credentials
+- Recursive tool-description and JSON Schema inspection before trust
+- SHA-256 tool-definition pinning and fail-closed rug-pull detection
+- Deterministic direct and indirect prompt-injection inspection across tool arguments, metadata, and results
+- Evasion-resistant scanning for base64, hex, URL encoding, invisible Unicode, confusables, leetspeak, spaced-letter payloads, and injections split across JSON fields
+- Narrow multilingual rules for common instruction-override and role-reassignment phrases in Spanish, French, German, Portuguese, Chinese, and Russian
+- Quarantine envelopes that do not return malicious text to the agent
+- Policy-as-code allowlists and blocked argument patterns
+- JWT/OIDC resource-server authentication with issuer, audience, group, and scope validation
+- Authenticated-subject binding that rejects caller actor spoofing
+- Operator-bound stdio identity that ignores caller-supplied `actor`, `user`, and `requested_by`
+- OAuth protected-resource metadata and caller-token passthrough denial
+- Scoped OAuth challenges and exact HTTP Origin validation
+- HMAC-signed approval tokens for restart and rollback operations
+- Slack button approvals with signed callbacks, approver allowlists, deduplication, and replay protection
+- Rollback-plan enforcement before production-impacting actions execute
+- Dry-run-only and shadow-mode outcomes for safe agent evaluation
+- Deterministic risk scoring for production actions
+- Secret redaction for audit logs and agent-visible responses
+- Per-tool rate limits and immediate kill switches
+- Optional Redis-backed distributed rate limits for multi-replica deployments
+- Atomic Redis counters with privacy-preserving hashed actor/tool keys and live multi-instance CI
+- Circuit breakers for repeated upstream tool failures
+- Hash-chained and optionally HMAC-signed local audit evidence
+- Fail-closed audit signing and full-chain startup verification for production mode
+- JSONL, S3, generic HTTPS SIEM, or Splunk HEC audit shipping plus individually signed DynamoDB serverless events
+- Reusable AWS Secrets Manager and Vault KV secret brokerage across runtime credentials
+- Correlation IDs, Prometheus metrics, OpenInference/OpenTelemetry traces, and AWS X-Ray
+- Docker Compose observability stack with Prometheus, Grafana, Tempo, Jaeger, and Redis
+- Helm chart for Kubernetes deployment
+- Optional Groq incident analysis with an offline fallback
+- Optional OpenInference-compatible traces exported through OpenTelemetry
+- MCP-38 coverage matrix and adversarial policy regression suite
+- MCP-AttackBench-compatible dataset adapter with per-category metrics and privacy-safe reports
+- Reproducible full-pipeline latency, overhead, throughput, and audit-integrity benchmark
+- Durable blocked-finding export that creates deduplicated incidents in Argus's RCA pipeline
+- AWS Secrets Manager, X-Ray tracing, IAM review, SLOs, runbooks, and failure-mode tests
+
 ## Optional Groq Integration
 
 The demo produces a deterministic local incident summary by default. To add a hosted LLM summary:
@@ -272,6 +272,12 @@ PYTHONPATH=src ./scripts/python.sh -m unittest discover -s tests -v
 
 The suite exercises the actual subprocess MCP boundary as well as allow, deny, redaction, approval, kill-switch, circuit-breaker, audit, and fallback-analysis behavior.
 
+Run the [skill acceptance suite](docs/SKILL_ACCEPTANCE.md) against a fresh wheel installation:
+
+```bash
+./scripts/run_skill_acceptance.sh
+```
+
 Run the adversarial eval harness:
 
 ```bash
@@ -280,7 +286,7 @@ Run the adversarial eval harness:
 
 The evals cover unsafe diagnostics, direct prompt injection, token passthrough, unapproved destructive actions, unknown tools, safe diagnostics, health checks, and audit redaction. The report also validates all 38 entries in [`config/mcp38_coverage.json`](config/mcp38_coverage.json): currently 12 covered, 21 partial, and 5 explicitly not covered under the definition stored in that file.
 
-The separate [MCP-AttackBench-compatible evaluator](docs/ATTACKBENCH.md) reads JSONL, JSON, CSV, or optional Parquet datasets and reports accuracy, precision, recall, F1, false-positive/negative rates, per-category coverage, latency percentiles, throughput, and input/policy digests. Its bundled eight-sample CI fixture validates the adapter; it is not represented as a result on the independent 70,448-sample corpus.
+The separate [MCP-AttackBench-compatible evaluator](docs/ATTACKBENCH.md) reads JSONL, JSON, CSV, or optional Parquet datasets and reports accuracy, precision, recall, F1, false-positive/negative rates, per-category coverage, latency percentiles, throughput, and input/policy digests. Judikt publishes a pinned result for all 1,053 rows in GenTelLab's public development file and labels its low recall openly; the authors' 70,448-sample MCP-AttackBench corpus remains unreleased and is not claimed as evaluated.
 
 Run the failure-mode harness:
 
