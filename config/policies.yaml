@@ -69,11 +69,10 @@
     "kubernetes.restart_pod"
   ],
   "actor_permissions": {
-    "gaurav": [
-      "*"
-    ],
-    "interview-demo": [
-      "*"
+    "demo-operator": [
+      "platform.*",
+      "kubernetes.*",
+      "incident.*"
     ],
     "sre-oncall": [
       "platform.*",

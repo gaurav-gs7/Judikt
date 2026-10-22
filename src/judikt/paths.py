@@ -20,6 +20,7 @@ def packaged_resource(name: str) -> Path:
 
 
 DEFAULT_POLICY_PATH = packaged_resource("default-policy.json")
+DEMO_POLICY_PATH = packaged_resource("demo-policy.json")
 DEFAULT_INTEROP_PROFILES_PATH = packaged_resource("interop-profiles.json")
 DEFAULT_MCP38_COVERAGE_PATH = packaged_resource("mcp38-coverage.json")
 

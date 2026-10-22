@@ -44,7 +44,7 @@ def run_demo(runtime: JudiktRuntime) -> None:
     rollback_arguments = {
         "service": "payments-api",
         "version": "payments-api@2026.05.2",
-        "actor": "interview-demo",
+        "actor": "demo-operator",
         "environment": "production",
         "rollback_plan": ROLLBACK_PLAN,
     }
@@ -57,9 +57,9 @@ def run_demo(runtime: JudiktRuntime) -> None:
         rollback_arguments,
     )
 
-    print("\nAPPROVAL API | PolicyEngine.issue_approval(actor='interview-demo', ttl_seconds=300)")
+    print("\nAPPROVAL API | PolicyEngine.issue_approval(actor='demo-operator', ttl_seconds=300)")
     approval_token = runtime.policy.issue_approval(
-        actor="interview-demo",
+        actor="demo-operator",
         reason="rollback after elevated payments-api 5xx rate",
         server="platform-ops",
         tool="platform.rollback_deployment",
@@ -84,7 +84,7 @@ def run_demo(runtime: JudiktRuntime) -> None:
         {
             "namespace": "prod",
             "pod": "payment-service-xyz",
-            "actor": "interview-demo",
+            "actor": "demo-operator",
             "environment": "production",
             "rollback_plan": ROLLBACK_PLAN,
             "dry_run": True,

@@ -242,12 +242,12 @@ DASHBOARD_HTML = """<!doctype html>
       const args = {
         service: 'payments-api',
         version: 'payments-api@2026.05.2',
-        actor: 'interview-demo',
+        actor: 'demo-operator',
         environment: 'production',
         rollback_plan: 'verify service health and restore the previous release if errors increase'
       };
       const approvalBody = JSON.stringify({
-        actor: 'interview-demo',
+        actor: 'demo-operator',
         reason: 'rollback after error-rate spike',
         server: 'platform-ops',
         tool: 'platform.rollback_deployment',

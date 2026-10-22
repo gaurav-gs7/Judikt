@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from .paths import DEFAULT_MCP38_COVERAGE_PATH, DEFAULT_POLICY_PATH
+from .paths import DEFAULT_MCP38_COVERAGE_PATH, DEMO_POLICY_PATH
 from .runtime import JudiktRuntime
 
 ROLLBACK_PLAN = "verify service health and restore previous known-good release if errors increase"
@@ -67,7 +67,7 @@ CASES = [
         {
             "service": "payments-api",
             "version": "payments-api@2026.05.2",
-            "actor": "gaurav",
+            "actor": "demo-operator",
             "rollback_plan": ROLLBACK_PLAN,
         },
         False,
@@ -80,7 +80,7 @@ CASES = [
         {
             "namespace": "prod",
             "pod": "payment-service-xyz",
-            "actor": "gaurav",
+            "actor": "demo-operator",
             "rollback_plan": ROLLBACK_PLAN,
             "dry_run": True,
         },
@@ -118,7 +118,7 @@ CASES = [
 ]
 
 
-def run_evals(policy_path: Path = DEFAULT_POLICY_PATH) -> dict[str, Any]:
+def run_evals(policy_path: Path = DEMO_POLICY_PATH) -> dict[str, Any]:
     with tempfile.TemporaryDirectory() as temp_dir:
         runtime = JudiktRuntime(
             policy_path,
@@ -158,7 +158,7 @@ def run_evals(policy_path: Path = DEFAULT_POLICY_PATH) -> dict[str, Any]:
             runtime.close()
 
 
-def print_evals(policy_path: Path = DEFAULT_POLICY_PATH) -> int:
+def print_evals(policy_path: Path = DEMO_POLICY_PATH) -> int:
     report = run_evals(policy_path)
     print(json.dumps(report, indent=2))
     return 0 if report["passed"] else 1

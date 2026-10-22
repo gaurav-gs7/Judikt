@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .ops_runtime import JudiktOpsRuntime
-from .paths import DEFAULT_POLICY_PATH
+from .paths import DEMO_POLICY_PATH
 
 
 ROLLBACK_PLAN = "verify health checks and restore previous known-good release if errors increase"
@@ -21,7 +21,7 @@ class FailureCaseResult:
     observed: str
 
 
-def run_failure_tests(policy_path: Path = DEFAULT_POLICY_PATH) -> dict[str, Any]:
+def run_failure_tests(policy_path: Path = DEMO_POLICY_PATH) -> dict[str, Any]:
     with tempfile.TemporaryDirectory() as tmp:
         runtime = JudiktOpsRuntime(
             policy_path,
@@ -42,7 +42,7 @@ def run_failure_tests(policy_path: Path = DEFAULT_POLICY_PATH) -> dict[str, Any]
                             {
                                 "service": "payments-api",
                                 "version": "payments-api@2026.05.2",
-                                "actor": "gaurav",
+                                "actor": "demo-operator",
                                 "rollback_plan": ROLLBACK_PLAN,
                             },
                         ),

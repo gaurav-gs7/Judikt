@@ -99,10 +99,10 @@ class LocalRateLimiterTest(unittest.TestCase):
         redis_module = types.SimpleNamespace(Redis=FakeRedisFactory, RedisError=Exception)
         with patch.dict(sys.modules, {"redis": redis_module}):
             limiter = RedisRateLimiter("redis://shared:6379/0")
-            self.assertTrue(limiter.allow("actor:gaurav:tool:restart", 1, 60))
-            self.assertFalse(limiter.allow("actor:gaurav:tool:restart", 1, 60))
+            self.assertTrue(limiter.allow("actor:local-operator:tool:restart", 1, 60))
+            self.assertFalse(limiter.allow("actor:local-operator:tool:restart", 1, 60))
 
-        self.assertNotIn("gaurav", str(observed["key"]))
+        self.assertNotIn("local-operator", str(observed["key"]))
         self.assertIn("PEXPIRE", str(observed["script"]))
         self.assertEqual(observed["ttl"], 60_000)
 

@@ -52,7 +52,7 @@ class RuntimeTest(unittest.TestCase):
         rollback = self.runtime.call_tool(
             "platform-ops",
             "platform.rollback_deployment",
-            {"service": "payments-api", "version": "payments-api@2026.05.2", "actor": "gaurav"},
+            {"service": "payments-api", "version": "payments-api@2026.05.2", "actor": "demo-operator"},
         )
 
         self.assertFalse(sensitive_read.allowed)
@@ -81,11 +81,11 @@ class RuntimeTest(unittest.TestCase):
         arguments = {
             "service": "payments-api",
             "version": "payments-api@2026.05.2",
-            "actor": "gaurav",
+            "actor": "demo-operator",
             "rollback_plan": ROLLBACK_PLAN,
         }
         token = self.runtime.policy.issue_approval(
-            actor="gaurav",
+            actor="demo-operator",
             reason="unit-test approved rollback",
             server="platform-ops",
             tool="platform.rollback_deployment",
@@ -108,11 +108,11 @@ class RuntimeTest(unittest.TestCase):
         arguments = {
             "service": "payments-api",
             "version": "payments-api@2026.05.2",
-            "actor": "gaurav",
+            "actor": "demo-operator",
             "rollback_plan": ROLLBACK_PLAN,
         }
         token = self.runtime.policy.issue_approval(
-            actor="gaurav",
+            actor="demo-operator",
             reason="rollback after elevated 5xx rate",
             server="platform-ops",
             tool="platform.rollback_deployment",
@@ -134,11 +134,11 @@ class RuntimeTest(unittest.TestCase):
         arguments = {
             "service": "payments-api",
             "version": "payments-api@2026.05.2",
-            "actor": "gaurav",
+            "actor": "demo-operator",
             "rollback_plan": ROLLBACK_PLAN,
         }
         token = self.runtime.policy.issue_approval(
-            actor="gaurav",
+            actor="demo-operator",
             reason="rollback after elevated 5xx rate",
             server="platform-ops",
             tool="platform.rollback_deployment",
@@ -146,7 +146,7 @@ class RuntimeTest(unittest.TestCase):
             ttl_seconds=300,
         )
         expired = self.runtime.policy.issue_approval(
-            actor="gaurav",
+            actor="demo-operator",
             reason="expired approval",
             server="platform-ops",
             tool="platform.rollback_deployment",
@@ -197,11 +197,11 @@ class RuntimeTest(unittest.TestCase):
             arguments = {
                 "service": "payments-api",
                 "version": f"payments-api@2026.05.{index}",
-                "actor": "gaurav",
+                "actor": "demo-operator",
                 "rollback_plan": ROLLBACK_PLAN,
             }
             token = self.runtime.policy.issue_approval(
-                actor="gaurav",
+                actor="demo-operator",
                 reason="rate-limit test",
                 server="platform-ops",
                 tool="platform.rollback_deployment",
@@ -216,11 +216,11 @@ class RuntimeTest(unittest.TestCase):
         final_arguments = {
             "service": "payments-api",
             "version": "payments-api@2026.04.9",
-            "actor": "gaurav",
+            "actor": "demo-operator",
             "rollback_plan": ROLLBACK_PLAN,
         }
         final_token = self.runtime.policy.issue_approval(
-            actor="gaurav",
+            actor="demo-operator",
             reason="rate-limit test final call",
             server="platform-ops",
             tool="platform.rollback_deployment",

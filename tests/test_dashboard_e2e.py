@@ -147,14 +147,14 @@ class DashboardEndToEndTest(unittest.TestCase):
         arguments = {
             "service": "payments-api",
             "version": "payments-api@2026.05.2",
-            "actor": "interview-demo",
+            "actor": "demo-operator",
             "environment": "production",
             "rollback_plan": "verify service health and restore the previous release if errors increase",
         }
         status, approval, _ = self._json_request(
             "/api/approval",
             {
-                "actor": "interview-demo",
+                "actor": "demo-operator",
                 "reason": "rollback after elevated error rate",
                 "server": "platform-ops",
                 "tool": "platform.rollback_deployment",
@@ -237,7 +237,7 @@ class DashboardEndToEndTest(unittest.TestCase):
         connection.close()
 
     def test_dashboard_rollback_button_supplies_all_policy_required_arguments(self) -> None:
-        self.assertIn("actor: 'interview-demo'", DASHBOARD_HTML)
+        self.assertIn("actor: 'demo-operator'", DASHBOARD_HTML)
         self.assertIn("environment: 'production'", DASHBOARD_HTML)
         self.assertIn("rollback_plan:", DASHBOARD_HTML)
 

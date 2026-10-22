@@ -23,10 +23,13 @@ from .performance import (
     run_gateway_benchmark,
 )
 from .paths import (
+    DEMO_POLICY_PATH,
     DEFAULT_INTEROP_PROFILES_PATH,
     DEFAULT_POLICY_PATH,
     default_audit_path,
 )
+from .policy_init import PolicyInitializationError, derive_server_name, initialize_policy
+from .protocol import MCPProtocolError
 from .real_mcp import serve_real_mcp
 from .runtime import JudiktRuntime
 
@@ -38,6 +41,7 @@ def parser() -> argparse.ArgumentParser:
     subparsers = result.add_subparsers(dest="command", required=True)
     demo = subparsers.add_parser("demo", help="run the interview demo")
     _add_runtime_options(demo)
+    demo.set_defaults(policy=DEMO_POLICY_PATH)
     gateway = subparsers.add_parser("serve-mcp", help="expose Judikt over JSON-RPC stdio")
     _add_runtime_options(gateway)
     dashboard = subparsers.add_parser("dashboard", help="run the local HTTP dashboard")
@@ -60,6 +64,7 @@ def parser() -> argparse.ArgumentParser:
     approval.add_argument("--ttl-seconds", type=int, default=300)
     evals = subparsers.add_parser("eval", help="run adversarial safety evals")
     _add_runtime_options(evals)
+    evals.set_defaults(policy=DEMO_POLICY_PATH)
     interop = subparsers.add_parser(
         "interop",
         help="verify Judikt against pinned independently built MCP servers",
@@ -88,6 +93,7 @@ def parser() -> argparse.ArgumentParser:
     attackbench.add_argument("--min-recall", type=float, default=0.0)
     attackbench.add_argument("--min-f1", type=float, default=0.0)
     attackbench.add_argument("--output", type=Path)
+    attackbench.set_defaults(policy=DEMO_POLICY_PATH)
     performance = subparsers.add_parser(
         "performance",
         help="measure full in-process Judikt tool-call overhead and throughput",
@@ -98,8 +104,18 @@ def parser() -> argparse.ArgumentParser:
     performance.add_argument("--max-p99-ms", type=float, default=0.0)
     performance.add_argument("--min-throughput", type=float, default=0.0)
     performance.add_argument("--output", type=Path)
+    performance.set_defaults(policy=DEMO_POLICY_PATH)
     backend = subparsers.add_parser("backend", help=argparse.SUPPRESS)
     backend.add_argument("name", choices=["platform-ops", "incident", "kubernetes"])
+    init = subparsers.add_parser(
+        "init",
+        help="generate a starter policy from an upstream MCP tools/list response",
+    )
+    init.add_argument("--name", default="")
+    init.add_argument("--identity", default="local-operator")
+    init.add_argument("--output", type=Path, default=Path("judikt-policy.json"))
+    init.add_argument("--force", action="store_true")
+    init.add_argument("upstream_command", nargs=argparse.REMAINDER)
     return result
 
 
@@ -114,6 +130,25 @@ def _enabled(name: str) -> bool:
 
 def main() -> None:
     args = parser().parse_args()
+    if args.command == "init":
+        upstream_command = list(args.upstream_command)
+        if upstream_command and upstream_command[0] == "--":
+            upstream_command = upstream_command[1:]
+        try:
+            report = initialize_policy(
+                upstream_command,
+                server_name=args.name or derive_server_name(upstream_command),
+                output_path=args.output,
+                identity=args.identity,
+                force=args.force,
+            )
+        except (PolicyInitializationError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"init: {exc}") from None
+        print(json.dumps(report, indent=2))
+        return
+    demo_mode = args.command == "demo" or _enabled("JUDIKT_DEMO_MODE")
+    if demo_mode and args.policy == DEFAULT_POLICY_PATH:
+        args.policy = DEMO_POLICY_PATH
     if args.command == "backend":
         run_backend(args.name)
         return
@@ -186,7 +221,7 @@ def main() -> None:
     runtime = JudiktRuntime(
         args.policy,
         args.audit_db,
-        include_demo_servers=args.command == "demo" or _enabled("JUDIKT_DEMO_MODE"),
+        include_demo_servers=demo_mode,
     )
     if args.command == "demo":
         try:

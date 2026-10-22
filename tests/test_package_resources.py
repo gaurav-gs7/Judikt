@@ -11,6 +11,7 @@ from judikt.paths import (
     DEFAULT_INTEROP_PROFILES_PATH,
     DEFAULT_MCP38_COVERAGE_PATH,
     DEFAULT_POLICY_PATH,
+    DEMO_POLICY_PATH,
     default_audit_path,
 )
 
@@ -19,6 +20,7 @@ class PackageResourcesTest(unittest.TestCase):
     def test_runtime_resources_are_shipped_inside_the_package(self) -> None:
         self.assertEqual(DEFAULT_POLICY_PATH.parent.name, "resources")
         self.assertIn("allowed_tools", json.loads(DEFAULT_POLICY_PATH.read_text()))
+        self.assertIn("platform-ops", json.loads(DEMO_POLICY_PATH.read_text())["allowed_tools"])
         self.assertIn("profiles", json.loads(DEFAULT_INTEROP_PROFILES_PATH.read_text()))
         self.assertEqual(len(json.loads(DEFAULT_MCP38_COVERAGE_PATH.read_text())["threats"]), 38)
 

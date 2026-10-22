@@ -130,9 +130,9 @@ class LocalStdioIdentityTest(unittest.TestCase):
         arguments = _bind_local_identity(
             {
                 "service": "payments-api",
-                "actor": "gaurav",
-                "user": "gaurav",
-                "requested_by": "gaurav",
+                "actor": "untrusted-actor",
+                "user": "untrusted-actor",
+                "requested_by": "untrusted-actor",
                 "environment": "production",
                 "rollback_plan": "restore the prior deployment",
                 "dry_run": True,

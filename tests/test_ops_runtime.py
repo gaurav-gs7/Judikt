@@ -85,7 +85,7 @@ class JudiktOpsRuntimeTest(unittest.TestCase):
             result = runtime.call_tool(
                 "platform-ops",
                 "platform.rollback_deployment",
-                {"service": "payments-api", "version": "payments-api@2026.05.2", "actor": "gaurav"},
+                {"service": "payments-api", "version": "payments-api@2026.05.2", "actor": "demo-operator"},
             )
             self.assertFalse(result.allowed)
             self.assertEqual(result.reason, "approval token is required for this critical-risk action")
@@ -133,7 +133,7 @@ class JudiktOpsRuntimeTest(unittest.TestCase):
                 {
                     "namespace": "prod",
                     "pod": "payment-service-xyz",
-                    "actor": "gaurav",
+                    "actor": "demo-operator",
                     "rollback_plan": ROLLBACK_PLAN,
                     "dry_run": True,
                 },
@@ -155,7 +155,7 @@ class JudiktOpsRuntimeTest(unittest.TestCase):
                 "platform.restart_deployment",
                 {
                     "service": "payments-api",
-                    "actor": "gaurav",
+                    "actor": "demo-operator",
                     "rollback_plan": ROLLBACK_PLAN,
                     "shadow_mode": True,
                 },

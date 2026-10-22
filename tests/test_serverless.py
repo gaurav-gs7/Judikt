@@ -159,7 +159,7 @@ class ServerlessGatewayTests(unittest.TestCase):
                             "arguments": {
                                 "service": "payments-api",
                                 "version": "payments-api@2026.05.2",
-                                "actor": "gaurav",
+                                "actor": "demo-operator",
                                 "rollback_plan": "verify health checks and restore previous release if errors increase",
                             },
                         }
@@ -194,7 +194,7 @@ class ServerlessGatewayTests(unittest.TestCase):
                             "arguments": {
                                 "namespace": "prod",
                                 "pod": "payment-service-xyz",
-                                "actor": "gaurav",
+                                "actor": "demo-operator",
                                 "rollback_plan": "verify health checks and restore previous release if errors increase",
                                 "dry_run": True,
                             },
@@ -362,7 +362,7 @@ class ServerlessGatewayTests(unittest.TestCase):
 
     def test_serverless_policy_blocks_caller_supplied_upstream_token(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=False):
-            policy = serverless.ServerlessPolicy(serverless.POLICY_PATH)
+            policy = serverless.ServerlessPolicy(serverless.DEMO_POLICY_PATH)
         policy._within_distributed_rate_limit = mock.Mock(return_value=True)
 
         result = policy.evaluate(
@@ -378,7 +378,7 @@ class ServerlessGatewayTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"JUDIKT_APPROVAL_SECRET": "secret"}, clear=True), mock.patch(
             "judikt.serverless._get_state", return_value=None
         ):
-            policy = serverless.ServerlessPolicy(serverless.POLICY_PATH)
+            policy = serverless.ServerlessPolicy(serverless.DEMO_POLICY_PATH)
         policy._within_distributed_rate_limit = mock.Mock(return_value=True)
 
         result = policy.evaluate(
@@ -455,7 +455,7 @@ class ServerlessGatewayTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"JUDIKT_APPROVAL_SECRET": "secret"}, clear=True), mock.patch(
             "judikt.serverless._get_state", return_value=None
         ):
-            policy = serverless.ServerlessPolicy(serverless.POLICY_PATH)
+            policy = serverless.ServerlessPolicy(serverless.DEMO_POLICY_PATH)
 
         cases = [
             ({("KILL_SWITCH", "SERVER#platform-ops"): {"enabled": False}}, {}, "kill_switch"),
@@ -485,7 +485,7 @@ class ServerlessGatewayTests(unittest.TestCase):
                 "platform.restart_deployment",
                 {
                     "service": "payments-api",
-                    "actor": "gaurav",
+                    "actor": "demo-operator",
                     "rollback_plan": "restore the previous release after checking health",
                     "shadow_mode": True,
                 },
@@ -721,7 +721,7 @@ class ServerlessGatewayTests(unittest.TestCase):
                 arguments={
                     "service": "payments-api",
                     "version": "v1",
-                    "actor": "gaurav",
+                    "actor": "demo-operator",
                     "rollback_plan": "restore the previous release after checking health",
                 },
                 correlation_id="corr",

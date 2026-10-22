@@ -190,7 +190,7 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
                     "platform.restart_deployment",
                     {
                         "service": "payments-api",
-                        identity_field: "gaurav",
+                        identity_field: "untrusted-actor",
                         "environment": "production",
                         "rollback_plan": "verify health and restore the prior deployment",
                         "dry_run": True,

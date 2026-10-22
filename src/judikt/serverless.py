@@ -18,7 +18,7 @@ from .backends import INCIDENT_TOOLS, KUBERNETES_TOOLS, PLATFORM_TOOLS, Incident
 from .content_guard import ContentGuard, quarantine_result
 from .findings import build_finding_event, should_emit_finding
 from .models import PolicyDecision
-from .paths import DEFAULT_POLICY_PATH
+from .paths import DEFAULT_POLICY_PATH, DEMO_POLICY_PATH
 from .policy import PolicyEngine
 from .risk import RiskEngine
 
@@ -343,6 +343,8 @@ def _content_guard() -> ContentGuard:
 def _policy_path() -> Path:
     policy_item = _get_state("POLICY", "default")
     if not policy_item or "document" not in policy_item:
+        if _demo_mode_enabled() and "JUDIKT_POLICY_PATH" not in os.environ:
+            return DEMO_POLICY_PATH
         return POLICY_PATH
     runtime_path = Path("/tmp/judikt/policies.json")
     runtime_path.parent.mkdir(parents=True, exist_ok=True)
