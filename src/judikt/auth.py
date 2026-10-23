@@ -31,8 +31,12 @@ class AuthConfig:
     jwt_jwks_url: str = ""
     resource_uri: str = "http://127.0.0.1:8080/mcp"
     authorization_server: str = ""
-    required_scopes: tuple[str, ...] = ("mcp:tools",)
+    required_scopes: tuple[str, ...] = ()
+    read_scope: str = "mcp:read"
+    execute_scope: str = "mcp:execute"
+    approve_scope: str = "mcp:approve"
     admin_scope: str = "mcp:admin"
+    bearer_role: str = "execute"
     allowed_origins: tuple[str, ...] = ()
 
     @classmethod
@@ -59,9 +63,13 @@ class AuthConfig:
             resource_uri=os.getenv("JUDIKT_RESOURCE_URI", "http://127.0.0.1:8080/mcp"),
             authorization_server=os.getenv("JUDIKT_AUTHORIZATION_SERVER", ""),
             required_scopes=tuple(
-                scope for scope in os.getenv("JUDIKT_REQUIRED_SCOPES", "mcp:tools").split() if scope
+                scope for scope in os.getenv("JUDIKT_REQUIRED_SCOPES", "").split() if scope
             ),
+            read_scope=os.getenv("JUDIKT_READ_SCOPE", "mcp:read"),
+            execute_scope=os.getenv("JUDIKT_EXECUTE_SCOPE", "mcp:execute"),
+            approve_scope=os.getenv("JUDIKT_APPROVE_SCOPE", "mcp:approve"),
             admin_scope=os.getenv("JUDIKT_ADMIN_SCOPE", "mcp:admin"),
+            bearer_role=os.getenv("JUDIKT_HTTP_BEARER_ROLE", "execute").lower(),
             allowed_origins=tuple(
                 origin.strip().rstrip("/")
                 for origin in os.getenv("JUDIKT_ALLOWED_ORIGINS", "").split(",")
@@ -109,7 +117,15 @@ class AuthConfig:
         ):
             if url and not _is_secure_or_loopback_url(url):
                 raise AuthError(f"{name} must use HTTPS except on localhost")
-        for scope in (*self.required_scopes, self.admin_scope):
+        if self.bearer_role not in {"read", "execute", "approve", "admin"}:
+            raise AuthError("JUDIKT_HTTP_BEARER_ROLE must be read, execute, approve, or admin")
+        for scope in (
+            *self.required_scopes,
+            self.read_scope,
+            self.execute_scope,
+            self.approve_scope,
+            self.admin_scope,
+        ):
             if scope and not OAUTH_SCOPE_PATTERN.fullmatch(scope):
                 raise AuthError(f"invalid OAuth scope configured: {scope!r}")
         for origin in self.allowed_origins:
@@ -120,7 +136,17 @@ class AuthConfig:
         metadata: dict[str, Any] = {
             "resource": self.resource_uri,
             "bearer_methods_supported": ["header"],
-            "scopes_supported": list(dict.fromkeys((*self.required_scopes, self.admin_scope))),
+            "scopes_supported": list(
+                dict.fromkeys(
+                    (
+                        *self.required_scopes,
+                        self.read_scope,
+                        self.execute_scope,
+                        self.approve_scope,
+                        self.admin_scope,
+                    )
+                )
+            ),
         }
         if self.authorization_server:
             metadata["authorization_servers"] = [self.authorization_server]
@@ -169,7 +195,10 @@ class Authenticator:
             raise AuthError("missing bearer authorization header")
         token = authorization.removeprefix("Bearer ").strip()
         if self.config.bearer_token and hmac.compare_digest(token, self.config.bearer_token):
-            return AuthResult("bearer-token", {"auth_type": "static_bearer"})
+            return AuthResult(
+                "bearer-token",
+                {"auth_type": "static_bearer", "role": self.config.bearer_role},
+            )
         if self.config.jwt_hs256_secret or self.config.jwt_jwks_url:
             return self._authenticate_jwt(token)
         raise AuthError("invalid bearer token")

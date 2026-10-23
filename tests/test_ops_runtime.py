@@ -202,11 +202,16 @@ class JudiktOpsRuntimeTest(unittest.TestCase):
 
         runtime = self.runtime()
         mcp = FakeMCP()
+        context = bind_authenticated_subject(
+            "demo-admin",
+            {"auth_type": "demo", "roles": ["admin"]},
+        )
         try:
             register_tools(mcp, runtime)
             state = mcp.tools["judikt.runtime_state"]()  # type: ignore[operator]
             self.assertEqual(state["rate_limiter"], {"mode": "local"})
         finally:
+            reset_authenticated_subject(context)
             runtime.close()
 
 

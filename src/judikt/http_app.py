@@ -62,8 +62,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if not self._authorized():
-            self._unauthorized()
+        if not self._post_authorized(path):
             return
         try:
             body = self._body()
@@ -124,6 +123,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return True
         scheme, _, provided = self.headers.get("Authorization", "").partition(" ")
         return scheme.lower() == "bearer" and secrets.compare_digest(provided, expected)
+
+    def _post_authorized(self, path: str) -> bool:
+        if path in {"/api/approval", "/api/kill-switch"} and self.server.api_token is None:
+            self._json(
+                {
+                    "error": (
+                        "JUDIKT_API_TOKEN is not configured; privileged dashboard "
+                        "operations are unavailable"
+                    )
+                },
+                HTTPStatus.SERVICE_UNAVAILABLE,
+            )
+            return False
+        if not self._authorized():
+            self._unauthorized()
+            return False
+        return True
 
     def _unauthorized(self) -> None:
         self._reply(

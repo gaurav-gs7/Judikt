@@ -11,19 +11,21 @@ The supported local boundary includes:
 - the loopback-only dashboard and its local API;
 - deterministic demo adapters loaded only by `judikt demo` or the explicit test harness.
 
-Unauthenticated stdio does not authenticate individual callers. Judikt ignores caller-supplied `actor`, `user`, and `requested_by` values and uses `local_stdio_identity` from the policy where an identity field is required. This prevents argument-level actor spoofing, but every client sharing that policy is represented as the same local principal. Use separate policy files and operating-system accounts when local clients require distinct identities.
+Unauthenticated stdio does not authenticate individual callers. Identity comes from `local_stdio_identity`, while tool arguments are forwarded unchanged; only fields explicitly listed in `identity_argument_fields` are treated as identity claims and they cannot override the trusted local principal. Therefore, every client sharing that policy is represented as the same local principal. Use separate policy files and operating-system accounts when local clients require distinct identities.
 
 The generated starter policy contains only exact names returned by the upstream's `tools/list`; it is not a trust assessment of those tools. Review descriptions, schemas, permissions, upstream code, and credentials before enabling the catalog. External stdio servers run as separate processes, but Judikt does not provide an OS-level sandbox. Apply filesystem, container, user, and network isolation appropriate to the upstream.
 
 Local SQLite audit storage, file-backed approvals and pins, and in-process rate limits are single-node controls. They are suitable for development and constrained single-host operation, not multi-replica consistency or durable centralized evidence.
 
-Do not expose the dashboard outside loopback without a strong random `JUDIKT_API_TOKEN`. Do not use `JUDIKT_DEMO_MODE=true` outside an isolated evaluation environment.
+Dashboard approval and kill-switch POSTs require a strong random `JUDIKT_API_TOKEN` even on loopback and return `503` when no token is configured. Do not expose the dashboard outside loopback, and do not use `JUDIKT_DEMO_MODE=true` outside an isolated evaluation environment.
 
 ## Authenticated Remote Boundary
 
 Judikt exposes an official MCP SDK Streamable HTTP endpoint. A non-loopback bind fails closed unless static bearer or JWT authentication is configured. `JUDIKT_ALLOW_UNAUTHENTICATED_REMOTE=true` is an explicit lab escape hatch and is not a supported production setting.
 
-Static bearer authentication proves possession of one shared secret. It is appropriate only for a constrained single-operator environment and does not provide per-user identity. JWT mode supports HS256 or JWKS-backed RS256 verification and validates expiration, not-before time, issuer, audience, required scopes, and an optional group. The validated subject is bound to policy evaluation and auditing. Administrative control-plane tools require the configured administrator scope or group for JWT callers.
+Static bearer authentication proves possession of one shared secret. It is appropriate only for a constrained single-operator environment and does not provide per-user identity. Its `JUDIKT_HTTP_BEARER_ROLE` defaults to `execute`; setting it to `admin` is an explicit high-trust configuration and emits a startup warning. JWT mode supports HS256 or JWKS-backed RS256 verification and validates expiration, not-before time, issuer, audience, required scopes, and an optional group. The validated subject is bound to policy evaluation and auditing. The `read`, `execute`, `approve`, and `admin` roles map to configurable scopes and groups; administrative control-plane tools require `admin`.
+
+In local stdio mode, approvals and roles protect against prompt-injected calls arriving through MCP. They do not protect against an agent with arbitrary shell access running as the same operating-system user, because that agent can read `approval.key` and the policy. Real separation requires running Judikt and its secrets under a different OS user, or using a remote approval workflow such as Slack or an authenticated remote gateway with a configured secret.
 
 Judikt is an OAuth resource server, not an authorization server. The selected identity provider and MCP client own login, client registration, consent, authorization-code handling, refresh tokens, and PKCE. Judikt advertises OAuth protected-resource metadata and rejects caller-token passthrough to upstream tools; upstream access must use separate operator-owned, least-privilege credentials.
 

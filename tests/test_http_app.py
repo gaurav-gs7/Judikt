@@ -104,6 +104,56 @@ class DashboardAuthenticationTest(unittest.TestCase):
             server.server_close()
             thread.join(timeout=3)
 
+    def test_privileged_posts_require_configured_token_even_on_loopback(self) -> None:
+        server = DashboardServer(("127.0.0.1", 0), _Runtime())  # type: ignore[arg-type]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            for path in ("/api/approval", "/api/kill-switch"):
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{server.server_port}{path}",
+                    data=b"{}",
+                    method="POST",
+                )
+                with self.subTest(path=path), self.assertRaises(
+                    urllib.error.HTTPError
+                ) as raised:
+                    urllib.request.urlopen(request, timeout=3)
+                self.assertEqual(raised.exception.code, 503)
+                self.assertIn("JUDIKT_API_TOKEN is not configured", raised.exception.read().decode())
+                raised.exception.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+
+    def test_privileged_posts_reject_missing_or_wrong_token(self) -> None:
+        server = DashboardServer(
+            ("127.0.0.1", 0),
+            _Runtime(),  # type: ignore[arg-type]
+            api_token="dashboard-secret",
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            for authorization in ("", "Bearer wrong"):
+                request = urllib.request.Request(
+                    f"http://127.0.0.1:{server.server_port}/api/approval",
+                    data=b"{}",
+                    headers={"Authorization": authorization},
+                    method="POST",
+                )
+                with self.subTest(authorization=authorization), self.assertRaises(
+                    urllib.error.HTTPError
+                ) as raised:
+                    urllib.request.urlopen(request, timeout=3)
+                self.assertEqual(raised.exception.code, 401)
+                raised.exception.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+
 
 if __name__ == "__main__":
     unittest.main()

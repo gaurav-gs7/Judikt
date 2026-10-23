@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import threading
 import time
 import unittest
+from contextlib import redirect_stderr
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from judikt.auth import AuthConfig, AuthError, Authenticator, create_hs256_jwt
 from judikt.real_mcp import _AuthMiddleware
+from judikt.real_mcp import _warn_for_static_admin
 from judikt.request_context import (
     bind_authenticated_subject,
+    can_execute_control_plane_tool,
+    has_control_plane_role,
     is_control_plane_admin,
     reset_authenticated_subject,
 )
@@ -134,6 +139,7 @@ class AuthenticatorTest(unittest.TestCase):
         result = authenticator.authenticate("Bearer local-token")
 
         self.assertEqual(result.subject, "bearer-token")
+        self.assertEqual(result.claims["role"], "execute")
 
     def test_jwt_rejects_missing_required_scope(self) -> None:
         secret = "unit-test-jwt-secret"
@@ -142,7 +148,11 @@ class AuthenticatorTest(unittest.TestCase):
             secret,
         )
         authenticator = Authenticator(
-            AuthConfig(jwt_hs256_secret=secret, jwt_audience="judikt")
+            AuthConfig(
+                jwt_hs256_secret=secret,
+                jwt_audience="judikt",
+                required_scopes=("mcp:execute",),
+            )
         )
 
         with self.assertRaisesRegex(AuthError, "missing required scopes"):
@@ -242,7 +252,10 @@ class AuthenticatorTest(unittest.TestCase):
 
         self.assertEqual(metadata["resource"], "https://judikt.example.test/mcp")
         self.assertEqual(metadata["authorization_servers"], ["https://auth.example.test"])
-        self.assertEqual(metadata["scopes_supported"], ["mcp:tools", "mcp:admin"])
+        self.assertEqual(
+            metadata["scopes_supported"],
+            ["mcp:read", "mcp:execute", "mcp:approve", "mcp:admin"],
+        )
 
     def test_remote_binding_requires_authentication(self) -> None:
         with self.assertRaisesRegex(AuthError, "requires bearer or JWT"):
@@ -276,6 +289,46 @@ class AuthenticatorTest(unittest.TestCase):
             self.assertTrue(is_control_plane_admin())
         finally:
             reset_authenticated_subject(admin)
+
+    def test_explicit_roles_deny_unauthenticated_admin_and_map_scopes_and_groups(self) -> None:
+        self.assertFalse(is_control_plane_admin())
+        self.assertFalse(has_control_plane_role("approve"))
+        self.assertTrue(can_execute_control_plane_tool())
+
+        cases = [
+            ({"scope": "mcp:execute"}, "execute", True),
+            ({"scope": "mcp:execute"}, "admin", False),
+            ({"scope": "mcp:admin"}, "admin", True),
+            ({"groups": ["mcp-admin"]}, "admin", True),
+            ({"cognito:groups": ["mcp-approve"]}, "approve", True),
+        ]
+        for claims, role, expected in cases:
+            with self.subTest(claims=claims, role=role):
+                context = bind_authenticated_subject("operator", claims)
+                try:
+                    self.assertEqual(has_control_plane_role(role), expected)
+                finally:
+                    reset_authenticated_subject(context)
+
+    def test_static_bearer_admin_is_explicit_and_warned(self) -> None:
+        execute = Authenticator(AuthConfig(bearer_token="token")).authenticate("Bearer token")
+        admin = Authenticator(
+            AuthConfig(bearer_token="token", bearer_role="admin")
+        ).authenticate("Bearer token")
+        execute_context = bind_authenticated_subject(execute.subject, execute.claims)
+        try:
+            self.assertFalse(is_control_plane_admin())
+        finally:
+            reset_authenticated_subject(execute_context)
+        admin_context = bind_authenticated_subject(admin.subject, admin.claims)
+        try:
+            self.assertTrue(is_control_plane_admin())
+        finally:
+            reset_authenticated_subject(admin_context)
+
+        with redirect_stderr(io.StringIO()) as stderr:
+            _warn_for_static_admin(AuthConfig(bearer_token="token", bearer_role="admin"))
+        self.assertIn("grants full control-plane access", stderr.getvalue())
 
     def test_http_middleware_rejects_untrusted_origin(self) -> None:
         middleware = _AuthMiddleware(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,7 @@ from .auth import AuthError, Authenticator
 from .ops_runtime import JudiktOpsRuntime
 from .request_context import (
     bind_authenticated_subject,
+    can_execute_control_plane_tool,
     is_control_plane_admin,
     reset_authenticated_subject,
 )
@@ -67,6 +69,7 @@ def serve_real_mcp(args: argparse.Namespace) -> None:
     authenticator.config.validate_for_remote_server(
         require_auth=remote_bind and not allow_unauthenticated_remote
     )
+    _warn_for_static_admin(authenticator.config)
     approval_authority = ApprovalAuthority(require_configured=remote_bind)
     runtime = build_runtime(
         args.policy,
@@ -131,6 +134,16 @@ def serve_real_mcp(args: argparse.Namespace) -> None:
     app.add_route("/integrations/slack/actions", slack_actions, methods=["POST"])
 
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
+
+
+def _warn_for_static_admin(config: Any) -> None:
+    if config.bearer_token and config.bearer_role == "admin":
+        print(
+            "WARNING: JUDIKT_HTTP_BEARER_ROLE=admin grants full control-plane access "
+            "to the shared static bearer token",
+            file=sys.stderr,
+            flush=True,
+        )
 
 
 class _AuthMiddleware:
@@ -417,6 +430,12 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
         arguments: dict[str, Any],
         ttl_seconds: int = 900,
     ) -> dict[str, Any]:
+        if not can_execute_control_plane_tool():
+            return {
+                "allowed": False,
+                "rule": "execute_authorization",
+                "reason": "control-plane execute role is required",
+            }
         try:
             return runtime.request_slack_approval(
                 actor=actor,
@@ -434,6 +453,12 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
         description="Read a Slack approval request and retrieve its token as the authenticated requester.",
     )
     def guard_approval_status(request_id: str, actor: str) -> dict[str, Any]:
+        if not can_execute_control_plane_tool():
+            return {
+                "allowed": False,
+                "rule": "execute_authorization",
+                "reason": "control-plane execute role is required",
+            }
         try:
             return runtime.slack_approval_status(request_id, actor)
         except (PermissionError, SlackApprovalError) as exc:

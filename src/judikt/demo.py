@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from .models import ToolCallResult
+from .request_context import bind_authenticated_subject, reset_authenticated_subject
 from .runtime import JudiktRuntime
 
 ROLLBACK_PLAN = "verify service health and restore previous known-good release if errors increase"
@@ -11,6 +12,17 @@ ROLLBACK_PLAN = "verify service health and restore previous known-good release i
 
 def run_demo(runtime: JudiktRuntime) -> None:
     """Run a compact terminal walkthrough against the real Judikt runtime."""
+    context = bind_authenticated_subject(
+        "demo-admin",
+        {"auth_type": "demo", "roles": ["admin"]},
+    )
+    try:
+        _run_demo(runtime)
+    finally:
+        reset_authenticated_subject(context)
+
+
+def _run_demo(runtime: JudiktRuntime) -> None:
     _header(runtime)
 
     _call(

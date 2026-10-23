@@ -38,6 +38,7 @@ class RealMCPStreamableHTTPEndToEndTest(unittest.TestCase):
             **os.environ,
             "PYTHONPATH": str(PROJECT_ROOT / "src"),
             "JUDIKT_HTTP_BEARER_TOKEN": "mcp-e2e-token",
+            "JUDIKT_HTTP_BEARER_ROLE": "admin",
             "JUDIKT_APPROVAL_SECRET": "mcp-e2e-approval-secret-at-least-32-bytes",
             "JUDIKT_AUDIT_HMAC_SECRET": "mcp-e2e-audit-secret",
             "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
@@ -111,7 +112,10 @@ class RealMCPStreamableHTTPEndToEndTest(unittest.TestCase):
         ) as response:
             metadata = json.load(response)
         self.assertEqual(metadata["resource"], f"{self.base_url}/mcp")
-        self.assertIn("mcp:tools", metadata["scopes_supported"])
+        self.assertEqual(
+            metadata["scopes_supported"],
+            ["mcp:read", "mcp:execute", "mcp:approve", "mcp:admin"],
+        )
 
         for token in ("", "wrong-token"):
             request = urllib.request.Request(

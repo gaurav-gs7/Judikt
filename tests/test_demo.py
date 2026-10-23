@@ -12,12 +12,24 @@ from unittest.mock import patch
 
 from judikt.demo import _result_lines, _short_token, run_demo
 from judikt.runtime import JudiktRuntime
+from judikt.request_context import is_control_plane_admin
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TerminalDemoTest(unittest.TestCase):
+    def test_demo_binds_and_resets_explicit_admin_context(self) -> None:
+        observed: list[bool] = []
+        with patch(
+            "judikt.demo._run_demo",
+            side_effect=lambda _runtime: observed.append(is_control_plane_admin()),
+        ):
+            run_demo(object())  # type: ignore[arg-type]
+
+        self.assertEqual(observed, [True])
+        self.assertFalse(is_control_plane_admin())
+
     def test_live_walkthrough_exercises_every_documented_branch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
