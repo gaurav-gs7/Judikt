@@ -16,6 +16,7 @@ from .attackbench import (
 )
 from .auth import AuthError
 from .backends import run_backend
+from .content_eval import ContentEvaluationError, run_content_evaluation
 from .demo import run_demo
 from .evals import print_evals
 from .gateway import serve_gateway
@@ -144,6 +145,15 @@ def parser() -> argparse.ArgumentParser:
     attackbench.add_argument("--min-f1", type=float, default=0.0)
     attackbench.add_argument("--output", type=Path)
     attackbench.set_defaults(policy=DEMO_POLICY_PATH)
+    content_eval = subparsers.add_parser(
+        "eval-content",
+        help="measure content-guard precision and recall on the labeled Judikt corpus",
+    )
+    content_eval.add_argument("--corpus", type=Path, required=True)
+    content_eval.add_argument("--split", choices=("dev", "test"), required=True)
+    content_eval.add_argument("--output", type=Path, required=True)
+    content_eval.add_argument("--policy", type=Path, default=argparse.SUPPRESS)
+    content_eval.set_defaults(policy=DEFAULT_POLICY_PATH)
     performance = subparsers.add_parser(
         "performance",
         help="measure full in-process Judikt tool-call overhead and throughput",
@@ -283,6 +293,20 @@ def main() -> None:
         except AttackBenchError as exc:
             raise SystemExit(f"attackbench: {exc}") from exc
         raise SystemExit(0 if passed else 1)
+    if args.command == "eval-content":
+        try:
+            report = run_content_evaluation(
+                args.corpus,
+                args.policy,
+                split=args.split,
+            )
+        except (ContentEvaluationError, OSError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"eval-content: {exc}") from None
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        rendered = json.dumps(report, indent=2)
+        args.output.write_text(rendered + "\n")
+        print(rendered)
+        return
     if args.command == "performance":
         try:
             report = run_gateway_benchmark(

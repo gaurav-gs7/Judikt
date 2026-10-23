@@ -1,0 +1,1444 @@
+{
+  "schema_version": 1,
+  "evaluation": {
+    "name": "Judikt content-guard precision corpus",
+    "split": "test",
+    "sample_count": 178,
+    "corpus_sha256": "2935d4da69677f498db2ff1575068ecb1aa3beee9e8cbbf9a20e21d1d3b68eb4",
+    "policy_sha256": "6d24032a1d6cb4b58e1cd25b22bde24254b69e66dec41938065f623fe6892906"
+  },
+  "overall": {
+    "sample_count": 178,
+    "true_positive": 69,
+    "false_positive": 78,
+    "true_negative": 30,
+    "false_negative": 1,
+    "precision": 0.469388,
+    "recall": 0.985714,
+    "false_positive_rate": 0.722222,
+    "f1": 0.635945,
+    "latency_ms": {
+      "p50": 0.054959,
+      "p95": 0.073958,
+      "p99": 0.09175
+    }
+  },
+  "by_surface": {
+    "tool_argument": {
+      "sample_count": 64,
+      "true_positive": 27,
+      "false_positive": 26,
+      "true_negative": 10,
+      "false_negative": 1,
+      "precision": 0.509434,
+      "recall": 0.964286,
+      "false_positive_rate": 0.722222,
+      "f1": 0.666667,
+      "latency_ms": {
+        "p50": 0.054125,
+        "p95": 0.073958,
+        "p99": 0.089916
+      }
+    },
+    "tool_description": {
+      "sample_count": 50,
+      "true_positive": 14,
+      "false_positive": 26,
+      "true_negative": 10,
+      "false_negative": 0,
+      "precision": 0.35,
+      "recall": 1.0,
+      "false_positive_rate": 0.722222,
+      "f1": 0.518519,
+      "latency_ms": {
+        "p50": 0.054458,
+        "p95": 0.070708,
+        "p99": 0.081291
+      }
+    },
+    "tool_result": {
+      "sample_count": 64,
+      "true_positive": 28,
+      "false_positive": 26,
+      "true_negative": 10,
+      "false_negative": 0,
+      "precision": 0.518519,
+      "recall": 1.0,
+      "false_positive_rate": 0.722222,
+      "f1": 0.682927,
+      "latency_ms": {
+        "p50": 0.055833,
+        "p95": 0.078792,
+        "p99": 0.096042
+      }
+    }
+  },
+  "by_category": {
+    "authority_impersonation": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.043708,
+        "p95": 0.049084,
+        "p99": 0.049084
+      }
+    },
+    "cli_help": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 4,
+      "true_negative": 5,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.444444,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.047083,
+        "p95": 0.0575,
+        "p99": 0.0575
+      }
+    },
+    "code_comment": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 9,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 1.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.050292,
+        "p95": 0.062166,
+        "p99": 0.062166
+      }
+    },
+    "concealment": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.047792,
+        "p95": 0.059875,
+        "p99": 0.059875
+      }
+    },
+    "confusables": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.044208,
+        "p95": 0.044583,
+        "p99": 0.044583
+      }
+    },
+    "contributing": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 5,
+      "true_negative": 4,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.555556,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.056709,
+        "p95": 0.071458,
+        "p99": 0.071458
+      }
+    },
+    "encoded_base64": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.066958,
+        "p95": 0.072125,
+        "p99": 0.072125
+      }
+    },
+    "encoded_hex": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.057584,
+        "p95": 0.07375,
+        "p99": 0.07375
+      }
+    },
+    "encoded_url": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.089916,
+        "p95": 0.174916,
+        "p99": 0.174916
+      }
+    },
+    "instruction_override": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.059166,
+        "p95": 0.062,
+        "p99": 0.062
+      }
+    },
+    "invisible_unicode": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.052917,
+        "p95": 0.058416,
+        "p99": 0.058416
+      }
+    },
+    "issue_pr": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 7,
+      "true_negative": 2,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.777778,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.055667,
+        "p95": 0.064625,
+        "p99": 0.064625
+      }
+    },
+    "log_line": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 9,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 1.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.057083,
+        "p95": 0.078625,
+        "p99": 0.078625
+      }
+    },
+    "multilingual_attack": {
+      "sample_count": 5,
+      "true_positive": 4,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 1,
+      "precision": 1.0,
+      "recall": 0.8,
+      "false_positive_rate": 0.0,
+      "f1": 0.888889,
+      "latency_ms": {
+        "p50": 0.026416,
+        "p95": 0.041125,
+        "p99": 0.041125
+      }
+    },
+    "multilingual_benign": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 9,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.055625,
+        "p95": 0.073958,
+        "p99": 0.073958
+      }
+    },
+    "ordinary_prose": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 7,
+      "true_negative": 2,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.777778,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.057416,
+        "p95": 0.067166,
+        "p99": 0.067166
+      }
+    },
+    "policy_documentation": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 7,
+      "true_negative": 2,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.777778,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.055417,
+        "p95": 0.067959,
+        "p99": 0.067959
+      }
+    },
+    "readme_setup": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 7,
+      "true_negative": 2,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.777778,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.054458,
+        "p95": 0.096042,
+        "p99": 0.096042
+      }
+    },
+    "role_reassignment": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.040917,
+        "p95": 0.050375,
+        "p99": 0.050375
+      }
+    },
+    "runbook": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 7,
+      "true_negative": 2,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.777778,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.063084,
+        "p95": 0.070708,
+        "p99": 0.070708
+      }
+    },
+    "secret_exfiltration": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.051917,
+        "p95": 0.064125,
+        "p99": 0.064125
+      }
+    },
+    "security_documentation": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 9,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 1.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.059625,
+        "p95": 0.078792,
+        "p99": 0.078792
+      }
+    },
+    "spaced_letters": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.053292,
+        "p95": 0.05475,
+        "p99": 0.05475
+      }
+    },
+    "split_fields": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.038625,
+        "p95": 0.04725,
+        "p99": 0.04725
+      }
+    },
+    "stack_trace": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 7,
+      "true_negative": 2,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.777778,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.05575,
+        "p95": 0.060375,
+        "p99": 0.060375
+      }
+    },
+    "tool_coercion": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.048125,
+        "p95": 0.055292,
+        "p99": 0.055292
+      }
+    }
+  },
+  "mistakes": [
+    {
+      "sample_id_sha256": "9ca08a39a9d6caab25b77bfff72147ce95ce43ade1bfbd4e22b0c61853168bc6",
+      "surface": "tool_result",
+      "category": "readme_setup",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "c91155efef3be59465d0c568a37672d85ab0f94a3b43692508152ebf4753fe61",
+      "surface": "tool_argument",
+      "category": "readme_setup",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "f98eb680f00da7a9382f448e0c684deb45fc1d4a046ba56bec7780822b4a72c7",
+      "surface": "tool_result",
+      "category": "readme_setup",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "5440f8972774dd351e2e9c6ac558d9307c1b37dba7493a85c7f44d340b260b10",
+      "surface": "tool_argument",
+      "category": "readme_setup",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "3d3288e24ff90d7e78a546b0ccf65e513c4fd073a00f4f12828aa5747ea2b4e0",
+      "surface": "tool_description",
+      "category": "readme_setup",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "5998d9d053a22689cd3b66264919d1c727723c63aa6be498114058c38a880dbd",
+      "surface": "tool_argument",
+      "category": "readme_setup",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "064ddcc1a036e6d69bae8956098c18ec279356765d0ac35146c8d192a8ca541c",
+      "surface": "tool_description",
+      "category": "readme_setup",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "5de466b0c3bb3eceeb7d96e82f8176e3889af00807906310bcbaeb44227ac794",
+      "surface": "tool_result",
+      "category": "contributing",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "2543052d709160a24b6b67727a93613466ae8d154ba92588e2617eeb76dbbead",
+      "surface": "tool_argument",
+      "category": "contributing",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "e0ce19cc0ecea3a910200da6f1833b8efaadec38b72bbfac40116617073358a9",
+      "surface": "tool_argument",
+      "category": "contributing",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "967a0da507275fa88a87d454ff4ba3e43f865cc5ac917b5d73ba014ca4251f49",
+      "surface": "tool_description",
+      "category": "contributing",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "f0c0a0ba217120daf1e5bcdc9372e5c88b3fc2444eb677ecafd5bf7891a47537",
+      "surface": "tool_description",
+      "category": "contributing",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "eab516066b138fb288dc09d459cee1e830d998607d2a22a7d961ce883a132b58",
+      "surface": "tool_result",
+      "category": "runbook",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "49eb3e598b0e1789211ce4efeccbcc9e7dc0c3548fc02477812c714ae51b4024",
+      "surface": "tool_argument",
+      "category": "runbook",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "b9a6a15af5223018a053395a0bab1bae3b31a41b5b3eb22e39bf01b0b0e0fcd6",
+      "surface": "tool_result",
+      "category": "runbook",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "4f0aff0eb426b2c135aff5e211e3f40749e6f06aa67c31d8bb67f95064f9bd2c",
+      "surface": "tool_argument",
+      "category": "runbook",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "6ed72872a2e6e38febddab78dab7c4552b4e3397bfdcdf7e56718e72f63e742a",
+      "surface": "tool_description",
+      "category": "runbook",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "a182e89976fcbbf021d535a96c06785bd675e048a26b7b77fcd0aa0dc1d011db",
+      "surface": "tool_argument",
+      "category": "runbook",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "7cdcd9b144d5835e40fd4b8c2140bf8239858c51ed054caa82c9ec2c259783e7",
+      "surface": "tool_description",
+      "category": "runbook",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "0b3ed9e7bdcc6a61eb12cbaeef8ecb669c0ba2e169d5a3a7714fbf3bbee69902",
+      "surface": "tool_argument",
+      "category": "cli_help",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "d8d971e41b6b0b6f4300ed53e1e3ae06cde512fd4ac8d3de77aecfc2e58dad97",
+      "surface": "tool_description",
+      "category": "cli_help",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "41cad76533826451f1e8d6ab7d9d9b765a27481b4f553831da333e994ca29d6b",
+      "surface": "tool_description",
+      "category": "cli_help",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "ad5b8f2a1c5e1d2f3da836c0da4d4f5b5eafbc1d536df1a4b6a1fee6f0e2672d",
+      "surface": "tool_result",
+      "category": "cli_help",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "f91628b4037b79fd3720828a34c3afe6d4c4ff5fc6e0429439f6ac20ed893e19",
+      "surface": "tool_result",
+      "category": "log_line",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "1f79fcf716001e6186d99b7f7435b6f85c1ad96edd007524de5f739409bfb35b",
+      "surface": "tool_argument",
+      "category": "log_line",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "concealment",
+        "concealment__evasion_normalized",
+        "concealment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "3ef51874dda7dfcc85e72f8e0eaa8d69023b661dbda203e7d0676c1117bc1da1",
+      "surface": "tool_description",
+      "category": "log_line",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "role_reassignment",
+        "role_reassignment__evasion_normalized",
+        "role_reassignment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "d6b657aefdda91fed3aacf5ac3baa07a6db9865c81b03c6a2a0fde67bc25c419",
+      "surface": "tool_result",
+      "category": "log_line",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "5318119ee0399fc155c2aa15f79341fadee7d56617acfe8111e1c4d1a92dd95c",
+      "surface": "tool_argument",
+      "category": "log_line",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "c338944121d0f0be468119ae7739ff43e83a222b524be2791dbfe800246df936",
+      "surface": "tool_description",
+      "category": "log_line",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "concealment",
+        "concealment__evasion_normalized",
+        "concealment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "f196e0c7eb9d793cd2f2a2c41076a0199473abdd60e953db77b5598c5f83769a",
+      "surface": "tool_result",
+      "category": "log_line",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "role_reassignment",
+        "role_reassignment__evasion_normalized",
+        "role_reassignment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "b99f1657199b7c9a1c2514a92bf7273a87c840194983ec6ce2f44a24c8776e85",
+      "surface": "tool_argument",
+      "category": "log_line",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "ed309879011d0c2f0a4474add2faaf56a8dc7566fc2fe8e0023397b783c50fe0",
+      "surface": "tool_description",
+      "category": "log_line",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "b77274671e7d35ddbbca8c1d29d11be9c69d93a427bd9516e61fa94d6f68c7c9",
+      "surface": "tool_result",
+      "category": "stack_trace",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "1e133e5409b562054b372b1c89faf4db8f13637cbb6c08b52c25d64aac0ac46a",
+      "surface": "tool_description",
+      "category": "stack_trace",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "concealment",
+        "concealment__evasion_normalized",
+        "concealment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "a2c654b9c4761d5f5720180973bc94a8a0e528dbb9c68e59b58817fa8002b008",
+      "surface": "tool_result",
+      "category": "stack_trace",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "cc2d96fcb62d32606121227a5645fbc58a836010944dc2e3fd9d386dfdae51f7",
+      "surface": "tool_argument",
+      "category": "stack_trace",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "55a3bc95f8df52f670ee28598da736231eb22276668326197abb31cfe460eda7",
+      "surface": "tool_result",
+      "category": "stack_trace",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "concealment",
+        "concealment__evasion_normalized",
+        "concealment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "66a74cb3c70c2d356267f8f648d053c972efccb989f89a5c2137b760299c639b",
+      "surface": "tool_argument",
+      "category": "stack_trace",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "9ef80a1a22c33cfbf6344d089c40037b07ddf466c188dd387248467168829cbd",
+      "surface": "tool_description",
+      "category": "stack_trace",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "9b207f5627306b5d71d89af625ca68bb0f60593deb98fefdc81481ce82b4fe4a",
+      "surface": "tool_result",
+      "category": "code_comment",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "5e739a2edd954c34f473f56861f1dae607d15c8484a8d15556c4fb3d3d399869",
+      "surface": "tool_argument",
+      "category": "code_comment",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "concealment",
+        "concealment__evasion_normalized",
+        "concealment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "b0683f306ca4a2d250c456caebf3d45993051b87b853f2ddd2ae91fd814fd4c6",
+      "surface": "tool_description",
+      "category": "code_comment",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "role_reassignment",
+        "role_reassignment__evasion_normalized",
+        "role_reassignment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "7668b88e1450c3c3548482a5353d6ab269d4f86a638271776117006dace8c18a",
+      "surface": "tool_result",
+      "category": "code_comment",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "ccdbbbb0d23cce04d4894696bb32af109a8653f0eb351ab77d89ef967bdff1b1",
+      "surface": "tool_argument",
+      "category": "code_comment",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "83f798cf1422b80ebf1bee2901a457ade3f329e1dc5291d636096b1be74cabcb",
+      "surface": "tool_description",
+      "category": "code_comment",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "concealment",
+        "concealment__evasion_normalized",
+        "concealment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "31530ede03dd60836b64b2ff536aa7511dec7236949ac7721d3cbb52a0991009",
+      "surface": "tool_result",
+      "category": "code_comment",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "role_reassignment",
+        "role_reassignment__evasion_normalized",
+        "role_reassignment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "b3f6ae643fe0ca1933362350db4e43dedc01e777722cece614e1913c13b0311d",
+      "surface": "tool_argument",
+      "category": "code_comment",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "bb1467056e182a6c4d3c0ab39b19460bca8f2faea79aa59c93ee9077e1db7357",
+      "surface": "tool_description",
+      "category": "code_comment",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "2c2d58d90cbb4512094a4daa30040066b5d26f28d3c4bf8363bef8ef0e31dd1a",
+      "surface": "tool_result",
+      "category": "issue_pr",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "3b26074029cb8fd50380a229064150ad3ef9095281af15ab8136daf79bf45f32",
+      "surface": "tool_description",
+      "category": "issue_pr",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "role_reassignment",
+        "role_reassignment__evasion_normalized",
+        "role_reassignment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "61720447af6f37c7d87670012ac54e33d0775d81b2c9d3341b463ec3a84d1a6e",
+      "surface": "tool_result",
+      "category": "issue_pr",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "4d233da68d2c6bd993c2554b64cef54d98fb28df3d377e1484f18c5b14f1c4d6",
+      "surface": "tool_argument",
+      "category": "issue_pr",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "3505181d9bc6d19d4f8593318f7d02437414fd30f8c87c223eef09b0945f81af",
+      "surface": "tool_result",
+      "category": "issue_pr",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "role_reassignment",
+        "role_reassignment__evasion_normalized",
+        "role_reassignment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "3068d07f37c2fb2918460b1a876bea4302085db0891936035402e2be5af2bf6a",
+      "surface": "tool_argument",
+      "category": "issue_pr",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "ba0be52d0a1eafdacdd88656ccbdb1d1f7eb7c820855c4baf340ab99c0159d7e",
+      "surface": "tool_description",
+      "category": "issue_pr",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "e7e450c10ac230b625ca999ebf2ad50495a8ef9a7afb573ae173d9e6bbf42754",
+      "surface": "tool_result",
+      "category": "security_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "authority_impersonation",
+        "authority_impersonation__evasion_normalized",
+        "authority_impersonation__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "d33af95a7a2cfc1deaa77ac283b9812f2129152be30d1934323e4bed7cc53acc",
+      "surface": "tool_argument",
+      "category": "security_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "secret_exfiltration",
+        "secret_exfiltration__evasion_normalized",
+        "secret_exfiltration__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "cadf8a90a609800a3874ec2d4489cee7517fe397927fabbc9af06c94e5c7bca4",
+      "surface": "tool_description",
+      "category": "security_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "role_reassignment",
+        "role_reassignment__evasion_normalized",
+        "role_reassignment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "5c15030bbb0a874352485d3cd82bb7bb154fdcd0732de5f8187a05585d9fbce7",
+      "surface": "tool_result",
+      "category": "security_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "instruction_override",
+        "instruction_override__evasion_normalized",
+        "instruction_override__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "0aee42825a9e12b5a4ee7fce4d22f9ea7a670bb8ad5aaece1d27b8bde1cda7f8",
+      "surface": "tool_argument",
+      "category": "security_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "authority_impersonation",
+        "authority_impersonation__evasion_normalized",
+        "authority_impersonation__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "7a10686fef263dc442884f629156bc5cba462e62b44ab3364a3094bed797afae",
+      "surface": "tool_description",
+      "category": "security_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "secret_exfiltration",
+        "secret_exfiltration__evasion_normalized",
+        "secret_exfiltration__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "31bd594913ae36eaa7ebf527698094a2e9bde9b4b7b186e20b712e3f3c3e51fe",
+      "surface": "tool_result",
+      "category": "security_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "role_reassignment",
+        "role_reassignment__evasion_normalized",
+        "role_reassignment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "21febf37360c33a3632e2cfa8f6d07f91cab7e3786d157e487cd7a8235fb7ec4",
+      "surface": "tool_argument",
+      "category": "security_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "instruction_override",
+        "instruction_override__evasion_normalized",
+        "instruction_override__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "c0e5ad38be76eea8b9e2119b8d341c8788b9057a26b67f164dce9be1e8b20b76",
+      "surface": "tool_description",
+      "category": "security_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "authority_impersonation",
+        "authority_impersonation__evasion_normalized",
+        "authority_impersonation__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "0105539e42150b93b7e3847545a12fc76e84067c69af71fa41fe1bee1c1bb2ce",
+      "surface": "tool_result",
+      "category": "policy_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "3eac56a8345ff3ee71a7a1aca1b5002a06c330872b0202cd75840fbbb499554c",
+      "surface": "tool_description",
+      "category": "policy_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "da17f4517de7514c44d4f2e0379a2d75f314d50c9eb178d03999724b7ca144a9",
+      "surface": "tool_result",
+      "category": "policy_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "concealment",
+        "concealment__evasion_normalized",
+        "concealment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "cc22b8a011b88fa890e403b833772ff1f1e7f5fb0f1a9f2711426b42ee6b1737",
+      "surface": "tool_argument",
+      "category": "policy_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "e35edb86e4e8d6d64251d706370aee351182df0b1cc3441237b297dbe6376b04",
+      "surface": "tool_result",
+      "category": "policy_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "ec0a49806a5bbc8769ec4626ceb8e444c830e262e904a4178e4cc0f32e41e3f4",
+      "surface": "tool_argument",
+      "category": "policy_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "concealment",
+        "concealment__evasion_normalized",
+        "concealment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "a4e5a85af557332add592c15bbedcfe08deadba0edb698ad04d227a215d3eef5",
+      "surface": "tool_description",
+      "category": "policy_documentation",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "1a9043e2915a53681435aa292b4eeb1f804ff1c80ae5ce1396e85b48e89dcc3b",
+      "surface": "tool_result",
+      "category": "ordinary_prose",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "2feed224dd1292b2471f2f2fa419770dc6b81da9d637fae098476e97768b4f32",
+      "surface": "tool_argument",
+      "category": "ordinary_prose",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "0ffa7d113ebd7582d63939adacedac1182f82c33b43be8f3a458700a2331c104",
+      "surface": "tool_description",
+      "category": "ordinary_prose",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "concealment",
+        "concealment__evasion_normalized",
+        "concealment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "228e898d62dd45d187347116ed92852b56b86bb85939f45e2bcf407c577b3e60",
+      "surface": "tool_argument",
+      "category": "ordinary_prose",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "7162512cf5b00d79e93431eb884666eeb15ddfbb451d7252e2c75f5be8ba074f",
+      "surface": "tool_description",
+      "category": "ordinary_prose",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "a3d70d974a5ec7ee8b754761f9b86fc6cca6f59793c930c213e9746c9d90e339",
+      "surface": "tool_result",
+      "category": "ordinary_prose",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "concealment",
+        "concealment__evasion_normalized",
+        "concealment__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "a572bb70ab9dd659e1a71ff9c1b65e07da9bf12d92a29ba47e5e01f455f0d54e",
+      "surface": "tool_description",
+      "category": "ordinary_prose",
+      "expected_attack": false,
+      "predicted_attack": true,
+      "matched_rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "sample_id_sha256": "76364e9b6237c483252a596119f554df221fbab3cf8beb1b10087743d33362b0",
+      "surface": "tool_argument",
+      "category": "multilingual_attack",
+      "expected_attack": true,
+      "predicted_attack": false,
+      "matched_rules": []
+    }
+  ],
+  "privacy": {
+    "raw_payloads_in_report": false,
+    "sample_identifiers": "sha256"
+  }
+}
