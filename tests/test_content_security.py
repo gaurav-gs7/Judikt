@@ -44,6 +44,26 @@ class ContentGuardTest(unittest.TestCase):
 
         self.assertTrue(inspection.allowed)
 
+    def test_allows_json_schema_with_an_object_valued_type_property(self) -> None:
+        inspection = ContentGuard().inspect(
+            {
+                "name": "read_text_file",
+                "description": "Read a text file from an allowed directory.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "object",
+                            "properties": {"encoding": {"type": "string"}},
+                        }
+                    },
+                },
+            },
+            surface="tool_description",
+        )
+
+        self.assertTrue(inspection.allowed)
+
     def test_oversized_result_scans_both_ends_and_records_without_blocking(self) -> None:
         inspection = ContentGuard(max_scan_bytes=8).inspect("normal output followed by unscanned content")
 

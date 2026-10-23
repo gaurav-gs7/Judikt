@@ -429,7 +429,7 @@ def _walk_strings(value: Any, path: str = "$") -> list[tuple[str, str]]:
     elif isinstance(value, dict):
         block_type = value.get("type")
         for key, item in value.items():
-            if key == "data" and block_type in {"image", "audio"}:
+            if key == "data" and (block_type == "image" or block_type == "audio"):
                 continue
             if key == "blob" and block_type == "resource":
                 continue
