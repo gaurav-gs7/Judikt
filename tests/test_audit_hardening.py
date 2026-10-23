@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import multiprocessing
 import os
 import sqlite3
 import tempfile
@@ -23,6 +27,25 @@ def _record(store: AuditStore) -> None:
         result={"status": "healthy"},
         duration_ms=1.25,
     )
+
+
+def _record_many(path: str, count: int, prefix: str) -> None:
+    store = AuditStore(Path(path))
+    try:
+        for index in range(count):
+            store.record(
+                correlation_id=f"{prefix}-{index}",
+                server="concurrent",
+                tool="concurrent.read",
+                allowed=True,
+                rule="allow",
+                reason="allowed by policy",
+                arguments={"index": index},
+                result={"ok": True},
+                duration_ms=1,
+            )
+    finally:
+        store.close()
 
 
 class AuditHardeningTest(unittest.TestCase):
@@ -185,6 +208,123 @@ class AuditHardeningTest(unittest.TestCase):
             self.assertTrue(report["valid"], report["errors"])
             self.assertEqual(report["checked_events"], 24)
             store.close()
+
+    def test_two_processes_append_one_gapless_chain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {"JUDIKT_AUDIT_HMAC_SECRET": "concurrent-test-key", "JUDIKT_AUDIT_SINK": "none"},
+            clear=False,
+        ):
+            path = Path(directory) / "audit.db"
+            initial = AuditStore(path)
+            initial.close()
+            processes = [
+                multiprocessing.Process(
+                    target=_record_many,
+                    args=(str(path), 500, prefix),
+                )
+                for prefix in ("writer-a", "writer-b")
+            ]
+            for process in processes:
+                process.start()
+            for process in processes:
+                process.join(30)
+                self.assertEqual(process.exitcode, 0)
+
+            store = AuditStore(path)
+            try:
+                report = store.verify_chain()
+                sequences = [row["seq"] for row in store._connection.execute(
+                    "SELECT seq FROM audit_events ORDER BY seq"
+                )]
+                self.assertTrue(report["valid"], report["errors"])
+                self.assertEqual(sequences, list(range(1, 1001)))
+            finally:
+                store.close()
+
+    def test_sequence_gap_is_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": "test-key"}, clear=False
+        ):
+            store = AuditStore(Path(directory) / "audit.db")
+            for _ in range(3):
+                _record(store)
+            store._connection.execute("DELETE FROM audit_events WHERE seq = 2")
+            store._connection.commit()
+
+            report = store.verify_chain()
+
+            self.assertFalse(report["valid"])
+            self.assertIn("sequence_gap", {error["error"] for error in report["errors"]})
+            store.close()
+
+    def test_previous_hash_format_migrates_without_rewriting_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audit.db"
+            secret = "legacy-signing-key"
+            payload = {
+                "event_version": 2,
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "correlation_id": "legacy-signed",
+                "server": "legacy",
+                "tool": "legacy.read",
+                "allowed": True,
+                "rule": "allow",
+                "reason": "allowed",
+                "arguments": {},
+                "result": {"ok": True},
+                "duration_ms": 1.0,
+                "action": "ALLOW",
+                "evidence": [],
+                "instance_id": "local",
+                "previous_hash": "",
+            }
+            event_hash = hashlib.sha256(
+                json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            signature = hmac.new(secret.encode(), event_hash.encode(), hashlib.sha256).hexdigest()
+            connection = sqlite3.connect(path)
+            connection.execute(
+                """
+                CREATE TABLE audit_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL,
+                    correlation_id TEXT NOT NULL, server TEXT NOT NULL, tool TEXT NOT NULL,
+                    allowed INTEGER NOT NULL, rule TEXT NOT NULL, reason TEXT NOT NULL,
+                    arguments_json TEXT NOT NULL, result_json TEXT, duration_ms REAL NOT NULL,
+                    action TEXT NOT NULL, previous_hash TEXT NOT NULL, event_hash TEXT NOT NULL,
+                    signature TEXT NOT NULL, instance_id TEXT NOT NULL,
+                    event_version INTEGER NOT NULL, evidence_json TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO audit_events (
+                    created_at, correlation_id, server, tool, allowed, rule, reason,
+                    arguments_json, result_json, duration_ms, action, previous_hash,
+                    event_hash, signature, instance_id, event_version, evidence_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["created_at"], payload["correlation_id"], payload["server"],
+                    payload["tool"], 1, payload["rule"], payload["reason"], "{}",
+                    '{"ok": true}', 1.0, payload["action"], "", event_hash, signature,
+                    "local", 2, "[]",
+                ),
+            )
+            connection.commit()
+            connection.close()
+
+            with patch.dict(os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": secret}, clear=False):
+                store = AuditStore(path)
+                try:
+                    row = store._connection.execute("SELECT * FROM audit_events").fetchone()
+                    self.assertEqual(row["event_hash"], event_hash)
+                    self.assertEqual(row["hash_version"], 1)
+                    self.assertEqual(row["seq"], 1)
+                    self.assertTrue(store.verify_chain()["valid"])
+                finally:
+                    store.close()
 
     def test_malformed_stored_json_is_reported_and_fails_verified_startup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
