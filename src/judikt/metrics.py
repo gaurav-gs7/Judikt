@@ -9,6 +9,7 @@ class Metrics:
         self._counters: Counter[tuple[str, str, str]] = Counter()
         self._duration_total_ms: Counter[tuple[str, str]] = Counter()
         self._finding_counters: Counter[str] = Counter()
+        self._upstream_counters: Counter[tuple[str, str]] = Counter()
         self._lock = threading.Lock()
 
     def observe(self, server: str, tool: str, allowed: bool, duration_ms: float) -> None:
@@ -20,6 +21,19 @@ class Metrics:
     def observe_finding(self, outcome: str) -> None:
         with self._lock:
             self._finding_counters[outcome] += 1
+
+    def observe_upstream_timeout(self, server: str) -> None:
+        self._observe_upstream("timeouts", server)
+
+    def observe_upstream_restart(self, server: str) -> None:
+        self._observe_upstream("restarts", server)
+
+    def observe_upstream_protocol_violation(self, server: str) -> None:
+        self._observe_upstream("protocol_violations", server)
+
+    def _observe_upstream(self, kind: str, server: str) -> None:
+        with self._lock:
+            self._upstream_counters[(kind, server)] += 1
 
     def render(self) -> str:
         lines = [
@@ -49,4 +63,14 @@ class Metrics:
             )
             for outcome, count in sorted(self._finding_counters.items()):
                 lines.append(f'judikt_findings_total{{outcome="{outcome}"}} {count}')
+            for kind, description in (
+                ("timeouts", "Upstream MCP request deadlines exceeded."),
+                ("restarts", "Upstream MCP subprocess restart attempts."),
+                ("protocol_violations", "Upstream MCP protocol violations."),
+            ):
+                name = f"judikt_upstream_{kind}_total"
+                lines.extend([f"# HELP {name} {description}", f"# TYPE {name} counter"])
+                for (observed_kind, server), count in sorted(self._upstream_counters.items()):
+                    if observed_kind == kind:
+                        lines.append(f'{name}{{server="{server}"}} {count}')
         return "\n".join(lines) + "\n"

@@ -55,6 +55,14 @@ export JUDIKT_UPSTREAM_CONFIG="$PWD/config/upstreams.example.json"
 
 Each upstream command is started directly without a shell. Tool names must be globally unique, the complete definitions are scanned and pinned, and pins are rechecked before every call. Use `JUDIKT_TOOL_PIN_MODE=refresh` only during an intentional reviewed upgrade, then return to `enforce`.
 
+Stdio upstreams use concurrent request correlation, continuously drain stderr into a bounded diagnostic buffer, and enforce 30-second initialization/list deadlines plus a 120-second call deadline. `JUDIKT_UPSTREAM_TIMEOUT_SECONDS` overrides all three globally. A registry entry can override them independently:
+
+```json
+{"timeouts": {"initialize": 30, "list": 30, "call": 120}}
+```
+
+On timeout, Judikt sends `notifications/cancelled` and audits `upstream_timeout`. Crashed or protocol-violating subprocesses restart with 1, 2, 4, 8, then 16-second backoff, no more than five times per five minutes. Tool definitions are re-verified against their pins after every restart and before the waiting call proceeds. Prometheus exports `judikt_upstream_timeouts_total`, `judikt_upstream_restarts_total`, and `judikt_upstream_protocol_violations_total` by server.
+
 Secret-looking environment values cannot be literals in the registry. Use either:
 
 ```json

@@ -10,6 +10,11 @@
     },
     "authenticated-example": {
       "command": ["python3", "/opt/company-mcp/server.py"],
+      "timeouts": {
+        "initialize": 30,
+        "list": 30,
+        "call": 120
+      },
       "env": {
         "UPSTREAM_API_TOKEN": {
           "from_aws_secret": "judikt/upstreams/company",

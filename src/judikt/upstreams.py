@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import math
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ class UpstreamServer:
     cwd: str | None = None
     state_key: str = ""
     fingerprint: str = ""
+    timeouts: dict[str, float] = field(default_factory=dict)
 
 
 def load_upstream_servers(path: str | Path | None = None) -> list[UpstreamServer]:
@@ -55,8 +57,32 @@ def load_upstream_servers(path: str | Path | None = None) -> list[UpstreamServer
                 command=tuple(command),
                 environment=resolve_operator_environment(name, raw.get("env", {})),
                 cwd=cwd,
+                timeouts=_parse_timeouts(name, raw.get("timeouts", {})),
             )
         )
+    return result
+
+
+def _parse_timeouts(server: str, configured: Any) -> dict[str, float]:
+    if not isinstance(configured, dict):
+        raise UpstreamConfigError(f"upstream {server!r} timeouts must be an object")
+    unknown = set(configured) - {"initialize", "list", "call"}
+    if unknown:
+        raise UpstreamConfigError(
+            f"upstream {server!r} has unknown timeout keys: {', '.join(sorted(unknown))}"
+        )
+    result: dict[str, float] = {}
+    for name, value in configured.items():
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value <= 0
+        ):
+            raise UpstreamConfigError(
+                f"upstream {server!r} timeout {name!r} must be a positive number"
+            )
+        result[name] = float(value)
     return result
 
 

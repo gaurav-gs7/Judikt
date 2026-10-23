@@ -188,6 +188,8 @@ For a checkout-based MCP client configuration, use:
 
 Set `JUDIKT_UPSTREAM_CONFIG` to a JSON file using the shape in [`config/upstreams.example.json`](config/upstreams.example.json). Commands are executed directly without a shell. Sensitive upstream credentials should use `from_env` or `from_aws_secret`; caller-supplied OAuth tokens are denied recursively by policy.
 
+Upstream requests default to 30-second `initialize` and `tools/list` deadlines and a 120-second `tools/call` deadline. Set `JUDIKT_UPSTREAM_TIMEOUT_SECONDS` for one global deadline or add per-server `timeouts` with `initialize`, `list`, and `call` values in the registry. Timed-out calls receive MCP `notifications/cancelled`; crashed subprocesses restart with bounded exponential backoff and must pass tool-pin verification again before calls resume.
+
 The `platform-ops`, `kubernetes`, and `incident` adapters are walkthrough fixtures loaded only by `judikt demo` or the explicit `JUDIKT_DEMO_MODE=true` test harness. Production gateway commands load only operator-selected upstream servers.
 
 The test suite launches [`tests/fixtures/external_mcp_server.py`](tests/fixtures/external_mcp_server.py) as an independent process and proves normal and text-only responses, paginated discovery, server-initiated requests, environment isolation, injected-result quarantine, and changed metadata blocking. The versioned [community interoperability harness](docs/COMMUNITY_INTEROP.md) separately targets the official MCP Filesystem and Memory servers plus GitHub's official read-only server.
@@ -223,6 +225,7 @@ Judikt includes:
 - Optional Redis-backed distributed rate limits for multi-replica deployments
 - Atomic Redis counters with privacy-preserving hashed actor/tool keys and live multi-instance CI
 - Circuit breakers for repeated upstream tool failures
+- Concurrent stdio upstream requests with deadlines, cancellation, bounded stderr capture, restart budgets, and post-restart pin verification
 - Hash-chained and optionally HMAC-signed local audit evidence
 - Fail-closed audit signing and full-chain startup verification for production mode
 - JSONL, S3, generic HTTPS SIEM, or Splunk HEC audit shipping plus individually signed DynamoDB serverless events

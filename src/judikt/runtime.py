@@ -15,7 +15,7 @@ from .findings import FindingDispatcher, build_finding_event, should_emit_findin
 from .metrics import Metrics
 from .models import ToolCallResult
 from .policy import PolicyEngine
-from .protocol import MCPProtocolError, StdioMCPClient, is_mcp_tool_error
+from .protocol import MCPProtocolError, StdioMCPClient, UpstreamTimeoutError, is_mcp_tool_error
 from .telemetry import Telemetry
 from .tool_integrity import (
     ToolDriftError,
@@ -52,9 +52,9 @@ class JudiktRuntime:
         if include_demo_servers:
             self.clients.update(
                 {
-                    "platform-ops": StdioMCPClient("platform-ops"),
-                    "incident": StdioMCPClient("incident"),
-                    "kubernetes": StdioMCPClient("kubernetes"),
+                    "platform-ops": StdioMCPClient("platform-ops", metrics=self.metrics),
+                    "incident": StdioMCPClient("incident", metrics=self.metrics),
+                    "kubernetes": StdioMCPClient("kubernetes", metrics=self.metrics),
                 }
             )
         configured_upstreams = load_upstream_servers() if upstream_servers is None else upstream_servers
@@ -68,6 +68,8 @@ class JudiktRuntime:
                 environment=upstream.environment,
                 cwd=upstream.cwd,
                 inherit_environment=False,
+                timeouts=upstream.timeouts,
+                metrics=self.metrics,
             )
             pin_metadata[upstream.name] = ToolPinMetadata(
                 state_key=upstream.state_key or upstream.name,
@@ -88,6 +90,13 @@ class JudiktRuntime:
             server: self.tool_integrity.verify(server, tools).as_dict()
             for server, tools in definitions.items()
         }
+        for server, client in self.clients.items():
+            client.add_restart_handler(
+                lambda restarted, server=server: self._verify_restarted_client(
+                    server,
+                    restarted,
+                )
+            )
 
     def list_tools(self) -> dict[str, list[dict[str, Any]]]:
         result = {server: client.list_tools() for server, client in self.clients.items()}
@@ -200,6 +209,10 @@ class JudiktRuntime:
                                 tool_span.set_json_output(result)
                         except _ApprovalReplayDenied:
                             pass
+                        except UpstreamTimeoutError as exc:
+                            allowed = False
+                            rule = "upstream_timeout"
+                            reason = str(exc)
                         except (MCPProtocolError, ToolIntegrityError) as exc:
                             allowed = False
                             rule = "tool_integrity" if isinstance(exc, ToolIntegrityError) else "upstream_error"
@@ -333,6 +346,10 @@ class JudiktRuntime:
         self.findings.close()
         self.approval_replays.close()
         self.audit.close()
+
+    def _verify_restarted_client(self, server: str, client: StdioMCPClient) -> None:
+        tools = client.list_tools()
+        self.tool_integrity_reports[server] = self.tool_integrity.verify(server, tools).as_dict()
 
     @staticmethod
     def _evaluation_only_result(

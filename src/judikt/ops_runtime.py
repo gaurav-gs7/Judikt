@@ -33,7 +33,7 @@ from .tool_integrity import (
     ToolPinMetadata,
     verify_unique_tool_names,
 )
-from .protocol import StdioMCPClient, is_mcp_tool_error
+from .protocol import StdioMCPClient, UpstreamTimeoutError, is_mcp_tool_error
 from .upstreams import load_upstream_servers
 
 
@@ -92,6 +92,8 @@ class JudiktOpsRuntime:
                 environment=upstream.environment,
                 cwd=upstream.cwd,
                 inherit_environment=False,
+                timeouts=upstream.timeouts,
+                metrics=self.metrics,
             )
             pin_metadata[upstream.name] = ToolPinMetadata(
                 state_key=upstream.state_key or upstream.name,
@@ -113,6 +115,13 @@ class JudiktOpsRuntime:
             server: self.tool_integrity.verify(server, tools).as_dict()
             for server, tools in self._all_tool_definitions().items()
         }
+        for server, client in self.external_clients.items():
+            client.add_restart_handler(
+                lambda restarted, server=server: self._verify_restarted_client(
+                    server,
+                    restarted,
+                )
+            )
 
     def list_tools(self) -> dict[str, list[dict[str, Any]]]:
         definitions = self._all_tool_definitions()
@@ -234,6 +243,11 @@ class JudiktOpsRuntime:
                         allowed = False
                         rule = "tool_integrity"
                         reason = exc.one_line() if isinstance(exc, ToolDriftError) else str(exc)
+                    except UpstreamTimeoutError as exc:
+                        allowed = False
+                        rule = "upstream_timeout"
+                        reason = str(exc)
+                        self._record_failure(server, tool, reason)
                     except Exception:
                         allowed = False
                         rule = "upstream_error"
@@ -382,6 +396,10 @@ class JudiktOpsRuntime:
         self.findings.close()
         self.approval_replays.close()
         self.audit.close()
+
+    def _verify_restarted_client(self, server: str, client: StdioMCPClient) -> None:
+        tools = client.list_tools()
+        self.tool_integrity_reports[server] = self.tool_integrity.verify(server, tools).as_dict()
 
     def _execute(self, server: str, tool: str, arguments: dict[str, Any]) -> Any:
         if server == "platform-ops" and self.platform is not None:
