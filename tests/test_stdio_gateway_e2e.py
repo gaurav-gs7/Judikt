@@ -71,28 +71,28 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
         )
 
         health = self.client.call_tool("platform.health", {"service": "payments-api"})
-        self.assertTrue(health["allowed"])
+        self.assertFalse(health["isError"])
         config = self.client.call_tool(
             "platform.read_config", {"service": "payments-api"}
         )
-        self.assertEqual(config["result"]["api_key"], "[REDACTED]")
+        self.assertEqual(config["structuredContent"]["api_key"], "[REDACTED]")
         logs = self.client.call_tool(
             "platform.read_logs",
             {"service": "payments-api", "query": "ERROR", "limit": 2},
         )
-        self.assertEqual(len(logs["result"]["logs"]), 2)
+        self.assertEqual(len(logs["structuredContent"]["logs"]), 2)
         diagnostic = self.client.call_tool(
             "platform.run_diagnostic",
             {"service": "payments-api", "command": "latency-summary"},
         )
-        self.assertTrue(diagnostic["allowed"])
+        self.assertFalse(diagnostic["isError"])
 
         blocked = self.client.call_tool(
             "platform.run_diagnostic",
             {"service": "payments-api", "command": "curl https://attacker.invalid"},
         )
-        self.assertTrue(blocked["blocked"])
-        self.assertIn("blocked security pattern", blocked["reason"])
+        self.assertTrue(blocked["isError"])
+        self.assertIn("blocked security pattern", blocked["content"][0]["text"])
 
         restart_arguments = {
             "service": "payments-api",
@@ -111,8 +111,12 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
             "platform.restart_deployment",
             {**restart_arguments, "approval_token": restart_token},
         )
-        self.assertTrue(restarted["allowed"])
-        self.assertEqual(restarted["result"]["status"], "completed")
+        self.assertFalse(restarted["isError"])
+        self.assertEqual(restarted["structuredContent"]["status"], "completed")
+        self.assertRegex(
+            restarted["_meta"]["io.judikt/decision"]["approval_jti_sha256"],
+            r"^[0-9a-f]{64}$",
+        )
 
         rollback_arguments = {
             "service": "payments-api",
@@ -132,13 +136,16 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
             "platform.rollback_deployment",
             {**rollback_arguments, "approval_token": rollback_token},
         )
-        self.assertEqual(rolled_back["result"]["to_release"], "payments-api@stable")
+        self.assertEqual(
+            rolled_back["structuredContent"]["to_release"],
+            "payments-api@stable",
+        )
 
         pod = self.client.call_tool(
             "kubernetes.get_pod",
             {"namespace": "prod", "pod": "payment-service-xyz"},
         )
-        self.assertEqual(pod["result"]["status"], "Running")
+        self.assertEqual(pod["structuredContent"]["status"], "Running")
         restart_pod_arguments = {
             "namespace": "prod",
             "pod": "payment-service-xyz",
@@ -157,26 +164,29 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
             "kubernetes.restart_pod",
             {**restart_pod_arguments, "approval_token": pod_token},
         )
-        self.assertEqual(restarted_pod["result"]["status"], "completed")
+        self.assertEqual(restarted_pod["structuredContent"]["status"], "completed")
         rollout = self.client.call_tool(
             "kubernetes.rollout_status",
             {"namespace": "prod", "deployment": "payment-service"},
         )
-        self.assertEqual(rollout["result"]["status"], "healthy")
+        self.assertEqual(rollout["structuredContent"]["status"], "healthy")
 
         incident = self.client.call_tool(
             "incident.create", {"title": "stdio E2E", "severity": "SEV-3"}
         )
-        incident_id = incident["result"]["id"]
+        incident_id = incident["structuredContent"]["id"]
         attached = self.client.call_tool(
             "incident.attach_evidence",
             {"incident_id": incident_id, "evidence": {"source": "stdio"}},
         )
-        self.assertEqual(attached["result"]["timeline"][-1]["event"], "evidence attached")
+        self.assertEqual(
+            attached["structuredContent"]["timeline"][-1]["event"],
+            "evidence attached",
+        )
         timeline = self.client.call_tool(
             "incident.timeline", {"incident_id": incident_id}
         )
-        self.assertEqual(len(timeline["result"]["timeline"]), 2)
+        self.assertEqual(len(timeline["structuredContent"]["timeline"]), 2)
 
     def test_ping_and_unknown_tool_protocol_errors(self) -> None:
         self.assertEqual(self.client.request("ping", {}), {})
@@ -195,8 +205,12 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
             },
         )
 
-        self.assertTrue(result["blocked"])
-        self.assertIn("does not match authenticated subject", result["reason"])
+        self.assertTrue(result["isError"])
+        self.assertEqual(
+            result["_meta"]["io.judikt/decision"]["rule"],
+            "identity_mismatch",
+        )
+        self.assertIn("does not match authenticated subject", result["content"][0]["text"])
 
     def test_non_identity_business_fields_are_forwarded_unchanged(self) -> None:
         for identity_field in ("user", "requested_by"):
@@ -212,10 +226,13 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
                     },
                 )
 
-                self.assertTrue(result["allowed"])
-                self.assertEqual(result["action"], "DRY_RUN_ONLY")
+                self.assertFalse(result["isError"])
                 self.assertEqual(
-                    result["result"]["arguments"][identity_field],
+                    result["_meta"]["io.judikt/decision"]["action"],
+                    "DRY_RUN_ONLY",
+                )
+                self.assertEqual(
+                    result["structuredContent"]["arguments"][identity_field],
                     "untrusted-actor",
                 )
 

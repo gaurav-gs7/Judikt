@@ -130,7 +130,7 @@ class StdioMCPResilienceTest(unittest.TestCase):
 
         result = client.call_tool("resilient.echo", {"value": "received"})
 
-        self.assertEqual(result["value"], "received")
+        self.assertEqual(result["structuredContent"]["value"], "received")
         self.assertLessEqual(len(client.stderr_tail), 20)
         self.assertTrue(all(len(line) <= 200 for line in client.stderr_tail))
 
@@ -153,8 +153,9 @@ class StdioMCPResilienceTest(unittest.TestCase):
 
             result = client.call_tool("resilient.echo", {"value": "second"})
 
-            self.assertEqual(result["value"], "second")
-            self.assertEqual(result["start_count"], 2)
+            payload = result["structuredContent"]
+            self.assertEqual(payload["value"], "second")
+            self.assertEqual(payload["start_count"], 2)
             self.assertEqual(callbacks, [1])
             self.assertIn(
                 'judikt_upstream_restarts_total{server="resilient-crash-once"} 1',
@@ -167,7 +168,7 @@ class StdioMCPResilienceTest(unittest.TestCase):
 
         result = client.call_tool("resilient.echo", {"value": "after-banner"})
 
-        self.assertEqual(result["value"], "after-banner")
+        self.assertEqual(result["structuredContent"]["value"], "after-banner")
         self.assertEqual(client.non_json_line_count, 1)
         self.assertTrue(any("skipped non-JSON" in line for line in client.stderr_tail))
         self.assertIn(
@@ -198,7 +199,7 @@ class StdioMCPResilienceTest(unittest.TestCase):
                     "resilient.echo",
                     {"value": f"value-{index}", "delay": (9 - index) / 100},
                 )
-                results[index] = result["value"]
+                results[index] = result["structuredContent"]["value"]
             except BaseException as exc:
                 failures.append(exc)
 
@@ -226,7 +227,7 @@ class StdioMCPResilienceTest(unittest.TestCase):
                 client.call_tool("resilient.echo", {"value": "too-large"})
             result = client.call_tool("resilient.echo", {"value": "recovered"})
 
-            self.assertEqual(result["value"], "recovered")
+            self.assertEqual(result["structuredContent"]["value"], "recovered")
             self.assertEqual(client.protocol_violation_count, 1)
             self.assertEqual(client.restart_count, 1)
 

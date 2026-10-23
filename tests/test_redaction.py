@@ -71,6 +71,40 @@ class SecretValueRedactionTest(unittest.TestCase):
         self.assertEqual(pattern_sets[0], pattern_sets[1])
         self.assertEqual(pattern_sets[0], pattern_sets[2])
 
+    def test_mcp_result_redaction_preserves_binary_blocks(self) -> None:
+        image = {
+            "type": "image",
+            "data": "sk_" + "live_ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "mimeType": "image/png",
+        }
+        resource = {
+            "type": "resource",
+            "resource": {
+                "uri": "file:///safe.txt",
+                "text": "Bearer opaque-production-token-1234567890",
+                "blob": "sk_" + "live_ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            },
+        }
+        result = self.policy.redact_mcp_result(
+            {
+                "content": [
+                    {"type": "text", "text": "gho_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"},
+                    image,
+                    resource,
+                ],
+                "structuredContent": {"api_key": "visible-only-before-redaction"},
+                "isError": False,
+                "_meta": {"authorization": "Bearer opaque-production-token-1234567890"},
+            }
+        )
+
+        self.assertEqual(result["content"][0]["text"], "[REDACTED]")
+        self.assertEqual(result["content"][1], image)
+        self.assertEqual(result["content"][2]["resource"]["text"], "[REDACTED]")
+        self.assertEqual(result["content"][2]["resource"]["blob"], resource["resource"]["blob"])
+        self.assertEqual(result["structuredContent"]["api_key"], "[REDACTED]")
+        self.assertEqual(result["_meta"]["authorization"], "[REDACTED]")
+
 
 if __name__ == "__main__":
     unittest.main()

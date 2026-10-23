@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import judikt
+
 from judikt.audit import AuditStore
 from judikt.ops_runtime import JudiktOpsRuntime
 from judikt.protocol import StdioMCPClient
@@ -17,6 +19,7 @@ from judikt.request_context import bind_authenticated_subject, reset_authenticat
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_ROOT = Path(judikt.__file__).resolve().parent.parent
 SKILL_ROOT = PROJECT_ROOT / "skills" / "judikt-mcp-security"
 ACTIVATION_CASES = PROJECT_ROOT / "tests" / "fixtures" / "skill_activation_cases.json"
 UPSTREAM_FIXTURE = PROJECT_ROOT / "tests" / "fixtures" / "external_mcp_server.py"
@@ -145,10 +148,10 @@ class SkillAcceptanceTest(unittest.TestCase):
             finally:
                 client.close()
 
-            self.assertTrue(allowed["allowed"])
-            self.assertEqual(allowed["result"]["issue_id"], "INC-42")
-            self.assertTrue(blocked["blocked"])
-            self.assertIn("blocked security pattern", blocked["reason"])
+            self.assertFalse(allowed["isError"])
+            self.assertEqual(allowed["structuredContent"]["issue_id"], "INC-42")
+            self.assertTrue(blocked["isError"])
+            self.assertIn("blocked security pattern", blocked["content"][0]["text"])
 
             with mock.patch.dict(
                 os.environ,
@@ -167,10 +170,14 @@ class SkillAcceptanceTest(unittest.TestCase):
 
             self.assertEqual([event["allowed"] for event in events], [True, False])
             self.assertEqual([event["tool"] for event in events], ["external.fetch_issue"] * 2)
-            self.assertNotIn("forged-caller", json.dumps(events))
+            self.assertEqual(events[0]["arguments"]["actor"], "forged-caller")
+            self.assertEqual(
+                allowed["_meta"]["io.judikt/decision"]["rule"],
+                "allow",
+            )
             self.assertTrue(integrity["valid"])
             self.assertTrue(integrity["signed"])
-            self.assertEqual(integrity["checked_events"], 2)
+            self.assertEqual(integrity["checked_events"], 3)
             self.assertEqual(integrity["legacy_unsealed_events"], 0)
 
     def test_privileged_approval_is_refused_without_authorization(self) -> None:
@@ -221,6 +228,7 @@ class SkillAcceptanceTest(unittest.TestCase):
                 str(UPSTREAM_FIXTURE),
             ],
             "env": {
+                "PYTHONPATH": str(PACKAGE_ROOT),
                 "JUDIKT_APPROVAL_SECRET": "skill-acceptance-approval-secret-32-bytes",
                 "JUDIKT_AUDIT_HMAC_SECRET": "skill-acceptance-audit-secret-at-least-32-bytes",
                 "JUDIKT_AUDIT_SINK": "none",

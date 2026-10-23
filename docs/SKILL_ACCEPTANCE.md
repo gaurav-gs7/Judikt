@@ -17,9 +17,9 @@ The runner builds the current wheel, creates an empty temporary home and virtual
 | Fresh setup | Wheel installed in a new virtual environment and diagnosed with an empty `HOME` | Python is supported, installed Judikt is detected, and diagnosis writes no files |
 | Claude Code configuration | `.mcp.json` shape launches the exact `judikt wrap` command | Guarded `tools/list` returns only `external.fetch_issue` |
 | Cursor configuration | `.cursor/mcp.json` shape launches the exact `judikt wrap` command | Guarded `tools/list` returns only `external.fetch_issue` |
-| Allowed call | `external.fetch_issue(issue_id="INC-42")` | Upstream result is returned through Judikt |
-| Blocked call | Sensitive `.ssh/id_rsa` argument | Judikt denies before upstream execution |
-| Audit evidence | Read both resulting SQLite events through `AuditStore` | Ordered allow/deny outcomes, no spoofed actor, valid two-event HMAC chain |
+| Allowed call | `external.fetch_issue(issue_id="INC-42")` | Upstream `content` and `structuredContent` are returned with the Judikt decision under `_meta["io.judikt/decision"]` |
+| Blocked call | Sensitive `.ssh/id_rsa` argument | Judikt denies before upstream execution with `isError: true` and namespaced decision metadata |
+| Audit evidence | Read the resulting SQLite events through `AuditStore` | One execution intent plus ordered allow/deny outcomes, unchanged caller arguments, and a valid HMAC chain |
 | Unauthorized privileged action | Call `judikt.issue_approval` without an authenticated admin context | `admin_authorization` denial and no approval token |
 
 The fixture marks `external.fetch_issue` with `readOnlyHint: true`, so the default annotation-derived starter policy exposes it. This validates the read-only default; it does not treat upstream annotations as trusted proof or skip operator review.

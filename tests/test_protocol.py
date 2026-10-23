@@ -78,8 +78,9 @@ class StdioMCPClientTest(unittest.TestCase):
             self.addCleanup(client.close)
             result = client.call_tool("external.fetch_issue", {"issue_id": "INC-101"})
 
-        self.assertFalse(result["unbrokered_secret_visible"])
-        self.assertEqual(result["brokered_value"], "operator-selected")
+        payload = result["structuredContent"]
+        self.assertFalse(payload["unbrokered_secret_visible"])
+        self.assertEqual(payload["brokered_value"], "operator-selected")
 
 
 if __name__ == "__main__":

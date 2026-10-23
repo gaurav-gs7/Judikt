@@ -9,13 +9,26 @@ class Tool:
     name: str
     description: str
     input_schema: dict[str, Any] = field(default_factory=dict)
+    title: str | None = None
+    annotations: dict[str, Any] | None = None
+    output_schema: dict[str, Any] | None = None
+    meta: dict[str, Any] | None = None
 
     def as_mcp(self) -> dict[str, Any]:
-        return {
+        result = {
             "name": self.name,
             "description": self.description,
             "inputSchema": self.input_schema,
         }
+        if self.title is not None:
+            result["title"] = self.title
+        if self.annotations is not None:
+            result["annotations"] = self.annotations
+        if self.output_schema is not None:
+            result["outputSchema"] = self.output_schema
+        if self.meta is not None:
+            result["_meta"] = self.meta
+        return result
 
 
 @dataclass(frozen=True)
@@ -45,6 +58,9 @@ class ToolCallResult:
     risk_score: int = 0
     risk_level: str = "low"
     evidence: list[str] = field(default_factory=list)
+    mcp_result: dict[str, Any] | None = field(default=None, repr=False)
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        result = asdict(self)
+        result.pop("mcp_result", None)
+        return result

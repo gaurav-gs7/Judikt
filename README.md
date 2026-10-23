@@ -194,6 +194,14 @@ The `platform-ops`, `kubernetes`, and `incident` adapters are walkthrough fixtur
 
 The test suite launches [`tests/fixtures/external_mcp_server.py`](tests/fixtures/external_mcp_server.py) as an independent process and proves normal and text-only responses, paginated discovery, server-initiated requests, environment isolation, injected-result quarantine, and changed metadata blocking. The versioned [community interoperability harness](docs/COMMUNITY_INTEROP.md) separately targets the official MCP Filesystem and Memory servers plus GitHub's official read-only server.
 
+### MCP Result Semantics
+
+For an allowed stdio call, Judikt preserves the upstream MCP result: `content`, optional `structuredContent`, `isError`, and upstream `_meta`. Text is inspected and redacted before delivery; image, audio, resource-blob, and resource-link payloads pass through without binary rewriting. Judikt adds only `_meta["io.judikt/decision"]`, containing the correlation ID, policy rule, action, risk level, and an approval-token digest when applicable. An upstream `isError: true` remains a tool error.
+
+Policy denials, approval requirements, rate limits, timeouts, and quarantines return `isError: true`, one safe text block, and the same namespaced decision metadata. Unknown tool names are JSON-RPC invalid-parameter errors (`-32602`). The gateway forwards `title`, `annotations`, `outputSchema`, and `_meta` from tool definitions, but may tighten safety annotations. It advertises `tools.listChanged`; changed or newly discovered definitions are rechecked against policy and tool pins before clients are notified.
+
+**Breaking change:** older Judikt releases returned an `allowed`/`blocked` JSON envelope in `structuredContent`. Clients must now consume the upstream result directly and read Judikt's decision from `_meta["io.judikt/decision"]`. This restores MCP output-schema compatibility and prevents denials from being mistaken for successful tool results.
+
 ## Security and Operations Controls
 
 Judikt includes:
@@ -226,6 +234,7 @@ Judikt includes:
 - Atomic Redis counters with privacy-preserving hashed actor/tool keys and live multi-instance CI
 - Circuit breakers for repeated upstream tool failures
 - Concurrent stdio upstream requests with deadlines, cancellation, bounded stderr capture, restart budgets, and post-restart pin verification
+- Native MCP result passthrough, metadata preservation, protocol-version negotiation, and live `tools/listChanged` pin enforcement
 - Hash-chained and optionally HMAC-signed local audit evidence
 - Fail-closed audit signing and full-chain startup verification for production mode
 - JSONL, S3, generic HTTPS SIEM, or Splunk HEC audit shipping plus individually signed DynamoDB serverless events

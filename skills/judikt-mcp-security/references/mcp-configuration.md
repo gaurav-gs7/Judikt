@@ -82,3 +82,11 @@ A successful process start alone is not enough. Record sanitized evidence for:
 - one authorized read-only call, when available;
 - an audit event or correlation identifier;
 - any configured control that was not exercised.
+
+## Tool Result Contract
+
+Allowed calls preserve the upstream MCP `content`, optional `structuredContent`, `isError`, and `_meta`. Judikt's evidence is added only at `_meta["io.judikt/decision"]`; read the correlation ID and rule there. A Judikt denial is an MCP tool error with `isError: true` and one safe text block, while an unknown tool is JSON-RPC error `-32602`.
+
+This replaces the pre-0.3 result envelope. Do not look for top-level `allowed`, `blocked`, or nested `result` fields in `structuredContent`. Tool arguments remain unchanged, and identity comes only from `local_stdio_identity` or the authenticated subject unless a reviewed policy explicitly configures `identity_argument_fields`.
+
+Judikt advertises `tools.listChanged`. On notification, clients should refresh `tools/list`; Judikt will expose a new or changed definition only after policy filtering and tool-pin verification. Never disable pin enforcement merely to make a changed catalog appear.

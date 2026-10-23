@@ -19,7 +19,9 @@ from .models import Tool
 
 
 class MCPProtocolError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, code: int = -32000) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class UpstreamTimeoutError(MCPProtocolError):
@@ -38,6 +40,12 @@ ToolHandler = Callable[[str, dict[str, Any]], Any]
 NotificationHandler = Callable[[dict[str, Any]], None]
 RestartHandler = Callable[["StdioMCPClient"], None]
 STABLE_PROTOCOL_VERSION = "2025-11-25"
+SUPPORTED_PROTOCOL_VERSIONS = {
+    "2024-11-05",
+    "2025-03-26",
+    "2025-06-18",
+    STABLE_PROTOCOL_VERSION,
+}
 MCP_ERROR_MARKER = "_judikt_mcp_tool_error"
 DEFAULT_TIMEOUTS = {"initialize": 30.0, "list": 30.0, "call": 120.0}
 DEFAULT_STDERR_BUFFER_BYTES = 65_536
@@ -62,9 +70,38 @@ def serve_stdio(
     handler: ToolHandler,
     *,
     accepted_tool_names: set[str] | None = None,
+    tools_provider: Callable[[], list[Tool]] | None = None,
+    accepted_tool_names_provider: Callable[[], set[str]] | None = None,
+    subscribe_list_changed: Callable[[Callable[[], None]], None] | None = None,
 ) -> None:
-    """Serve the small MCP surface needed by the demo over JSON-RPC stdio."""
-    tool_index = accepted_tool_names if accepted_tool_names is not None else {tool.name for tool in tools}
+    """Serve Judikt's MCP stdio surface without mixing diagnostics into stdout."""
+    write_lock = threading.Lock()
+
+    def write(payload: dict[str, Any]) -> None:
+        with write_lock:
+            sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
+            sys.stdout.flush()
+
+    def current_tools() -> list[Tool]:
+        return tools_provider() if tools_provider is not None else tools
+
+    def current_tool_names() -> set[str]:
+        if accepted_tool_names_provider is not None:
+            return accepted_tool_names_provider()
+        if accepted_tool_names is not None:
+            return accepted_tool_names
+        return {tool.name for tool in current_tools()}
+
+    if subscribe_list_changed is not None:
+        subscribe_list_changed(
+            lambda: write(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/tools/list_changed",
+                    "params": {},
+                }
+            )
+        )
     for raw_line in sys.stdin:
         message: dict[str, Any] = {}
         try:
@@ -75,46 +112,56 @@ def serve_stdio(
             method = message.get("method")
             params = message.get("params", {})
             if method == "initialize":
+                requested_version = str(params.get("protocolVersion", ""))
                 result = {
-                    "protocolVersion": STABLE_PROTOCOL_VERSION,
-                    "capabilities": {"tools": {"listChanged": False}},
+                    "protocolVersion": (
+                        requested_version
+                        if requested_version in SUPPORTED_PROTOCOL_VERSIONS
+                        else STABLE_PROTOCOL_VERSION
+                    ),
+                    "capabilities": {"tools": {"listChanged": True}},
                     "serverInfo": {"name": name, "version": "0.1.0"},
                 }
             elif method == "ping":
                 result = {}
             elif method == "tools/list":
-                result = {"tools": [tool.as_mcp() for tool in tools]}
+                result = {"tools": [tool.as_mcp() for tool in current_tools()]}
             elif method == "tools/call":
                 tool_name = params.get("name", "")
-                if tool_name not in tool_index:
-                    raise MCPProtocolError(f"unknown tool: {tool_name}")
+                if tool_name not in current_tool_names():
+                    raise MCPProtocolError(f"unknown tool: {tool_name}", code=-32602)
                 output = handler(tool_name, params.get("arguments", {}))
-                result = {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": json.dumps(output, sort_keys=True),
-                        }
-                    ],
-                    "structuredContent": output,
-                    "isError": False,
-                }
+                result = output if _is_mcp_result(output) else _legacy_tool_result(output)
             else:
                 raise MCPProtocolError(f"unsupported method: {method}")
-            _write({"jsonrpc": "2.0", "id": request_id, "result": result})
+            write({"jsonrpc": "2.0", "id": request_id, "result": result})
         except Exception as exc:  # Keep the MCP server alive for the next request.
-            _write(
+            write(
                 {
                     "jsonrpc": "2.0",
                     "id": message.get("id") if isinstance(message, dict) else None,
-                    "error": {"code": -32000, "message": str(exc)},
+                    "error": {
+                        "code": exc.code if isinstance(exc, MCPProtocolError) else -32000,
+                        "message": str(exc),
+                    },
                 }
             )
 
 
-def _write(payload: dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
-    sys.stdout.flush()
+def _is_mcp_result(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and isinstance(value.get("content"), list)
+        and isinstance(value.get("isError"), bool)
+    )
+
+
+def _legacy_tool_result(output: Any) -> dict[str, Any]:
+    return {
+        "content": [{"type": "text", "text": json.dumps(output, sort_keys=True)}],
+        "structuredContent": output,
+        "isError": False,
+    }
 
 
 @dataclass(frozen=True)
@@ -291,18 +338,15 @@ class StdioMCPClient:
 
     def call_tool(self, tool: str, arguments: dict[str, Any]) -> Any:
         response = self.request("tools/call", {"name": tool, "arguments": arguments})
-        if response.get("isError") is True:
-            return {
-                MCP_ERROR_MARKER: True,
-                "content": response.get("content", []),
-                "structuredContent": response.get("structuredContent"),
-            }
-        if "structuredContent" in response and response["structuredContent"] is not None:
-            return response["structuredContent"]
         content = response.get("content")
-        if isinstance(content, list):
-            return {"content": content}
-        raise MCPProtocolError(f"MCP backend {self.backend!r} returned an invalid tool result")
+        if not isinstance(content, list):
+            raise MCPProtocolError(f"MCP backend {self.backend!r} returned an invalid tool result")
+        result = {"content": content, "isError": response.get("isError") is True}
+        if "structuredContent" in response:
+            result["structuredContent"] = response["structuredContent"]
+        if "_meta" in response:
+            result["_meta"] = response["_meta"]
+        return result
 
     def close(self) -> None:
         if self._closed.is_set():
@@ -751,4 +795,6 @@ def _close_process_streams(process: subprocess.Popen[bytes]) -> None:
 
 
 def is_mcp_tool_error(value: Any) -> bool:
-    return isinstance(value, dict) and value.get(MCP_ERROR_MARKER) is True
+    return isinstance(value, dict) and (
+        value.get("isError") is True or value.get(MCP_ERROR_MARKER) is True
+    )

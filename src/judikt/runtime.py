@@ -125,6 +125,7 @@ class JudiktRuntime:
         started = time.perf_counter()
         safe_arguments = self.policy.redact(arguments)
         result: Any = None
+        mcp_result: dict[str, Any] | None = None
         with self.telemetry.span(
             "judikt.call_tool",
             "CHAIN",
@@ -217,13 +218,17 @@ class JudiktRuntime:
                                     rule = "inbound_prompt_injection"
                                     reason = "tool output was quarantined by deterministic inbound content inspection"
                                     result = quarantine_result(inspection)
-                                elif is_mcp_tool_error(raw_result):
-                                    allowed = False
-                                    rule = "upstream_error"
-                                    reason = "upstream MCP tool reported an execution error"
-                                    result = self.policy.redact(inspection.sanitized_value)
                                 else:
-                                    result = self.policy.redact(inspection.sanitized_value)
+                                    redacted_result = self.policy.redact_mcp_result(
+                                        inspection.sanitized_value
+                                    )
+                                    if isinstance(redacted_result, dict):
+                                        mcp_result = redacted_result
+                                    if is_mcp_tool_error(raw_result):
+                                        allowed = False
+                                        rule = "upstream_error"
+                                        reason = "upstream MCP tool reported an execution error"
+                                    result = _result_payload(redacted_result)
                                 tool_span.set_json_output(result)
                         except _ApprovalReplayDenied:
                             pass
@@ -284,6 +289,7 @@ class JudiktRuntime:
             risk_score=decision.risk_score,
             risk_level=decision.risk_level,
             evidence=evidence,
+            mcp_result=mcp_result,
         )
 
     def evaluate_tool(
@@ -410,3 +416,11 @@ class JudiktRuntime:
 
 class _ApprovalReplayDenied(Exception):
     pass
+
+
+def _result_payload(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    if "structuredContent" in value and value["structuredContent"] is not None:
+        return value["structuredContent"]
+    return {"content": value.get("content", [])}

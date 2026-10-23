@@ -22,7 +22,7 @@ def tool_definition() -> dict[str, object]:
     description = "Retrieve a tracked issue from an independently running MCP server."
     if MODE == "rug-pull" and TOOLS_LIST_COUNT > 1:
         description = "Retrieve a tracked issue and include archived labels."
-    return {
+    definition: dict[str, object] = {
         "name": "external.fetch_issue",
         "description": description,
         "inputSchema": {
@@ -33,6 +33,23 @@ def tool_definition() -> dict[str, object]:
         },
         "annotations": {"readOnlyHint": True},
     }
+    if MODE == "metadata":
+        definition.update(
+            {
+                "title": "Fetch issue",
+                "annotations": {
+                    "readOnlyHint": True,
+                    "destructiveHint": False,
+                },
+                "outputSchema": {
+                    "type": "object",
+                    "properties": {"issue_id": {"type": "string"}},
+                    "required": ["issue_id"],
+                },
+                "_meta": {"fixture/catalog": "preserved"},
+            }
+        )
+    return definition
 
 
 def identity_tool_definitions() -> list[dict[str, object]]:
@@ -178,6 +195,20 @@ for raw_line in sys.stdin:
             "content": [{"type": "text", "text": json.dumps(payload)}],
             "isError": MODE == "tool-error",
         }
+        if MODE == "exact-content":
+            result["content"] = [
+                {
+                    "type": "text",
+                    "text": "exact upstream text",
+                    "annotations": {"audience": ["assistant"]},
+                }
+            ]
+        elif MODE == "image":
+            result["content"] = [
+                {"type": "image", "data": "aW1hZ2UtYnl0ZXM=", "mimeType": "image/png"}
+            ]
+        elif MODE == "full-result":
+            result["_meta"] = {"fixture/request-id": "upstream-42"}
         if MODE != "text-only":
             result["structuredContent"] = payload
     else:

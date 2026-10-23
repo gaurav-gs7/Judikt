@@ -427,7 +427,12 @@ def _walk_strings(value: Any, path: str = "$") -> list[tuple[str, str]]:
     if isinstance(value, str):
         found.append((path, value))
     elif isinstance(value, dict):
+        block_type = value.get("type")
         for key, item in value.items():
+            if key == "data" and block_type in {"image", "audio"}:
+                continue
+            if key == "blob" and block_type == "resource":
+                continue
             found.extend(_walk_strings(item, f"{path}.{key}"))
     elif isinstance(value, list):
         for index, item in enumerate(value):

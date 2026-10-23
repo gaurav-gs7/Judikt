@@ -165,6 +165,7 @@ class JudiktOpsRuntime:
         started = time.perf_counter()
         safe_arguments = self.policy.redact(arguments)
         result: Any = None
+        mcp_result: dict[str, Any] | None = None
         decision = self.policy.evaluate(
             server,
             tool,
@@ -246,14 +247,20 @@ class JudiktOpsRuntime:
                                 reason = "tool output was quarantined by deterministic inbound content inspection"
                                 result = quarantine_result(inspection)
                                 self._record_failure(server, tool, reason)
-                            elif is_mcp_tool_error(raw_result):
-                                allowed = False
-                                rule = "upstream_error"
-                                reason = "upstream MCP tool reported an execution error"
-                                result = self.policy.redact(inspection.sanitized_value)
-                                self._record_failure(server, tool, reason)
                             else:
-                                result = self.policy.redact(inspection.sanitized_value)
+                                redacted_result = self.policy.redact_mcp_result(
+                                    inspection.sanitized_value
+                                )
+                                if _is_mcp_result(redacted_result):
+                                    mcp_result = redacted_result
+                                    result = _mcp_result_payload(redacted_result)
+                                else:
+                                    result = redacted_result
+                                if is_mcp_tool_error(raw_result):
+                                    allowed = False
+                                    rule = "upstream_error"
+                                    reason = "upstream MCP tool reported an execution error"
+                                    self._record_failure(server, tool, reason)
                             tool_span.set_json_output(result)
                         if allowed:
                             self._reset_circuit(server, tool)
@@ -323,6 +330,7 @@ class JudiktOpsRuntime:
             risk_score=decision.risk_score,
             risk_level=decision.risk_level,
             evidence=evidence,
+            mcp_result=mcp_result,
         )
 
     def issue_approval(
@@ -522,3 +530,13 @@ class JudiktOpsRuntime:
 
 class _ApprovalReplayDenied(Exception):
     pass
+
+
+def _is_mcp_result(value: Any) -> bool:
+    return isinstance(value, dict) and isinstance(value.get("content"), list)
+
+
+def _mcp_result_payload(value: dict[str, Any]) -> Any:
+    if "structuredContent" in value and value["structuredContent"] is not None:
+        return value["structuredContent"]
+    return {"content": value.get("content", [])}

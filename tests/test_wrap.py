@@ -83,23 +83,23 @@ class WrapEndToEndTest(unittest.TestCase):
             {"issue_id": "/home/operator/.ssh/id_rsa"},
         )
 
-        self.assertTrue(user_lookup["allowed"])
+        self.assertFalse(user_lookup["isError"])
         self.assertEqual(
-            user_lookup["result"]["received_arguments"],
+            user_lookup["structuredContent"]["received_arguments"],
             {"user": "octocat"},
         )
-        self.assertTrue(lookup_with_actor["allowed"])
+        self.assertFalse(lookup_with_actor["isError"])
         self.assertEqual(
-            lookup_with_actor["result"]["received_arguments"],
+            lookup_with_actor["structuredContent"]["received_arguments"],
             {"user": "octocat", "actor": "gaurav"},
         )
-        self.assertTrue(requested["allowed"])
+        self.assertFalse(requested["isError"])
         self.assertEqual(
-            requested["result"]["received_arguments"],
+            requested["structuredContent"]["received_arguments"],
             {"requested_by": "release-manager"},
         )
-        self.assertTrue(blocked["blocked"])
-        self.assertIn("blocked security pattern", blocked["reason"])
+        self.assertTrue(blocked["isError"])
+        self.assertIn("blocked security pattern", blocked["content"][0]["text"])
 
         connection = sqlite3.connect(self.audit_path)
         try:
@@ -156,19 +156,22 @@ class WrapProfileEndToEndTest(unittest.TestCase):
                     process,
                     "tools/call",
                     {"name": "read_file", "arguments": {"target": "README.md"}},
-                )["structuredContent"]
+                )
                 denied = self._request(
                     process,
                     "tools/call",
                     {"name": "delete_repo", "arguments": {"target": "prod-infra"}},
-                )["structuredContent"]
+                )
             finally:
                 stderr = self._stop(process)
 
             self.assertEqual([tool["name"] for tool in tools], ["read_file"])
-            self.assertTrue(allowed["allowed"])
-            self.assertTrue(denied["blocked"])
-            self.assertEqual(denied["rule"], "allowlist")
+            self.assertFalse(allowed["isError"])
+            self.assertTrue(denied["isError"])
+            self.assertEqual(
+                denied["_meta"]["io.judikt/decision"]["rule"],
+                "allowlist",
+            )
             calls = [json.loads(line) for line in call_log.read_text().splitlines()]
             self.assertEqual([call["tool"] for call in calls], ["read_file"])
             self.assertIn(
@@ -252,9 +255,12 @@ class WrapProfileEndToEndTest(unittest.TestCase):
             finally:
                 client.close()
 
-            self.assertTrue(denied["blocked"])
-            self.assertEqual(denied["rule"], "approval_required")
-            self.assertTrue(allowed["allowed"])
+            self.assertTrue(denied["isError"])
+            self.assertEqual(
+                denied["_meta"]["io.judikt/decision"]["rule"],
+                "approval_required",
+            )
+            self.assertFalse(allowed["isError"])
             calls = [json.loads(line) for line in call_log.read_text().splitlines()]
             self.assertEqual(len(calls), 1)
             self.assertEqual(calls[0]["tool"], "update_issue")
@@ -273,7 +279,7 @@ class WrapProfileEndToEndTest(unittest.TestCase):
                         process,
                         "tools/call",
                         {"name": tool["name"], "arguments": {"target": "fixture"}},
-                    )["structuredContent"]
+                    )
                     for tool in tools
                 ]
             finally:
@@ -283,7 +289,7 @@ class WrapProfileEndToEndTest(unittest.TestCase):
                 [tool["name"] for tool in tools],
                 ["read_file", "update_issue", "delete_repo", "list_things", "delete_cache"],
             )
-            self.assertTrue(all(result["allowed"] for result in results))
+            self.assertTrue(all(not result["isError"] for result in results))
             self.assertEqual(len(call_log.read_text().splitlines()), 5)
             self.assertIn(
                 "WARNING: permissive profile allows every discovered tool without generated approval gates.",
@@ -316,7 +322,7 @@ class WrapProfileEndToEndTest(unittest.TestCase):
                 client.close()
 
             self.assertEqual([tool["name"] for tool in tools], ["delete_repo"])
-            self.assertTrue(result["allowed"])
+            self.assertFalse(result["isError"])
             self.assertEqual(len(call_log.read_text().splitlines()), 1)
 
     @classmethod

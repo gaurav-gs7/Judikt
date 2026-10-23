@@ -183,6 +183,35 @@ class PolicyEngine:
             return result
         return value
 
+    def redact_mcp_result(self, value: Any) -> Any:
+        if not isinstance(value, dict) or not isinstance(value.get("content"), list):
+            return self.redact(value)
+        result = dict(value)
+        result["content"] = [self._redact_content_block(block) for block in value["content"]]
+        if "structuredContent" in value:
+            result["structuredContent"] = self.redact(value["structuredContent"])
+        if "_meta" in value:
+            result["_meta"] = self.redact(value["_meta"])
+        return result
+
+    def _redact_content_block(self, block: Any) -> Any:
+        if not isinstance(block, dict):
+            return self.redact(block)
+        block_type = block.get("type")
+        if block_type in {"image", "audio"}:
+            return dict(block)
+        if block_type == "resource":
+            result = dict(block)
+            resource = block.get("resource")
+            if isinstance(resource, dict):
+                redacted_resource = {
+                    key: item if key == "blob" else self.redact(item)
+                    for key, item in resource.items()
+                }
+                result["resource"] = redacted_resource
+            return result
+        return self.redact(block)
+
     def set_tool_enabled(self, tool: str, enabled: bool) -> None:
         with self._lock:
             if enabled:
