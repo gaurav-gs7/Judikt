@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .approval import ApprovalAuthority, ApprovalTokenError
+from .approval import ApprovalAuthority, ApprovalClaims, ApprovalTokenError
 from .content_guard import ContentGuard
 from .models import PolicyDecision
 from .rate_limiter import build_rate_limiter
@@ -204,6 +204,25 @@ class PolicyEngine:
     def actor_can_call(self, actor: str, tool: str) -> bool:
         return self._actor_can_call(actor, tool)
 
+    def approval_claims(
+        self,
+        server: str,
+        tool: str,
+        arguments: dict[str, Any],
+    ) -> ApprovalClaims | None:
+        token = arguments.get("approval_token")
+        if not isinstance(token, str) or not token:
+            return None
+        try:
+            return self.approvals.verify(
+                token=token,
+                server=server,
+                tool=tool,
+                arguments=arguments,
+            )
+        except ApprovalTokenError:
+            return None
+
     def _within_rate_limit(self, tool: str, actor: str, arguments: dict[str, Any]) -> bool:
         limit = self.config["rate_limits_per_minute"].get(
             tool, self.config["rate_limits_per_minute"]["default"]
@@ -226,13 +245,8 @@ class PolicyEngine:
         return any(pattern.search(key) for pattern in self._redacted_keys)
 
     def _has_approval(self, server: str, tool: str, arguments: dict[str, Any]) -> bool:
-        token = arguments.get("approval_token")
-        if isinstance(token, str) and token:
-            try:
-                self.approvals.verify(token=token, server=server, tool=tool, arguments=arguments)
-                return True
-            except ApprovalTokenError:
-                return False
+        if self.approval_claims(server, tool, arguments) is not None:
+            return True
         return bool(self.config.get("allow_demo_boolean_approval", False) and arguments.get("approved") is True)
 
     def _actor(self, arguments: dict[str, Any]) -> str:

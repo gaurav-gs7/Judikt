@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .approval import ApprovalAuthority, resolve_approval_secret
+from .approval_replay import DynamoDBApprovalReplayStore, approval_jti_digest
 from .backends import INCIDENT_TOOLS, KUBERNETES_TOOLS, PLATFORM_TOOLS, IncidentBackend, KubernetesBackend, PlatformOpsBackend
 from .content_guard import ContentGuard, quarantine_result
 from .findings import build_finding_event, should_emit_finding
@@ -151,6 +152,7 @@ def _call_guarded_tool(
     allowed = decision.allowed
     reason = decision.reason
     rule = decision.rule
+    evidence = list(decision.evidence)
 
     if server in _DEMO_SERVERS and not _demo_mode_enabled():
         allowed = False
@@ -161,8 +163,24 @@ def _call_guarded_tool(
         if decision.action in {"DRY_RUN_ONLY", "SHADOW_MODE"}:
             result = _evaluation_only_result(decision.action, server, tool, safe_arguments)
         else:
-            tool_response = _invoke_tool_lambda(server, tool, arguments, correlation_id)
-            if tool_response.get("ok"):
+            claims = policy.approval_claims(server, tool, arguments)
+            if claims is not None:
+                evidence.append(f"approval_jti_sha256:{approval_jti_digest(claims.jti)}")
+                if not DynamoDBApprovalReplayStore(_state_table()).consume(
+                    claims.jti,
+                    claims.expires_at,
+                ):
+                    allowed = False
+                    rule = "approval_replay"
+                    reason = "approval token has already been used"
+            tool_response = (
+                _invoke_tool_lambda(server, tool, arguments, correlation_id)
+                if allowed
+                else None
+            )
+            if tool_response is None:
+                pass
+            elif tool_response.get("ok"):
                 raw_result = tool_response.get("result")
                 inspection = _content_guard().inspect(raw_result)
                 if inspection.allowed:
@@ -203,6 +221,7 @@ def _call_guarded_tool(
         "result": result,
         "risk_score": decision.risk_score,
         "risk_level": decision.risk_level,
+        "evidence": evidence,
         "at": _utc_now(),
     }
     _write_audit_event(event)
@@ -221,6 +240,7 @@ def _call_guarded_tool(
         "result": result,
         "risk_score": decision.risk_score,
         "risk_level": decision.risk_level,
+        "evidence": evidence,
     }
 
 

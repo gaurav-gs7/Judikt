@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .approval import ApprovalAuthority
+from .approval_replay import approval_jti_digest, build_approval_replay_store
 from .audit import AuditStore
 from .content_guard import ContentGuard, quarantine_result
 from .findings import FindingDispatcher, build_finding_event, should_emit_finding
@@ -60,9 +61,14 @@ class JudiktOpsRuntime:
         circuit_failure_threshold: int = 3,
         circuit_cooldown_seconds: int = 300,
         approval_authority: ApprovalAuthority | None = None,
+        remote_mode: bool = False,
     ) -> None:
         self.policy = PolicyEngine(policy_path, approval_authority)
         self.content_guard = ContentGuard.from_policy(self.policy.config)
+        self.approval_replays = build_approval_replay_store(
+            audit_path.with_suffix(".approval-replay.db"),
+            remote_mode=remote_mode,
+        )
         self.audit = AuditStore(audit_path)
         self.findings = FindingDispatcher(audit_path.with_suffix(".findings.db"))
         self.slack_approvals = SlackApprovalWorkflow(
@@ -151,6 +157,7 @@ class JudiktOpsRuntime:
         allowed = decision.allowed
         reason = decision.reason
         rule = decision.rule
+        evidence = list(decision.evidence)
 
         circuit = self._circuits.get((server, tool), CircuitState())
         if allowed and circuit.open_until > time.time():
@@ -179,6 +186,17 @@ class JudiktOpsRuntime:
                     try:
                         definitions = self._all_tool_definitions().get(server, [])
                         self.tool_integrity_reports[server] = self.tool_integrity.verify(server, definitions).as_dict()
+                        claims = self.policy.approval_claims(server, tool, arguments)
+                        if claims is not None:
+                            evidence.append(
+                                f"approval_jti_sha256:{approval_jti_digest(claims.jti)}"
+                            )
+                            if not self.approval_replays.consume(claims.jti, claims.expires_at):
+                                allowed = False
+                                rule = "approval_replay"
+                                reason = "approval token has already been used"
+                        if not allowed:
+                            raise _ApprovalReplayDenied
                         with self.telemetry.span(
                             f"mcp.{tool}",
                             "TOOL",
@@ -207,6 +225,8 @@ class JudiktOpsRuntime:
                             tool_span.set_json_output(result)
                         if allowed:
                             self._reset_circuit(server, tool)
+                    except _ApprovalReplayDenied:
+                        pass
                     except ToolIntegrityError as exc:
                         allowed = False
                         rule = "tool_integrity"
@@ -218,6 +238,7 @@ class JudiktOpsRuntime:
                         self._record_failure(server, tool, reason)
             if allowed and result is not None:
                 result = self._maybe_annotate_incident(arguments, server, tool, correlation_id, decision, result)
+            request_span.set_policy(allowed=allowed, rule=rule, reason=reason)
             request_span.set_json_output({"allowed": allowed, "result": result})
 
         duration_ms = (time.perf_counter() - started) * 1000
@@ -233,6 +254,7 @@ class JudiktOpsRuntime:
             arguments=safe_arguments,
             result=result,
             duration_ms=duration_ms,
+            evidence=evidence,
         )
         if should_emit_finding(rule, decision.risk_level, allowed):
             outcome = self.findings.dispatch(
@@ -263,7 +285,7 @@ class JudiktOpsRuntime:
             action=action,
             risk_score=decision.risk_score,
             risk_level=decision.risk_level,
-            evidence=decision.evidence,
+            evidence=evidence,
         )
 
     def issue_approval(
@@ -355,6 +377,7 @@ class JudiktOpsRuntime:
             client.close()
         self.slack_approvals.close()
         self.findings.close()
+        self.approval_replays.close()
         self.audit.close()
 
     def _execute(self, server: str, tool: str, arguments: dict[str, Any]) -> Any:
@@ -433,3 +456,7 @@ class JudiktOpsRuntime:
 
     def _reset_circuit(self, server: str, tool: str) -> None:
         self._circuits[(server, tool)] = CircuitState()
+
+
+class _ApprovalReplayDenied(Exception):
+    pass

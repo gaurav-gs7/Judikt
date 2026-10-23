@@ -16,7 +16,7 @@ from .paths import ensure_private_directory, state_root
 from .secrets import resolve_configured_secret
 
 
-TOKEN_VERSION = "judikt-approval-v1"
+TOKEN_VERSION = "judikt-approval-v2"
 REVOKED_DEV_SECRET = "local-dev-approval-secret-change-me"
 MINIMUM_SECRET_BYTES = 32
 
@@ -28,6 +28,8 @@ class ApprovalClaims:
     server: str
     tool: str
     arguments_hash: str
+    jti: str
+    issued_at: int
     expires_at: int
 
 
@@ -84,6 +86,7 @@ class ApprovalAuthority:
         arguments_hash: str,
         ttl_seconds: int = 300,
     ) -> str:
+        now = int(time.time())
         claims = {
             "version": TOKEN_VERSION,
             "actor": actor,
@@ -91,7 +94,9 @@ class ApprovalAuthority:
             "server": server,
             "tool": tool,
             "arguments_hash": arguments_hash,
-            "expires_at": int(time.time()) + ttl_seconds,
+            "jti": secrets.token_urlsafe(16),
+            "issued_at": now,
+            "expires_at": now + ttl_seconds,
         }
         payload = _b64(json.dumps(claims, sort_keys=True, separators=(",", ":")).encode())
         signature = _b64(hmac.new(self.secret, payload.encode(), hashlib.sha256).digest())
@@ -117,21 +122,29 @@ class ApprovalAuthority:
         except (json.JSONDecodeError, ValueError) as exc:
             raise ApprovalTokenError("approval token payload is invalid") from exc
         if raw_claims.get("version") != TOKEN_VERSION:
-            raise ApprovalTokenError("approval token version is unsupported")
-        if raw_claims.get("expires_at", 0) < int(time.time()):
+            raise ApprovalTokenError("approval token version is unsupported; re-issue")
+        try:
+            claims = ApprovalClaims(
+                actor=str(raw_claims["actor"]),
+                reason=str(raw_claims["reason"]),
+                server=str(raw_claims["server"]),
+                tool=str(raw_claims["tool"]),
+                arguments_hash=str(raw_claims["arguments_hash"]),
+                jti=str(raw_claims["jti"]),
+                issued_at=int(raw_claims["issued_at"]),
+                expires_at=int(raw_claims["expires_at"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ApprovalTokenError("approval token claims are invalid") from exc
+        if not claims.jti or claims.issued_at > claims.expires_at:
+            raise ApprovalTokenError("approval token claims are invalid")
+        if claims.expires_at < int(time.time()):
             raise ApprovalTokenError("approval token is expired")
-        if raw_claims.get("server") != server or raw_claims.get("tool") != tool:
+        if claims.server != server or claims.tool != tool:
             raise ApprovalTokenError("approval token is bound to a different tool")
-        if raw_claims.get("arguments_hash") != arguments_hash(arguments):
+        if claims.arguments_hash != arguments_hash(arguments):
             raise ApprovalTokenError("approval token is bound to different arguments")
-        return ApprovalClaims(
-            actor=raw_claims["actor"],
-            reason=raw_claims["reason"],
-            server=raw_claims["server"],
-            tool=raw_claims["tool"],
-            arguments_hash=raw_claims["arguments_hash"],
-            expires_at=raw_claims["expires_at"],
-        )
+        return claims
 
 
 def arguments_hash(arguments: dict[str, Any]) -> str:

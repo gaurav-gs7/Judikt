@@ -211,7 +211,7 @@ Judikt includes:
 - Trusted-context identity from `local_stdio_identity` or an authenticated subject, with tool arguments forwarded unchanged
 - OAuth protected-resource metadata and caller-token passthrough denial
 - Scoped OAuth challenges and exact HTTP Origin validation
-- HMAC-signed approval tokens for restart and rollback operations
+- HMAC-signed, single-use approval tokens for restart and rollback operations
 - Slack button approvals with signed callbacks, approver allowlists, deduplication, and replay protection
 - Rollback-plan enforcement before production-impacting actions execute
 - Dry-run-only and shadow-mode outcomes for safe agent evaluation
@@ -275,6 +275,8 @@ curl -s http://127.0.0.1:8080/api/call \
 Issue a signed approval token for a rollback:
 
 For local single-machine use, Judikt creates `$XDG_STATE_HOME/judikt/approval.key` (or `~/.local/state/judikt/approval.key`) atomically with mode `0600` inside a mode-`0700` directory. All local commands for the same OS user share that key. Judikt refuses incorrectly owned or group/world-readable key files and rejects approval secrets shorter than 32 bytes. Remote bindings, serverless deployments, and `JUDIKT_PRODUCTION=true` require an explicitly configured shared secret through `JUDIKT_APPROVAL_SECRET`, AWS Secrets Manager, or Vault; they never fall back to the per-machine key.
+
+Approval tokens are single-use. Judikt records the token's hashed identifier atomically immediately before upstream execution; dry-run and shadow-mode evaluations do not consume it, while an attempted call remains consumed if the upstream later fails. Local single-instance gateways use SQLite. Remote and production gateways require Redis through `JUDIKT_REDIS_URL`, unless the operator explicitly declares `JUDIKT_SINGLE_INSTANCE=true`; the serverless gateway uses DynamoDB.
 
 ```bash
 TOKEN=$(./scripts/python.sh -m judikt.cli issue-approval \

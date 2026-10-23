@@ -58,6 +58,8 @@ class AuditStore:
         self._ensure_column("event_hash", "TEXT NOT NULL DEFAULT ''")
         self._ensure_column("signature", "TEXT NOT NULL DEFAULT ''")
         self._ensure_column("instance_id", "TEXT NOT NULL DEFAULT 'local'")
+        self._ensure_column("event_version", "INTEGER NOT NULL DEFAULT 1")
+        self._ensure_column("evidence_json", "TEXT NOT NULL DEFAULT '[]'")
         self._connection.commit()
         latest = self._connection.execute(
             "SELECT event_hash FROM audit_events WHERE event_hash != '' ORDER BY id DESC LIMIT 1"
@@ -93,11 +95,14 @@ class AuditStore:
         result: Any,
         duration_ms: float,
         action: str = "ALLOW",
+        evidence: list[str] | None = None,
     ) -> None:
         with self._lock:
             created_at = dt.datetime.now(dt.UTC).isoformat()
             rounded_duration = round(float(duration_ms), 3)
+            evidence = list(evidence or [])
             event = {
+                "event_version": 2,
                 "created_at": created_at,
                 "correlation_id": correlation_id,
                 "server": server,
@@ -109,6 +114,7 @@ class AuditStore:
                 "result": result,
                 "duration_ms": rounded_duration,
                 "action": action,
+                "evidence": evidence,
                 "instance_id": self._instance_id,
                 "previous_hash": self._last_hash,
             }
@@ -119,8 +125,9 @@ class AuditStore:
                 INSERT INTO audit_events (
                     created_at, correlation_id, server, tool, allowed, rule,
                     reason, arguments_json, result_json, duration_ms, action,
-                    previous_hash, event_hash, signature, instance_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    previous_hash, event_hash, signature, instance_id,
+                    event_version, evidence_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     created_at,
@@ -138,6 +145,8 @@ class AuditStore:
                     event_hash,
                     signature,
                     self._instance_id,
+                    2,
+                    json.dumps(evidence, sort_keys=True),
                 ),
             )
             self._connection.commit()
@@ -161,6 +170,7 @@ class AuditStore:
             event["arguments"] = json.loads(event.pop("arguments_json"))
             raw_result = event.pop("result_json")
             event["result"] = json.loads(raw_result) if raw_result is not None else None
+            event["evidence"] = json.loads(event.pop("evidence_json"))
             events.append(event)
         return events
 
@@ -212,7 +222,7 @@ class AuditStore:
         }
 
     def _row_hash_payload(self, row: sqlite3.Row) -> dict[str, Any]:
-        return {
+        event = {
             "created_at": row["created_at"],
             "correlation_id": row["correlation_id"],
             "server": row["server"],
@@ -227,6 +237,10 @@ class AuditStore:
             "instance_id": row["instance_id"],
             "previous_hash": row["previous_hash"],
         }
+        if int(row["event_version"]) >= 2:
+            event["event_version"] = int(row["event_version"])
+            event["evidence"] = json.loads(row["evidence_json"])
+        return event
 
     @staticmethod
     def _hash_event(event: dict[str, Any]) -> str:

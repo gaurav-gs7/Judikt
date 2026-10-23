@@ -21,6 +21,8 @@ def build_runtime(
     policy_path: Path,
     audit_path: Path,
     approval_authority: ApprovalAuthority | None = None,
+    *,
+    remote_mode: bool = False,
 ) -> JudiktOpsRuntime:
     return JudiktOpsRuntime(
         policy_path,
@@ -29,6 +31,7 @@ def build_runtime(
         circuit_failure_threshold=int(os.getenv("JUDIKT_CIRCUIT_FAILURE_THRESHOLD", "3")),
         circuit_cooldown_seconds=int(os.getenv("JUDIKT_CIRCUIT_COOLDOWN_SECONDS", "300")),
         approval_authority=approval_authority,
+        remote_mode=remote_mode,
     )
 
 
@@ -65,7 +68,12 @@ def serve_real_mcp(args: argparse.Namespace) -> None:
         require_auth=remote_bind and not allow_unauthenticated_remote
     )
     approval_authority = ApprovalAuthority(require_configured=remote_bind)
-    runtime = build_runtime(args.policy, args.audit_db, approval_authority)
+    runtime = build_runtime(
+        args.policy,
+        args.audit_db,
+        approval_authority,
+        remote_mode=remote_bind,
+    )
     mcp = FastMCP(
         "Judikt Production Ops",
         instructions=(

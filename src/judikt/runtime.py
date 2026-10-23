@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .approval import ApprovalAuthority
+from .approval_replay import approval_jti_digest, build_approval_replay_store
 from .audit import AuditStore
 from .content_guard import ContentGuard, quarantine_result
 from .groq import IncidentAnalyst
@@ -38,6 +39,9 @@ class JudiktRuntime:
     ) -> None:
         self.policy = PolicyEngine(policy_path, approval_authority)
         self.content_guard = ContentGuard.from_policy(self.policy.config)
+        self.approval_replays = build_approval_replay_store(
+            audit_path.with_suffix(".approval-replay.db")
+        )
         self.audit = AuditStore(audit_path)
         self.findings = FindingDispatcher(audit_path.with_suffix(".findings.db"))
         self.metrics = Metrics()
@@ -138,6 +142,7 @@ class JudiktRuntime:
             reason = decision.reason
             allowed = decision.allowed
             rule = decision.rule
+            evidence = list(decision.evidence)
             if allowed:
                 if decision.action in {"DRY_RUN_ONLY", "SHADOW_MODE"}:
                     result = self._evaluation_only_result(decision.action, server, tool, safe_arguments)
@@ -151,6 +156,17 @@ class JudiktRuntime:
                         try:
                             tools = client.list_tools()
                             self.tool_integrity_reports[server] = self.tool_integrity.verify(server, tools).as_dict()
+                            claims = self.policy.approval_claims(server, tool, arguments)
+                            if claims is not None:
+                                evidence.append(
+                                    f"approval_jti_sha256:{approval_jti_digest(claims.jti)}"
+                                )
+                                if not self.approval_replays.consume(claims.jti, claims.expires_at):
+                                    allowed = False
+                                    rule = "approval_replay"
+                                    reason = "approval token has already been used"
+                            if not allowed:
+                                raise _ApprovalReplayDenied
                             with self.telemetry.span(
                                 f"mcp.{tool}",
                                 "TOOL",
@@ -179,6 +195,8 @@ class JudiktRuntime:
                                 else:
                                     result = self.policy.redact(raw_result)
                                 tool_span.set_json_output(result)
+                        except _ApprovalReplayDenied:
+                            pass
                         except (MCPProtocolError, ToolIntegrityError) as exc:
                             allowed = False
                             rule = "tool_integrity" if isinstance(exc, ToolIntegrityError) else "upstream_error"
@@ -200,6 +218,7 @@ class JudiktRuntime:
             arguments=safe_arguments,
             result=result,
             duration_ms=duration_ms,
+            evidence=evidence,
         )
         if should_emit_finding(rule, decision.risk_level, allowed):
             outcome = self.findings.dispatch(
@@ -230,7 +249,7 @@ class JudiktRuntime:
             action=action,
             risk_score=decision.risk_score,
             risk_level=decision.risk_level,
-            evidence=decision.evidence,
+            evidence=evidence,
         )
 
     def evaluate_tool(
@@ -268,6 +287,7 @@ class JudiktRuntime:
             arguments=safe_arguments,
             result=result,
             duration_ms=duration_ms,
+            evidence=decision.evidence,
         )
         if should_emit_finding(decision.rule, decision.risk_level, allowed):
             outcome = self.findings.dispatch(
@@ -308,6 +328,7 @@ class JudiktRuntime:
         for client in self.clients.values():
             client.close()
         self.findings.close()
+        self.approval_replays.close()
         self.audit.close()
 
     @staticmethod
@@ -326,3 +347,7 @@ class JudiktRuntime:
             "arguments": safe_arguments,
             "message": "Judikt evaluated policy and intentionally skipped execution.",
         }
+
+
+class _ApprovalReplayDenied(Exception):
+    pass
