@@ -182,9 +182,9 @@ def _call_guarded_tool(
                 pass
             elif tool_response.get("ok"):
                 raw_result = tool_response.get("result")
-                inspection = _content_guard().inspect(raw_result)
+                inspection = _content_guard().inspect(raw_result, surface="tool_result")
                 if inspection.allowed:
-                    result = policy.redact(raw_result)
+                    result = policy.redact(inspection.sanitized_value)
                     _record_tool_success(server, tool)
                 else:
                     allowed = False
@@ -267,7 +267,10 @@ class ServerlessPolicy(PolicyEngine):
                 return self._decision(False, "circuit breaker is open for this tool", "circuit_breaker", risk)
             if tool not in self.config["allowed_tools"].get(server, []):
                 return self._decision(False, f"tool {tool!r} is not allowlisted for {server!r}", "allowlist", risk)
-            argument_inspection = self.argument_guard.inspect(arguments)
+            argument_inspection = self.argument_guard.inspect(
+                arguments,
+                surface="tool_argument",
+            )
             if not argument_inspection.allowed:
                 return self._decision(
                     False,

@@ -55,7 +55,10 @@ class PolicyEngine:
                 return self._decision(False, f"tool {tool!r} is disabled by kill switch", "kill_switch", risk)
             if tool not in self.config["allowed_tools"].get(server, []):
                 return self._decision(False, f"tool {tool!r} is not allowlisted for {server!r}", "allowlist", risk)
-            argument_inspection = self.argument_guard.inspect(arguments)
+            argument_inspection = self.argument_guard.inspect(
+                arguments,
+                surface="tool_argument",
+            )
             if not argument_inspection.allowed:
                 return self._decision(
                     False,

@@ -52,7 +52,13 @@
   },
   "inbound_content_inspection": {
     "mode": "fail_closed",
-    "max_scan_bytes": 262144
+    "max_scan_bytes": 262144,
+    "max_medium_findings": 3,
+    "thresholds": {
+      "tool_description": "medium",
+      "tool_argument": "medium",
+      "tool_result": "high"
+    }
   },
   "redacted_key_patterns": [
     "api[_-]?key",

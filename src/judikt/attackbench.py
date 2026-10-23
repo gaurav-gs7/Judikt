@@ -75,18 +75,27 @@ class AttackBenchEvaluator:
 
     def detect(self, payload: Any, surface: str) -> Detection:
         started = time.perf_counter_ns()
-        inspection = self.content_guard.inspect(payload)
+        content_surface = {
+            "arguments": "tool_argument",
+            "tool_argument": "tool_argument",
+            "tool_description": "tool_description",
+            "description": "tool_description",
+        }.get(surface, "tool_result")
+        inspection = self.content_guard.inspect(payload, surface=content_surface)
         rules = {finding.rule for finding in inspection.findings}
+        predicted_attack = inspection.action in {"redact", "block"}
         canonical = _canonical(payload)
 
         if surface in {"arguments", "auto", "unknown"}:
             if any(pattern.search(canonical) for pattern in self._blocked):
                 rules.add("blocked_argument_pattern")
+                predicted_attack = True
             if _contains_forbidden_key(payload, self._forbidden_keys):
                 rules.add("caller_credential_passthrough")
+                predicted_attack = True
 
         elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000
-        return Detection(bool(rules), tuple(sorted(rules)), elapsed_ms)
+        return Detection(predicted_attack, tuple(sorted(rules)), elapsed_ms)
 
 
 def run_attackbench(

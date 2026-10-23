@@ -1,0 +1,508 @@
+{
+  "schema_version": 1,
+  "evaluation": {
+    "name": "Judikt content-guard precision corpus",
+    "split": "dev",
+    "sample_count": 254,
+    "corpus_sha256": "2935d4da69677f498db2ff1575068ecb1aa3beee9e8cbbf9a20e21d1d3b68eb4",
+    "policy_sha256": "b6ce81193543494cda657eb6de83c69b607b2c726b06a68e351f7d7071582c3d"
+  },
+  "overall": {
+    "sample_count": 254,
+    "true_positive": 97,
+    "false_positive": 0,
+    "true_negative": 156,
+    "false_negative": 1,
+    "precision": 1.0,
+    "recall": 0.989796,
+    "false_positive_rate": 0.0,
+    "f1": 0.994872,
+    "latency_ms": {
+      "p50": 0.073792,
+      "p95": 0.107958,
+      "p99": 0.137417
+    }
+  },
+  "by_surface": {
+    "tool_argument": {
+      "sample_count": 76,
+      "true_positive": 27,
+      "false_positive": 0,
+      "true_negative": 48,
+      "false_negative": 1,
+      "precision": 1.0,
+      "recall": 0.964286,
+      "false_positive_rate": 0.0,
+      "f1": 0.981818,
+      "latency_ms": {
+        "p50": 0.0745,
+        "p95": 0.100916,
+        "p99": 0.124791
+      }
+    },
+    "tool_description": {
+      "sample_count": 102,
+      "true_positive": 42,
+      "false_positive": 0,
+      "true_negative": 60,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.073125,
+        "p95": 0.1125,
+        "p99": 0.156875
+      }
+    },
+    "tool_result": {
+      "sample_count": 76,
+      "true_positive": 28,
+      "false_positive": 0,
+      "true_negative": 48,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.0745,
+        "p95": 0.107958,
+        "p99": 0.126334
+      }
+    }
+  },
+  "by_category": {
+    "authority_impersonation": {
+      "sample_count": 7,
+      "true_positive": 7,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.056959,
+        "p95": 0.062667,
+        "p99": 0.062667
+      }
+    },
+    "cli_help": {
+      "sample_count": 13,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 13,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.065708,
+        "p95": 0.096416,
+        "p99": 0.10175
+      }
+    },
+    "code_comment": {
+      "sample_count": 13,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 13,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.090125,
+        "p95": 0.111125,
+        "p99": 0.129541
+      }
+    },
+    "concealment": {
+      "sample_count": 7,
+      "true_positive": 7,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.061209,
+        "p95": 0.06575,
+        "p99": 0.06575
+      }
+    },
+    "confusables": {
+      "sample_count": 7,
+      "true_positive": 7,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.053667,
+        "p95": 0.062167,
+        "p99": 0.062167
+      }
+    },
+    "contributing": {
+      "sample_count": 13,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 13,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.082375,
+        "p95": 0.097708,
+        "p99": 0.098583
+      }
+    },
+    "encoded_base64": {
+      "sample_count": 7,
+      "true_positive": 7,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.0775,
+        "p95": 0.0905,
+        "p99": 0.0905
+      }
+    },
+    "encoded_hex": {
+      "sample_count": 7,
+      "true_positive": 7,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.070833,
+        "p95": 0.084917,
+        "p99": 0.084917
+      }
+    },
+    "encoded_url": {
+      "sample_count": 7,
+      "true_positive": 7,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.100167,
+        "p95": 0.206083,
+        "p99": 0.206083
+      }
+    },
+    "instruction_override": {
+      "sample_count": 7,
+      "true_positive": 7,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.073291,
+        "p95": 0.078125,
+        "p99": 0.078125
+      }
+    },
+    "invisible_unicode": {
+      "sample_count": 7,
+      "true_positive": 7,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.063333,
+        "p95": 0.069208,
+        "p99": 0.069208
+      }
+    },
+    "issue_pr": {
+      "sample_count": 13,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 13,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.084041,
+        "p95": 0.126334,
+        "p99": 0.126833
+      }
+    },
+    "log_line": {
+      "sample_count": 13,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 13,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.087333,
+        "p95": 0.099,
+        "p99": 0.107958
+      }
+    },
+    "multilingual_attack": {
+      "sample_count": 7,
+      "true_positive": 6,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 1,
+      "precision": 1.0,
+      "recall": 0.857143,
+      "false_positive_rate": 0.0,
+      "f1": 0.923077,
+      "latency_ms": {
+        "p50": 0.037042,
+        "p95": 0.040042,
+        "p99": 0.040042
+      }
+    },
+    "multilingual_benign": {
+      "sample_count": 13,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 13,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.057167,
+        "p95": 0.066125,
+        "p99": 0.069375
+      }
+    },
+    "ordinary_prose": {
+      "sample_count": 13,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 13,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.073792,
+        "p95": 0.091166,
+        "p99": 0.096583
+      }
+    },
+    "policy_documentation": {
+      "sample_count": 13,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 13,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.082209,
+        "p95": 0.108459,
+        "p99": 0.1125
+      }
+    },
+    "readme_setup": {
+      "sample_count": 13,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 13,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.070917,
+        "p95": 0.1345,
+        "p99": 0.156875
+      }
+    },
+    "role_reassignment": {
+      "sample_count": 7,
+      "true_positive": 7,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.049375,
+        "p95": 0.055792,
+        "p99": 0.055792
+      }
+    },
+    "runbook": {
+      "sample_count": 13,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 13,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.083625,
+        "p95": 0.092542,
+        "p99": 0.099583
+      }
+    },
+    "secret_exfiltration": {
+      "sample_count": 7,
+      "true_positive": 7,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.080625,
+        "p95": 0.090666,
+        "p99": 0.090666
+      }
+    },
+    "security_documentation": {
+      "sample_count": 13,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 13,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.100709,
+        "p95": 0.137417,
+        "p99": 0.150917
+      }
+    },
+    "spaced_letters": {
+      "sample_count": 7,
+      "true_positive": 7,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.069208,
+        "p95": 0.099083,
+        "p99": 0.099083
+      }
+    },
+    "split_fields": {
+      "sample_count": 7,
+      "true_positive": 7,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.048125,
+        "p95": 0.062375,
+        "p99": 0.062375
+      }
+    },
+    "stack_trace": {
+      "sample_count": 13,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 13,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.081125,
+        "p95": 0.089333,
+        "p99": 0.098791
+      }
+    },
+    "tool_coercion": {
+      "sample_count": 7,
+      "true_positive": 7,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.06225,
+        "p95": 0.067667,
+        "p99": 0.067667
+      }
+    }
+  },
+  "mistakes": [
+    {
+      "sample_id_sha256": "4fa56f53033401a23186a0924da06908dd34bac2e1faeffa50fd0cba86f5a38a",
+      "surface": "tool_argument",
+      "category": "multilingual_attack",
+      "expected_attack": true,
+      "predicted_attack": false,
+      "matched_rules": []
+    }
+  ],
+  "privacy": {
+    "raw_payloads_in_report": false,
+    "sample_identifiers": "sha256"
+  }
+}

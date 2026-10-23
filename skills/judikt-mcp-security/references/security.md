@@ -37,3 +37,9 @@ In local stdio mode, approvals and roles protect against prompt-injected calls a
 ## Generated Policy Boundary
 
 `judikt init` and policy-free `judikt wrap` generate an annotation-derived starter policy (read-only by default). MCP annotations are self-reported by the upstream and are not trusted security facts. They can only make generation stricter than the mutation-name check. Treat `tool_classification` and every generated permission as a starting point for operator review. `approve-writes` gates write and destructive tools with approvals; `permissive` allows all discovered tools and emits a warning. An explicit policy passed to `judikt wrap --policy` is used as-is.
+
+## Content Inspection Boundary
+
+`inbound_content_inspection.thresholds` configures the minimum blocking severity for `tool_description`, `tool_argument`, and `tool_result`. Defaults are medium, medium, and high respectively. Medium tool-result findings redact the matched span; more than `max_medium_findings` (default `3`) quarantines the full result. Low findings are recorded. Oversized results scan the first and last halves of the byte budget and record a finding without blocking by default, while oversized metadata fails closed.
+
+The project-authored 178-sample held-out test split measured 100% precision, 98.57% recall, and 0% false-positive rate overall after the redesign. Tool-result recall was 100% with 0% false-positive rate. Treat these as regression-corpus measurements, not proof of general semantic detection. The repository publishes [baseline evidence](https://github.com/gaurav-gs7/Judikt/blob/main/docs/evidence/content-guard-baseline-2026-10-23-test.json) and [redesign evidence](https://github.com/gaurav-gs7/Judikt/blob/main/docs/evidence/content-guard-redesign-2026-10-23-test.json). Novel paraphrases remain a known gap; do not describe this deterministic guard as complete prompt-injection prevention.

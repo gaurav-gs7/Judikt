@@ -178,7 +178,10 @@ class JudiktRuntime:
                             ) as tool_span:
                                 tool_span.set_json_input(safe_arguments)
                                 raw_result = client.call_tool(tool, arguments)
-                                inspection = self.content_guard.inspect(raw_result)
+                                inspection = self.content_guard.inspect(
+                                    raw_result,
+                                    surface="tool_result",
+                                )
                                 tool_span.set_attribute("judikt.content.allowed", inspection.allowed)
                                 tool_span.set_attribute("judikt.content.finding_count", len(inspection.findings))
                                 tool_span.set_attribute("judikt.content.hash", inspection.content_hash)
@@ -191,9 +194,9 @@ class JudiktRuntime:
                                     allowed = False
                                     rule = "upstream_error"
                                     reason = "upstream MCP tool reported an execution error"
-                                    result = self.policy.redact(raw_result)
+                                    result = self.policy.redact(inspection.sanitized_value)
                                 else:
-                                    result = self.policy.redact(raw_result)
+                                    result = self.policy.redact(inspection.sanitized_value)
                                 tool_span.set_json_output(result)
                         except _ApprovalReplayDenied:
                             pass

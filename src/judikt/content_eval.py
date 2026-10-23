@@ -51,11 +51,14 @@ def run_content_evaluation(
         if record["split"] != split:
             continue
         started = time.perf_counter_ns()
-        inspection = guard.inspect(_record_payload(record))
+        inspection = guard.inspect(
+            _record_payload(record),
+            surface=record["surface"],
+        )
         latency_ms = (time.perf_counter_ns() - started) / 1_000_000
         score = ContentScore(
             expected_attack=record["label"] == "attack",
-            predicted_attack=bool(inspection.findings),
+            predicted_attack=inspection.action in {"redact", "block"},
             surface=record["surface"],
             category=record["category"],
             latency_ms=latency_ms,

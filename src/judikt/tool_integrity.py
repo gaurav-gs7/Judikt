@@ -208,7 +208,7 @@ class ToolIntegrityStore:
         return self._read()
 
     def _inspect(self, server: str, tools: list[dict[str, Any]]) -> None:
-        inspection = self.content_guard.inspect(tools)
+        inspection = self.content_guard.inspect(tools, surface="tool_description")
         if not inspection.allowed:
             rules = sorted({finding.rule for finding in inspection.findings})
             raise ToolIntegrityError(
