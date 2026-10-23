@@ -30,6 +30,22 @@ document records their pre-unification behavior and the target runtime contract.
 unification, stdio and HTTP independently orchestrate most controls and can
 therefore drift even when they use the same lower-level classes.
 
+## Post-unification parity
+
+| Control or component | stdio gateway | HTTP server | serverless |
+| --- | --- | --- | --- |
+| Canonical guarded-call pipeline | Shared `GuardedCallPipeline` | Shared `GuardedCallPipeline` | Separate Lambda handler |
+| Trusted identity provider | Local stdio identity | Authenticated request subject | API-authenticated request actor |
+| Kill-switch adapter | Shared component contract | Shared component contract | DynamoDB state |
+| Circuit breaker | Shared in-memory store | Shared in-memory store | DynamoDB state |
+| Policy, integrity, approval replay, intent audit, inspection, redaction, findings, metrics | Shared ordering and implementation | Shared ordering and implementation | Shared policy primitives with Lambda-specific orchestration |
+| Upstream registry | Managed stdio subprocesses | In-process adapters and configured stdio subprocesses | Tool Lambda invocation |
+| Optional Slack workflow | Available | Available | Not implemented |
+
+The remaining serverless differences are deliberate deployment-boundary gaps,
+not a second local runtime. Closing them requires DynamoDB/Lambda adapters for
+the pipeline component contracts rather than another copy of call orchestration.
+
 ## Target design
 
 `GuardedCallPipeline` is the sole local/HTTP orchestrator for guarded tool calls.
