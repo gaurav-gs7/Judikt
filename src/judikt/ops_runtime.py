@@ -69,7 +69,7 @@ class JudiktOpsRuntime:
             audit_path.with_suffix(".approval-replay.db"),
             remote_mode=remote_mode,
         )
-        self.audit = AuditStore(audit_path)
+        self.audit = AuditStore(audit_path, require_configured_key=remote_mode)
         self.findings = FindingDispatcher(audit_path.with_suffix(".findings.db"))
         self.slack_approvals = SlackApprovalWorkflow(
             audit_path.with_suffix(".approvals.db"),

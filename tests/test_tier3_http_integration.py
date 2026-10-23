@@ -110,7 +110,7 @@ class Tier3HTTPIntegrationTest(unittest.TestCase):
         ) as address, patch.dict(
             os.environ,
             {
-                "JUDIKT_AUDIT_HMAC_SECRET": "audit-chain-secret",
+                "JUDIKT_AUDIT_HMAC_SECRET": "audit-chain-secret-with-at-least-32-bytes",
                 "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
                 "JUDIKT_AUDIT_SINK": "siem",
                 "JUDIKT_AUDIT_SINK_STRICT": "true",
@@ -173,7 +173,7 @@ class Tier3HTTPIntegrationTest(unittest.TestCase):
         ) as address, patch.dict(
             os.environ,
             {
-                "JUDIKT_AUDIT_HMAC_SECRET": "audit-chain-secret",
+                "JUDIKT_AUDIT_HMAC_SECRET": "audit-chain-secret-with-at-least-32-bytes",
                 "JUDIKT_AUDIT_SINK": "siem",
                 "JUDIKT_AUDIT_SINK_STRICT": "true",
                 "JUDIKT_SIEM_URL": f"{address}/events",

@@ -153,7 +153,7 @@ class SkillAcceptanceTest(unittest.TestCase):
             with mock.patch.dict(
                 os.environ,
                 {
-                    "JUDIKT_AUDIT_HMAC_SECRET": "skill-acceptance-audit-secret",
+                    "JUDIKT_AUDIT_HMAC_SECRET": "skill-acceptance-audit-secret-at-least-32-bytes",
                     "JUDIKT_AUDIT_SINK": "none",
                 },
                 clear=False,
@@ -222,7 +222,7 @@ class SkillAcceptanceTest(unittest.TestCase):
             ],
             "env": {
                 "JUDIKT_APPROVAL_SECRET": "skill-acceptance-approval-secret-32-bytes",
-                "JUDIKT_AUDIT_HMAC_SECRET": "skill-acceptance-audit-secret",
+                "JUDIKT_AUDIT_HMAC_SECRET": "skill-acceptance-audit-secret-at-least-32-bytes",
                 "JUDIKT_AUDIT_SINK": "none",
                 "JUDIKT_TELEMETRY": "disabled",
                 "JUDIKT_TOOL_PIN_PATH": str(root / f"{client}-pins.json"),

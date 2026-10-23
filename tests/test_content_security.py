@@ -488,7 +488,10 @@ class ExternalMCPIntegrationTest(unittest.TestCase):
 class AuditIntegrityTest(unittest.TestCase):
     def test_hash_chain_verifies_and_detects_tampering(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            with patch.dict(os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": "audit-test-secret"}):
+            with patch.dict(
+                os.environ,
+                {"JUDIKT_AUDIT_HMAC_SECRET": "audit-test-secret-with-at-least-32-bytes"},
+            ):
                 store = AuditStore(Path(directory) / "audit.db")
                 self.addCleanup(store.close)
                 for index in range(2):

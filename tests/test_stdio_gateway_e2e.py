@@ -22,7 +22,7 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
         self.environment = {
             "PYTHONPATH": str(PROJECT_ROOT / "src"),
             "JUDIKT_APPROVAL_SECRET": "stdio-approval-secret-at-least-32-bytes",
-            "JUDIKT_AUDIT_HMAC_SECRET": "stdio-audit-secret",
+            "JUDIKT_AUDIT_HMAC_SECRET": "stdio-audit-secret-with-at-least-32-bytes",
             "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
             "JUDIKT_AUDIT_SINK": "none",
             "JUDIKT_TELEMETRY": "disabled",
@@ -227,7 +227,7 @@ class StdioServerResilienceTest(unittest.TestCase):
                 **os.environ,
                 "PYTHONPATH": str(PROJECT_ROOT / "src"),
                 "JUDIKT_APPROVAL_SECRET": "resilience-approval-secret-at-least-32-bytes",
-                "JUDIKT_AUDIT_HMAC_SECRET": "resilience-audit-secret",
+                "JUDIKT_AUDIT_HMAC_SECRET": "resilience-audit-secret-at-least-32-bytes",
                 "JUDIKT_AUDIT_SINK": "none",
                 "JUDIKT_TELEMETRY": "disabled",
                 "JUDIKT_TOOL_PIN_PATH": str(Path(directory) / "pins.json"),

@@ -62,7 +62,7 @@ class TerminalDemoTest(unittest.TestCase):
             )
             environment = {
                 "JUDIKT_APPROVAL_SECRET": "demo-test-approval-secret-at-least-32-bytes",
-                "JUDIKT_AUDIT_HMAC_SECRET": "demo-test-audit-secret",
+                "JUDIKT_AUDIT_HMAC_SECRET": "demo-test-audit-secret-at-least-32-bytes",
                 "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
                 "JUDIKT_AUDIT_VERIFY_ON_STARTUP": "true",
                 "JUDIKT_AUDIT_SINK": "none",

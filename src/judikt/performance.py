@@ -220,7 +220,7 @@ def _isolated_runtime_environment(root: Path) -> Iterator[None]:
     overrides = {
         "JUDIKT_TELEMETRY": "disabled",
         "JUDIKT_AUDIT_SINK": "none",
-        "JUDIKT_AUDIT_HMAC_SECRET": "benchmark-audit-secret",
+        "JUDIKT_AUDIT_HMAC_SECRET": "benchmark-audit-secret-at-least-32-bytes",
         "JUDIKT_AUDIT_HMAC_SECRET_ARN": "",
         "JUDIKT_AUDIT_HMAC_SECRET_VAULT_PATH": "",
         "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",

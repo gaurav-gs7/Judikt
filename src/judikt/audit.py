@@ -4,33 +4,44 @@ import datetime as dt
 import hashlib
 import hmac
 import json
+import math
 import os
+import secrets
 import sqlite3
+import stat
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
 
 from .audit_sink import build_audit_sink
+from .paths import ensure_private_directory, state_root
 from .secrets import resolve_configured_secret
 
 
+MINIMUM_AUDIT_SECRET_BYTES = 32
+CHECKPOINT_LIMITATION = (
+    "Local checkpoints detect accidental loss, but a local attacker can truncate both "
+    "audit events and checkpoints. Tamper-evidence against a local attacker requires an "
+    "external checkpoint destination such as S3 Object Lock or a SIEM."
+)
+
+
+class AuditConfigurationError(RuntimeError):
+    pass
+
+
 class AuditStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, require_configured_key: bool = False) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._signing_secret = resolve_configured_secret(
-            direct_env="JUDIKT_AUDIT_HMAC_SECRET",
-            aws_secret_env="JUDIKT_AUDIT_HMAC_SECRET_ARN",
-            vault_path_env="JUDIKT_AUDIT_HMAC_SECRET_VAULT_PATH",
-            json_key_env="JUDIKT_AUDIT_HMAC_SECRET_JSON_KEY",
-            description="audit HMAC secret",
+        self._path = path
+        self._signing_secret = resolve_audit_secret(
+            require_configured=require_configured_key,
         )
-        self._signature_required = _enabled("JUDIKT_AUDIT_SIGNATURE_REQUIRED")
-        if self._signature_required and not self._signing_secret:
-            raise RuntimeError(
-                "JUDIKT_AUDIT_SIGNATURE_REQUIRED=true requires JUDIKT_AUDIT_HMAC_SECRET "
-                "or a brokered audit HMAC secret"
-            )
+        self._signature_required = True
+        self._checkpoint_events = _positive_int_env("JUDIKT_AUDIT_CHECKPOINT_EVENTS", 100)
+        self._checkpoint_seconds = _positive_float_env("JUDIKT_AUDIT_CHECKPOINT_SECONDS", 60.0)
         self._connection = sqlite3.connect(path, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._connection.execute("PRAGMA journal_mode=WAL")
@@ -99,6 +110,19 @@ class AuditStore:
             self._ensure_column("hash_version", "INTEGER")
             self._connection.execute(
                 "CREATE TABLE IF NOT EXISTS audit_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+            )
+            self._connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_checkpoints (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chain_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    head_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    signature TEXT NOT NULL,
+                    UNIQUE(chain_id, seq)
+                )
+                """
             )
             self._connection.execute(
                 "INSERT OR IGNORE INTO audit_meta (key, value) VALUES ('chain_id', ?)",
@@ -213,6 +237,7 @@ class AuditStore:
                         2,
                     ),
                 )
+                self._maybe_checkpoint(seq, event_hash, created_at=created_at)
                 self._connection.commit()
             except Exception:
                 self._connection.rollback()
@@ -240,7 +265,7 @@ class AuditStore:
             events.append(event)
         return events
 
-    def verify_chain(self) -> dict[str, Any]:
+    def verify_chain(self, checkpoint: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:
             rows = self._connection.execute("SELECT * FROM audit_events ORDER BY seq ASC")
             previous_seq = 0
@@ -283,6 +308,13 @@ class AuditStore:
                     errors.append({"id": row["id"], "seq": seq, "error": "signature_mismatch"})
                 previous_hash = event_hash
                 checked += 1
+            checkpoints = self._load_checkpoints()
+            if checkpoint is not None:
+                checkpoints.append(checkpoint)
+            for item in checkpoints:
+                checkpoint_error = self._checkpoint_error(item, previous_seq, previous_hash)
+                if checkpoint_error:
+                    errors.append(checkpoint_error)
         return {
             "valid": not errors,
             "checked_events": checked,
@@ -293,8 +325,124 @@ class AuditStore:
             "signed": bool(self._signing_secret),
             "signature_required": self._signature_required,
             "sink": self._sink.name,
+            "checkpoints_verified": len(checkpoints),
+            "checkpoint_limitation": CHECKPOINT_LIMITATION,
             "errors": errors,
         }
+
+    def latest_checkpoint(self) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM audit_checkpoints ORDER BY seq DESC, id DESC LIMIT 1"
+            ).fetchone()
+            return self._checkpoint_from_row(row) if row else None
+
+    def export_checkpoint(self, path: Path) -> dict[str, Any]:
+        checkpoint = self.latest_checkpoint()
+        if checkpoint is None:
+            raise RuntimeError("the audit chain has no checkpoint to export")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(checkpoint, indent=2, sort_keys=True) + "\n")
+        return checkpoint
+
+    def _maybe_checkpoint(
+        self,
+        seq: int,
+        head_hash: str,
+        *,
+        created_at: str | None = None,
+        force: bool = False,
+    ) -> dict[str, Any] | None:
+        latest = self._connection.execute(
+            "SELECT * FROM audit_checkpoints ORDER BY seq DESC, id DESC LIMIT 1"
+        ).fetchone()
+        now = dt.datetime.now(dt.UTC)
+        should_write = force or latest is None
+        if latest is not None:
+            last_time = dt.datetime.fromisoformat(str(latest["created_at"]))
+            should_write = should_write or seq - int(latest["seq"]) >= self._checkpoint_events
+            should_write = should_write or (now - last_time).total_seconds() >= self._checkpoint_seconds
+        if not should_write:
+            return None
+        checkpoint = {
+            "chain_id": self._chain_id,
+            "seq": seq,
+            "head_hash": head_hash,
+            "created_at": created_at or now.isoformat(),
+        }
+        checkpoint["signature"] = self._sign_checkpoint(checkpoint)
+        self._connection.execute(
+            """
+            INSERT INTO audit_checkpoints (
+                chain_id, seq, head_hash, created_at, signature
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(chain_id, seq) DO NOTHING
+            """,
+            (
+                checkpoint["chain_id"],
+                checkpoint["seq"],
+                checkpoint["head_hash"],
+                checkpoint["created_at"],
+                checkpoint["signature"],
+            ),
+        )
+        return checkpoint
+
+    def _load_checkpoints(self) -> list[dict[str, Any]]:
+        return [
+            self._checkpoint_from_row(row)
+            for row in self._connection.execute(
+                "SELECT * FROM audit_checkpoints ORDER BY seq ASC, id ASC"
+            )
+        ]
+
+    @staticmethod
+    def _checkpoint_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "chain_id": str(row["chain_id"]),
+            "seq": int(row["seq"]),
+            "head_hash": str(row["head_hash"]),
+            "created_at": str(row["created_at"]),
+            "signature": str(row["signature"]),
+        }
+
+    def _checkpoint_error(
+        self,
+        checkpoint: dict[str, Any],
+        head_seq: int,
+        head_hash: str,
+    ) -> dict[str, Any] | None:
+        try:
+            normalized = {
+                "chain_id": str(checkpoint["chain_id"]),
+                "seq": int(checkpoint["seq"]),
+                "head_hash": str(checkpoint["head_hash"]),
+                "created_at": str(checkpoint["created_at"]),
+            }
+            signature = str(checkpoint["signature"])
+        except (KeyError, TypeError, ValueError):
+            return {"error": "malformed_checkpoint"}
+        if normalized["chain_id"] != self._chain_id:
+            return {"seq": normalized["seq"], "error": "checkpoint_chain_id_mismatch"}
+        if not hmac.compare_digest(self._sign_checkpoint(normalized), signature):
+            return {"seq": normalized["seq"], "error": "checkpoint_signature_mismatch"}
+        if head_seq < normalized["seq"]:
+            return {
+                "seq": normalized["seq"],
+                "head_seq": head_seq,
+                "error": "truncated",
+            }
+        if head_seq == normalized["seq"] and head_hash != normalized["head_hash"]:
+            return {"seq": normalized["seq"], "error": "checkpoint_head_mismatch"}
+        row = self._connection.execute(
+            "SELECT event_hash FROM audit_events WHERE seq = ?",
+            (normalized["seq"],),
+        ).fetchone()
+        if row is None:
+            return {"seq": normalized["seq"], "error": "truncated"}
+        if str(row["event_hash"] or "") != normalized["head_hash"]:
+            return {"seq": normalized["seq"], "error": "checkpoint_head_mismatch"}
+        return None
 
     def _row_hash_payload(self, row: sqlite3.Row) -> dict[str, Any]:
         event = {
@@ -327,13 +475,135 @@ class AuditStore:
         return hashlib.sha256(canonical.encode()).hexdigest()
 
     def _sign(self, event_hash: str) -> str:
-        if not self._signing_secret:
-            return ""
         return hmac.new(self._signing_secret.encode(), event_hash.encode(), hashlib.sha256).hexdigest()
 
+    def _sign_checkpoint(self, checkpoint: dict[str, Any]) -> str:
+        payload = {
+            key: checkpoint[key]
+            for key in ("chain_id", "seq", "head_hash", "created_at")
+        }
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hmac.new(
+            self._signing_secret.encode(), canonical.encode(), hashlib.sha256
+        ).hexdigest()
+
     def close(self) -> None:
-        self._connection.close()
+        with self._lock:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                head = self._connection.execute(
+                    "SELECT seq, event_hash FROM audit_events ORDER BY seq DESC LIMIT 1"
+                ).fetchone()
+                if head is not None:
+                    self._maybe_checkpoint(
+                        int(head["seq"]),
+                        str(head["event_hash"] or ""),
+                        force=True,
+                    )
+                self._connection.commit()
+            except Exception:
+                self._connection.rollback()
+                raise
+            self._connection.close()
 
 
 def _enabled(name: str) -> bool:
     return os.getenv(name, "").lower() in {"1", "true", "yes"}
+
+
+def resolve_audit_secret(*, require_configured: bool = False) -> str:
+    configured = resolve_configured_secret(
+        direct_env="JUDIKT_AUDIT_HMAC_SECRET",
+        aws_secret_env="JUDIKT_AUDIT_HMAC_SECRET_ARN",
+        vault_path_env="JUDIKT_AUDIT_HMAC_SECRET_VAULT_PATH",
+        json_key_env="JUDIKT_AUDIT_HMAC_SECRET_JSON_KEY",
+        description="audit HMAC secret",
+    )
+    if not configured and (require_configured or _enabled("JUDIKT_PRODUCTION")):
+        raise AuditConfigurationError(
+            "remote or production mode requires a configured shared audit HMAC secret via "
+            "JUDIKT_AUDIT_HMAC_SECRET, JUDIKT_AUDIT_HMAC_SECRET_ARN, or "
+            "JUDIKT_AUDIT_HMAC_SECRET_VAULT_PATH"
+        )
+    value = configured or _read_or_create_audit_key(state_root())
+    if len(value.encode()) < MINIMUM_AUDIT_SECRET_BYTES:
+        raise AuditConfigurationError(
+            f"audit HMAC secret must be at least {MINIMUM_AUDIT_SECRET_BYTES} bytes"
+        )
+    return value
+
+
+def _read_or_create_audit_key(directory: Path) -> str:
+    ensure_private_directory(directory)
+    path = directory / "audit.key"
+    try:
+        descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return _read_audit_key(path)
+    value = secrets.token_urlsafe(48)
+    try:
+        with os.fdopen(descriptor, "w") as stream:
+            stream.write(value + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+    return value
+
+
+def _read_audit_key(path: Path) -> str:
+    for _ in range(100):
+        metadata = path.stat()
+        if metadata.st_uid != os.getuid():
+            raise AuditConfigurationError(
+                f"audit key {path} is not owned by the current user; fix ownership and run: chmod 600 {path}"
+            )
+        if stat.S_IMODE(metadata.st_mode) & 0o077:
+            raise AuditConfigurationError(
+                f"audit key {path} must not be group- or world-readable; run: chmod 600 {path}"
+            )
+        value = path.read_text().strip()
+        if value:
+            return value
+        time.sleep(0.01)
+    raise AuditConfigurationError(f"audit key {path} was created but remained empty")
+
+
+def load_checkpoint(value: str) -> dict[str, Any]:
+    if value.startswith("s3://"):
+        try:
+            import boto3
+        except ImportError as exc:  # pragma: no cover - optional AWS path
+            raise RuntimeError("S3 checkpoints require the optional aws dependencies") from exc
+        bucket, separator, key = value[5:].partition("/")
+        if not separator or not bucket or not key:
+            raise RuntimeError("checkpoint S3 URI must be s3://bucket/key")
+        response = boto3.client("s3").get_object(Bucket=bucket, Key=key)
+        raw = response["Body"].read()
+        checkpoint = json.loads(raw)
+    else:
+        checkpoint = json.loads(Path(value).read_text())
+    if not isinstance(checkpoint, dict):
+        raise RuntimeError("checkpoint must contain one JSON object")
+    return checkpoint
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError as exc:
+        raise AuditConfigurationError(f"{name} must be a positive integer") from exc
+    if value <= 0:
+        raise AuditConfigurationError(f"{name} must be a positive integer")
+    return value
+
+
+def _positive_float_env(name: str, default: float) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except ValueError as exc:
+        raise AuditConfigurationError(f"{name} must be a positive number") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise AuditConfigurationError(f"{name} must be a positive number")
+    return value

@@ -15,6 +15,7 @@ from .attackbench import (
     run_attackbench,
 )
 from .auth import AuthError
+from .audit import AuditConfigurationError, AuditStore, load_checkpoint
 from .backends import run_backend
 from .content_eval import ContentEvaluationError, run_content_evaluation
 from .demo import run_demo
@@ -195,6 +196,12 @@ def parser() -> argparse.ArgumentParser:
     pin_accept.add_argument("state_key")
     pin_accept.add_argument("--tool", action="append", dest="tools")
     pin_accept.add_argument("--yes", action="store_true")
+    audit = subparsers.add_parser("audit", help="verify and inspect local audit evidence")
+    audit_commands = audit.add_subparsers(dest="audit_command", required=True)
+    audit_verify = audit_commands.add_parser("verify", help="verify the audit chain and checkpoints")
+    audit_verify.add_argument("--audit-db", type=Path, action=_AuditPathAction, default=argparse.SUPPRESS)
+    audit_verify.add_argument("--checkpoint")
+    audit_verify.add_argument("--full", action="store_true")
     return result
 
 
@@ -247,6 +254,18 @@ def main() -> None:
             print(f"pins: {exc}", file=sys.stderr)
             raise SystemExit(3) from None
         return
+    if args.command == "audit":
+        try:
+            store = AuditStore(args.audit_db)
+            try:
+                checkpoint = load_checkpoint(args.checkpoint) if args.checkpoint else None
+                report = store.verify_chain(checkpoint)
+            finally:
+                store.close()
+        except (AuditConfigurationError, RuntimeError, OSError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"audit verify: {exc}") from None
+        print(json.dumps(report, indent=2))
+        raise SystemExit(0 if report["valid"] else 1)
     demo_mode = args.command == "demo" or _enabled("JUDIKT_DEMO_MODE")
     if demo_mode and args.policy == DEFAULT_POLICY_PATH:
         args.policy = DEMO_POLICY_PATH
@@ -330,7 +349,7 @@ def main() -> None:
     if args.command == "serve-real-mcp":
         try:
             serve_real_mcp(args)
-        except (AuthError, ApprovalConfigurationError) as exc:
+        except (AuthError, ApprovalConfigurationError, AuditConfigurationError) as exc:
             raise SystemExit(f"serve-real-mcp: {exc}") from None
         except ToolIntegrityError as exc:
             _exit_tool_integrity("serve-real-mcp", exc)
@@ -348,7 +367,7 @@ def main() -> None:
         )
     except ToolIntegrityError as exc:
         _exit_tool_integrity(args.command, exc)
-    except ApprovalConfigurationError as exc:
+    except (ApprovalConfigurationError, AuditConfigurationError) as exc:
         raise SystemExit(f"{args.command}: {exc}") from None
     if args.command == "demo":
         try:
@@ -422,7 +441,7 @@ def _run_wrap(args: argparse.Namespace) -> None:
             serve_gateway(runtime)
     except ToolIntegrityError as exc:
         _exit_tool_integrity("wrap", exc)
-    except ApprovalConfigurationError as exc:
+    except (ApprovalConfigurationError, AuditConfigurationError) as exc:
         raise SystemExit(f"wrap: {exc}") from None
     except (PolicyInitializationError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
         raise SystemExit(f"wrap: {exc}") from None

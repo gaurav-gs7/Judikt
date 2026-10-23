@@ -15,6 +15,9 @@ from unittest.mock import patch
 from judikt.audit import AuditStore
 
 
+AUDIT_SECRET = "audit-test-secret-with-at-least-32-bytes"
+
+
 def _record(store: AuditStore) -> None:
     store.record(
         correlation_id="corr-1",
@@ -49,21 +52,32 @@ def _record_many(path: str, count: int, prefix: str) -> None:
 
 
 class AuditHardeningTest(unittest.TestCase):
-    def test_signature_required_fails_closed_without_key(self) -> None:
+    def test_no_configuration_creates_private_key_and_signs_events(self) -> None:
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             os.environ,
-            {"JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true", "JUDIKT_AUDIT_HMAC_SECRET": ""},
-            clear=False,
+            {
+                "XDG_STATE_HOME": directory,
+                "JUDIKT_AUDIT_HMAC_SECRET": "",
+                "JUDIKT_AUDIT_HMAC_SECRET_ARN": "",
+                "JUDIKT_AUDIT_HMAC_SECRET_VAULT_PATH": "",
+            },
+            clear=True,
         ):
-            with self.assertRaisesRegex(RuntimeError, "requires JUDIKT_AUDIT_HMAC_SECRET"):
-                AuditStore(Path(directory) / "audit.db")
+            store = AuditStore(Path(directory) / "audit.db")
+            _record(store)
+            event = store.recent()[0]
+            key_path = Path(directory) / "judikt" / "audit.key"
+            self.assertTrue(event["signature"])
+            self.assertEqual(key_path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(key_path.parent.stat().st_mode & 0o777, 0o700)
+            store.close()
 
     def test_verify_on_startup_rejects_tampered_record(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "audit.db"
             with patch.dict(
                 os.environ,
-                {"JUDIKT_AUDIT_HMAC_SECRET": "test-key"},
+                {"JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET},
                 clear=False,
             ):
                 store = AuditStore(path)
@@ -77,7 +91,7 @@ class AuditHardeningTest(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "JUDIKT_AUDIT_HMAC_SECRET": "test-key",
+                    "JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET,
                     "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
                     "JUDIKT_AUDIT_VERIFY_ON_STARTUP": "true",
                 },
@@ -90,7 +104,7 @@ class AuditHardeningTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             os.environ,
             {
-                "JUDIKT_AUDIT_HMAC_SECRET": "test-key",
+                "JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET,
                 "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
             },
             clear=False,
@@ -107,7 +121,7 @@ class AuditHardeningTest(unittest.TestCase):
 
     def test_multiple_events_form_one_contiguous_chain(self) -> None:
         with tempfile.TemporaryDirectory() as directory, patch.dict(
-            os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": "test-key"}, clear=False
+            os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET}, clear=False
         ):
             store = AuditStore(Path(directory) / "audit.db")
             try:
@@ -126,14 +140,14 @@ class AuditHardeningTest(unittest.TestCase):
     def test_wrong_signing_key_is_detected_on_startup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "audit.db"
-            with patch.dict(os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": "first-key"}, clear=False):
+            with patch.dict(os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": "first-audit-key-with-at-least-32-bytes"}, clear=False):
                 store = AuditStore(path)
                 _record(store)
                 store.close()
             with patch.dict(
                 os.environ,
                 {
-                    "JUDIKT_AUDIT_HMAC_SECRET": "wrong-key",
+                    "JUDIKT_AUDIT_HMAC_SECRET": "wrong-audit-key-with-at-least-32-bytes",
                     "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
                     "JUDIKT_AUDIT_VERIFY_ON_STARTUP": "true",
                 },
@@ -144,7 +158,7 @@ class AuditHardeningTest(unittest.TestCase):
 
     def test_signature_and_link_tampering_are_reported_precisely(self) -> None:
         with tempfile.TemporaryDirectory() as directory, patch.dict(
-            os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": "test-key"}, clear=False
+            os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET}, clear=False
         ):
             path = Path(directory) / "audit.db"
             store = AuditStore(path)
@@ -185,7 +199,7 @@ class AuditHardeningTest(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "JUDIKT_AUDIT_HMAC_SECRET": "test-key",
+                    "JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET,
                     "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
                     "JUDIKT_AUDIT_VERIFY_ON_STARTUP": "true",
                 },
@@ -196,7 +210,7 @@ class AuditHardeningTest(unittest.TestCase):
 
     def test_concurrent_writers_preserve_chain_integrity(self) -> None:
         with tempfile.TemporaryDirectory() as directory, patch.dict(
-            os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": "test-key"}, clear=False
+            os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET}, clear=False
         ):
             store = AuditStore(Path(directory) / "audit.db")
             threads = [threading.Thread(target=_record, args=(store,)) for _ in range(24)]
@@ -212,7 +226,7 @@ class AuditHardeningTest(unittest.TestCase):
     def test_two_processes_append_one_gapless_chain(self) -> None:
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             os.environ,
-            {"JUDIKT_AUDIT_HMAC_SECRET": "concurrent-test-key", "JUDIKT_AUDIT_SINK": "none"},
+            {"JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET, "JUDIKT_AUDIT_SINK": "none"},
             clear=False,
         ):
             path = Path(directory) / "audit.db"
@@ -244,7 +258,7 @@ class AuditHardeningTest(unittest.TestCase):
 
     def test_sequence_gap_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as directory, patch.dict(
-            os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": "test-key"}, clear=False
+            os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET}, clear=False
         ):
             store = AuditStore(Path(directory) / "audit.db")
             for _ in range(3):
@@ -261,7 +275,7 @@ class AuditHardeningTest(unittest.TestCase):
     def test_previous_hash_format_migrates_without_rewriting_hash(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "audit.db"
-            secret = "legacy-signing-key"
+            secret = "legacy-signing-key-with-at-least-32-bytes"
             payload = {
                 "event_version": 2,
                 "created_at": "2026-01-01T00:00:00+00:00",
@@ -330,7 +344,7 @@ class AuditHardeningTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "audit.db"
             with patch.dict(
-                os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": "test-key"}, clear=False
+                os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET}, clear=False
             ):
                 store = AuditStore(path)
                 _record(store)
@@ -342,13 +356,58 @@ class AuditHardeningTest(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "JUDIKT_AUDIT_HMAC_SECRET": "test-key",
+                    "JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET,
                     "JUDIKT_AUDIT_VERIFY_ON_STARTUP": "true",
                 },
                 clear=False,
             ):
                 with self.assertRaisesRegex(RuntimeError, "malformed_event_payload"):
                     AuditStore(path)
+
+    def test_checkpoint_detects_truncated_tail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET,
+                "JUDIKT_AUDIT_CHECKPOINT_EVENTS": "1",
+            },
+            clear=False,
+        ):
+            path = Path(directory) / "audit.db"
+            checkpoint_path = Path(directory) / "checkpoint.json"
+            store = AuditStore(path)
+            for _ in range(5):
+                _record(store)
+            checkpoint = store.export_checkpoint(checkpoint_path)
+            store._connection.execute("DELETE FROM audit_events WHERE seq > 2")
+            store._connection.commit()
+
+            report = store.verify_chain(json.loads(checkpoint_path.read_text()))
+
+            self.assertEqual(checkpoint["seq"], 5)
+            self.assertFalse(report["valid"])
+            self.assertIn("truncated", {error["error"] for error in report["errors"]})
+            self.assertIn("external checkpoint", report["checkpoint_limitation"])
+            store.close()
+
+    def test_remote_mode_requires_configured_audit_key(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "XDG_STATE_HOME": directory,
+                "JUDIKT_AUDIT_HMAC_SECRET": "",
+                "JUDIKT_AUDIT_HMAC_SECRET_ARN": "",
+                "JUDIKT_AUDIT_HMAC_SECRET_VAULT_PATH": "",
+            },
+            clear=True,
+        ), self.assertRaisesRegex(RuntimeError, "requires a configured shared audit"):
+            AuditStore(Path(directory) / "audit.db", require_configured_key=True)
+
+    def test_short_configured_audit_key_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": "too-short"}, clear=False
+        ), self.assertRaisesRegex(RuntimeError, "at least 32 bytes"):
+            AuditStore(Path(directory) / "audit.db")
 
 
 if __name__ == "__main__":

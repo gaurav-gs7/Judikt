@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from judikt import cli
+from judikt.audit import AuditStore
 from judikt.auth import AuthError
 from judikt.policy_init import PolicyInitializationError
 
@@ -115,6 +116,53 @@ class CLITest(unittest.TestCase):
         self.assertEqual(args.warmup, 5)
         self.assertEqual(args.max_p99_ms, 25)
         self.assertEqual(args.min_throughput, 20)
+
+    def test_audit_verify_reports_truncation_against_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {
+                "JUDIKT_AUDIT_HMAC_SECRET": "cli-audit-secret-with-at-least-32-bytes",
+                "JUDIKT_AUDIT_CHECKPOINT_EVENTS": "1",
+                "JUDIKT_AUDIT_SINK": "none",
+            },
+            clear=False,
+        ):
+            audit_path = Path(directory) / "audit.db"
+            checkpoint_path = Path(directory) / "checkpoint.json"
+            store = AuditStore(audit_path)
+            for index in range(4):
+                store.record(
+                    correlation_id=f"cli-{index}",
+                    server="test",
+                    tool="test.read",
+                    allowed=True,
+                    rule="allow",
+                    reason="allowed",
+                    arguments={},
+                    result={"ok": True},
+                    duration_ms=1,
+                )
+            store.export_checkpoint(checkpoint_path)
+            store._connection.execute("DELETE FROM audit_events WHERE seq > 1")
+            store._connection.commit()
+            store.close()
+
+            output, exit_code = self.run_main_with_exit(
+                [
+                    "audit",
+                    "verify",
+                    "--audit-db",
+                    str(audit_path),
+                    "--checkpoint",
+                    str(checkpoint_path),
+                    "--full",
+                ]
+            )
+
+            report = json.loads(output)
+            self.assertEqual(exit_code, 1)
+            self.assertFalse(report["valid"])
+            self.assertIn("truncated", {error["error"] for error in report["errors"]})
 
     def test_init_dispatches_and_renders_machine_readable_report(self) -> None:
         report = {"policy": "policy.json", "server": "tools", "tool_count": 1}

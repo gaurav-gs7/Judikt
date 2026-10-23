@@ -61,7 +61,9 @@ class SecretConsumerIntegrationTest(unittest.TestCase):
         self.assertEqual(client.calls, ["auth-secret", "approval-secret"])
 
     def test_audit_signing_key_loads_from_aws_and_seals_chain(self) -> None:
-        client = _SecretsManagerClient({"audit-secret": "brokered-audit-secret"})
+        client = _SecretsManagerClient(
+            {"audit-secret": "brokered-audit-secret-with-at-least-32-bytes"}
+        )
         boto3 = types.SimpleNamespace(client=lambda service: client)
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             sys.modules, {"boto3": boto3}

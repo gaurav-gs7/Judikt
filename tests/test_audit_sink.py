@@ -276,7 +276,7 @@ class SiemAuditSinkTest(unittest.TestCase):
                 with self.subTest(strict=strict), patch.dict(
                     os.environ,
                     {
-                        "JUDIKT_AUDIT_HMAC_SECRET": "audit-secret",
+                        "JUDIKT_AUDIT_HMAC_SECRET": "audit-secret-with-at-least-32-bytes",
                         "JUDIKT_AUDIT_SINK_STRICT": str(strict).lower(),
                     },
                     clear=True,

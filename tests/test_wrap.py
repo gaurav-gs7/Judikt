@@ -41,7 +41,7 @@ class WrapEndToEndTest(unittest.TestCase):
             environment={
                 "PYTHONPATH": str(PROJECT_ROOT / "src"),
                 "JUDIKT_APPROVAL_SECRET": "wrap-test-approval-secret-at-least-32-bytes",
-                "JUDIKT_AUDIT_HMAC_SECRET": "wrap-test-audit",
+                "JUDIKT_AUDIT_HMAC_SECRET": "wrap-test-audit-secret-at-least-32-bytes",
                 "JUDIKT_AUDIT_SINK": "none",
                 "JUDIKT_TELEMETRY": "disabled",
                 "JUDIKT_TOOL_PIN_PATH": str(root / "pins.json"),
@@ -392,7 +392,7 @@ class WrapProfileEndToEndTest(unittest.TestCase):
         return {
             "PYTHONPATH": str(PROJECT_ROOT / "src"),
             "JUDIKT_APPROVAL_SECRET": "profile-test-approval-secret-at-least-32-bytes",
-            "JUDIKT_AUDIT_HMAC_SECRET": "profile-test-audit",
+            "JUDIKT_AUDIT_HMAC_SECRET": "profile-test-audit-secret-at-least-32-bytes",
             "JUDIKT_AUDIT_SINK": "none",
             "JUDIKT_TELEMETRY": "disabled",
             "JUDIKT_TOOL_PIN_PATH": str(root / "pins.json"),

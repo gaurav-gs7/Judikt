@@ -15,7 +15,7 @@ Unauthenticated stdio does not authenticate individual callers. Identity comes f
 
 The generated starter policy contains only exact names returned by the upstream's `tools/list`; it is not a trust assessment of those tools. Review descriptions, schemas, permissions, upstream code, and credentials before enabling the catalog. External stdio servers run as separate processes, but Judikt does not provide an OS-level sandbox. Apply filesystem, container, user, and network isolation appropriate to the upstream.
 
-Local SQLite audit storage, file-backed approvals and pins, and in-process rate limits are single-node controls. They are suitable for development and constrained single-host operation, not multi-replica consistency or durable centralized evidence.
+Local SQLite audit storage uses transactional, sequenced, HMAC-signed hash chains and signed checkpoints. Local keys, approvals, pins, and in-process rate limits remain single-node controls suitable for development and constrained single-host operation. A local checkpoint detects accidental tail loss, but an attacker able to rewrite the database can truncate both event and checkpoint tables. Retain checkpoints in an append-only external destination such as S3 Object Lock or a SIEM when the host itself is in the threat model.
 
 Dashboard approval and kill-switch POSTs require a strong random `JUDIKT_API_TOKEN` even on loopback and return `503` when no token is configured. Do not expose the dashboard outside loopback, and do not use `JUDIKT_DEMO_MODE=true` outside an isolated evaluation environment.
 

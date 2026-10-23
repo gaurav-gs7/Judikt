@@ -241,6 +241,12 @@ Judikt includes:
 - Durable blocked-finding export that creates deduplicated incidents in Argus's RCA pipeline
 - AWS Secrets Manager, X-Ray tracing, IAM review, SLOs, runbooks, and failure-mode tests
 
+### Audit Integrity
+
+Local audit events are appended in one SQLite `BEGIN IMMEDIATE` transaction under WAL mode. Each database has a stable random chain ID and a gapless sequence; every new event includes the preceding hash and is HMAC-signed by default. When no audit key is configured for local use, Judikt atomically creates `$XDG_STATE_HOME/judikt/audit.key` (or `~/.local/state/judikt/audit.key`) with mode `0600` inside a mode-`0700` directory. Authenticated remote and production modes require a configured key from the environment, AWS Secrets Manager, or Vault, and reject keys shorter than 32 bytes.
+
+Judikt signs checkpoints after 100 events, after 60 seconds while events are arriving, and on clean shutdown. Verify the complete chain and its locally recorded checkpoints with `judikt audit verify --full`; add `--checkpoint <file|s3://bucket/key>` to detect a database head that has fallen behind externally retained evidence. Local checkpoints detect accidental loss, but a local attacker with filesystem access can truncate both the event and checkpoint tables. Evidence against that attacker requires exporting checkpoints to an append-only destination such as S3 Object Lock or a SIEM.
+
 ## Optional Groq Integration
 
 The demo produces a deterministic local incident summary by default. To add a hosted LLM summary:
