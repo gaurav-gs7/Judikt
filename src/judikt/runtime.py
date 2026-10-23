@@ -15,7 +15,13 @@ from .models import ToolCallResult
 from .policy import PolicyEngine
 from .protocol import MCPProtocolError, StdioMCPClient, is_mcp_tool_error
 from .telemetry import Telemetry
-from .tool_integrity import ToolIntegrityError, ToolIntegrityStore, verify_unique_tool_names
+from .tool_integrity import (
+    ToolDriftError,
+    ToolIntegrityError,
+    ToolIntegrityStore,
+    ToolPinMetadata,
+    verify_unique_tool_names,
+)
 from .upstreams import UpstreamServer, load_upstream_servers
 
 
@@ -46,6 +52,7 @@ class JudiktRuntime:
                 }
             )
         configured_upstreams = load_upstream_servers() if upstream_servers is None else upstream_servers
+        pin_metadata: dict[str, ToolPinMetadata] = {}
         for upstream in configured_upstreams:
             if upstream.name in self.clients:
                 raise ValueError(f"upstream MCP server name collides with demo server: {upstream.name}")
@@ -56,8 +63,19 @@ class JudiktRuntime:
                 cwd=upstream.cwd,
                 inherit_environment=False,
             )
+            pin_metadata[upstream.name] = ToolPinMetadata(
+                state_key=upstream.state_key or upstream.name,
+                fingerprint=upstream.fingerprint,
+                command=upstream.command,
+                cwd=upstream.cwd or "",
+                environment_names=tuple(sorted(upstream.environment)),
+            )
         pin_path = Path(os.getenv("JUDIKT_TOOL_PIN_PATH", str(audit_path.with_suffix(".tool-pins.json"))))
-        self.tool_integrity = ToolIntegrityStore(pin_path, self.content_guard)
+        self.tool_integrity = ToolIntegrityStore(
+            pin_path,
+            self.content_guard,
+            metadata=pin_metadata,
+        )
         definitions = {server: client.list_tools() for server, client in self.clients.items()}
         verify_unique_tool_names(definitions)
         self.tool_integrity_reports = {
@@ -162,7 +180,7 @@ class JudiktRuntime:
                         except (MCPProtocolError, ToolIntegrityError) as exc:
                             allowed = False
                             rule = "tool_integrity" if isinstance(exc, ToolIntegrityError) else "upstream_error"
-                            reason = str(exc)
+                            reason = exc.one_line() if isinstance(exc, ToolDriftError) else str(exc)
             request_span.set_policy(allowed=allowed, rule=rule, reason=reason)
             request_span.set_attribute("judikt.risk.score", decision.risk_score)
             request_span.set_attribute("judikt.risk.level", decision.risk_level)

@@ -18,6 +18,8 @@ Use Judikt as a policy and security boundary between an MCP client and an operat
 5. **Run a smoke test.** Reload the client, initialize the MCP connection, and request `tools/list`. Call only a clearly read-only tool when the user authorizes that call. Do not use a mutating tool merely to prove connectivity.
 6. **Produce an assessment.** Report each control as `verified`, `configured-not-verified`, `not-configured`, or `not-applicable`. Include sanitized evidence, unresolved gaps, and the exact scope tested. Never infer a passing control from configuration alone.
 
+For startup failures caused by tool metadata or pin drift, follow [references/troubleshooting.md](references/troubleshooting.md). Never accept a changed pin automatically.
+
 Stop and ask when the upstream command, client configuration location, intended identity, or authorization boundary cannot be determined safely.
 
 ## Safety Rules

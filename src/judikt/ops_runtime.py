@@ -24,7 +24,13 @@ from .policy import PolicyEngine
 from .request_context import authenticated_subject
 from .slack_approval import SlackApprovalWorkflow
 from .telemetry import Telemetry
-from .tool_integrity import ToolIntegrityError, ToolIntegrityStore, verify_unique_tool_names
+from .tool_integrity import (
+    ToolDriftError,
+    ToolIntegrityError,
+    ToolIntegrityStore,
+    ToolPinMetadata,
+    verify_unique_tool_names,
+)
 from .protocol import StdioMCPClient, is_mcp_tool_error
 from .upstreams import load_upstream_servers
 
@@ -68,6 +74,7 @@ class JudiktOpsRuntime:
         self.kubernetes = KubernetesBackend() if include_demo_servers else None
         self.incidents = IncidentBackend() if include_demo_servers else None
         self.external_clients: dict[str, StdioMCPClient] = {}
+        pin_metadata: dict[str, ToolPinMetadata] = {}
         for upstream in load_upstream_servers():
             if include_demo_servers and upstream.name in {"platform-ops", "kubernetes", "incident"}:
                 raise ValueError(f"upstream MCP server name collides with demo server: {upstream.name}")
@@ -78,11 +85,22 @@ class JudiktOpsRuntime:
                 cwd=upstream.cwd,
                 inherit_environment=False,
             )
+            pin_metadata[upstream.name] = ToolPinMetadata(
+                state_key=upstream.state_key or upstream.name,
+                fingerprint=upstream.fingerprint,
+                command=upstream.command,
+                cwd=upstream.cwd or "",
+                environment_names=tuple(sorted(upstream.environment)),
+            )
         self._circuits: dict[tuple[str, str], CircuitState] = {}
         self._circuit_failure_threshold = circuit_failure_threshold
         self._circuit_cooldown_seconds = circuit_cooldown_seconds
         pin_path = Path(os.getenv("JUDIKT_TOOL_PIN_PATH", str(audit_path.with_suffix(".tool-pins.json"))))
-        self.tool_integrity = ToolIntegrityStore(pin_path, self.content_guard)
+        self.tool_integrity = ToolIntegrityStore(
+            pin_path,
+            self.content_guard,
+            metadata=pin_metadata,
+        )
         self.tool_integrity_reports = {
             server: self.tool_integrity.verify(server, tools).as_dict()
             for server, tools in self._all_tool_definitions().items()
@@ -190,7 +208,7 @@ class JudiktOpsRuntime:
                     except ToolIntegrityError as exc:
                         allowed = False
                         rule = "tool_integrity"
-                        reason = str(exc)
+                        reason = exc.one_line() if isinstance(exc, ToolDriftError) else str(exc)
                     except Exception:
                         allowed = False
                         rule = "upstream_error"

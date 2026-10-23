@@ -22,6 +22,8 @@ class UpstreamServer:
     command: tuple[str, ...]
     environment: dict[str, str]
     cwd: str | None = None
+    state_key: str = ""
+    fingerprint: str = ""
 
 
 def load_upstream_servers(path: str | Path | None = None) -> list[UpstreamServer]:

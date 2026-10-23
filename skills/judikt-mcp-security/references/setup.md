@@ -65,6 +65,10 @@ Profiles are `read-only` (only read-tier tools are allowed), `approve-writes` (w
 
 For quick disposable evaluation, `judikt wrap -- <upstream command>` generates the same ephemeral annotation-derived starter policy with the `read-only` profile by default. Prefer a persistent reviewed policy for ongoing use. An explicit `judikt wrap --policy ...` policy is used as-is and is never reclassified.
 
+Unless `--audit-db` or `JUDIKT_AUDIT_DB` is set, wrap state is isolated under `$XDG_STATE_HOME/judikt/upstreams/<display-name>-<fingerprint>/` or `~/.local/state/judikt/upstreams/...`. The private directory contains the audit database, findings database, and schema-v2 tool pins for that exact resolved command, working directory, and set of configured environment-variable names. Environment values are not fingerprinted or stored in the pin metadata.
+
+Treat a startup exit code of `3` as a tool-integrity failure. Do not set refresh mode or accept a pin merely to continue setup. Follow [troubleshooting.md](troubleshooting.md), review the named tools and fields, and obtain explicit consent before `judikt pins accept`.
+
 ## 4. Connect And Smoke-Test
 
 Use [mcp-configuration.md](mcp-configuration.md) to prepare the smallest client configuration change. Obtain consent, preserve unrelated configuration, and validate the edited file's syntax.

@@ -34,6 +34,7 @@ class SkillPackageTest(unittest.TestCase):
                 "references/mcp-configuration.md",
                 "references/security.md",
                 "references/setup.md",
+                "references/troubleshooting.md",
                 "scripts/diagnose.py",
             },
         )
@@ -145,6 +146,7 @@ class SkillPackageTest(unittest.TestCase):
             "judikt-mcp-security/references/mcp-configuration.md",
             "judikt-mcp-security/references/security.md",
             "judikt-mcp-security/references/setup.md",
+            "judikt-mcp-security/references/troubleshooting.md",
             "judikt-mcp-security/scripts/diagnose.py",
         }
         with tempfile.TemporaryDirectory() as directory:

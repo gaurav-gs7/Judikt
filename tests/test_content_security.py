@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import sys
 import tempfile
@@ -12,6 +13,7 @@ from judikt.audit import AuditStore
 from judikt.content_guard import ContentGuard
 from judikt.runtime import JudiktRuntime
 from judikt.tool_integrity import (
+    ToolDriftError,
     ToolIntegrityError,
     ToolIntegrityStore,
     verify_unique_tool_names,
@@ -198,6 +200,49 @@ class ToolIntegrityTest(unittest.TestCase):
             with self.assertRaises(ToolIntegrityError):
                 store.verify("issues", changed)
 
+    def test_reports_added_removed_and_changed_fields_without_metadata_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = ToolIntegrityStore(Path(directory) / "pins.json", ContentGuard())
+            original = [
+                {"name": "keep", "description": "Old", "inputSchema": {}},
+                {"name": "remove", "description": "Removed", "inputSchema": {}},
+            ]
+            changed = [
+                {"name": "keep", "description": "Sensitive changed value", "inputSchema": {}},
+                {"name": "add", "description": "Added", "inputSchema": {}},
+            ]
+            store.verify("issues", original)
+
+            with self.assertRaises(ToolDriftError) as raised:
+                store.verify("issues", changed)
+
+            self.assertEqual(raised.exception.added_tools, ["add"])
+            self.assertEqual(raised.exception.removed_tools, ["remove"])
+            self.assertEqual(raised.exception.changed_tools, {"keep": ["description"]})
+            self.assertNotIn("Sensitive changed value", str(raised.exception))
+
+    def test_legacy_pin_upgrades_on_match_and_identifies_legacy_drift(self) -> None:
+        tools = [{"name": "issues.get", "description": "Read issue", "inputSchema": {}}]
+        legacy_digest = hashlib.sha256(
+            json.dumps(tools, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            pin_path = Path(directory) / "pins.json"
+            pin_path.write_text(json.dumps({"issues": legacy_digest}))
+            store = ToolIntegrityStore(pin_path, ContentGuard())
+
+            report = store.verify("issues", tools)
+
+            self.assertEqual(report.status, "upgraded")
+            self.assertEqual(json.loads(pin_path.read_text())["issues"]["schema_version"], 2)
+
+            pin_path.write_text(json.dumps({"issues": legacy_digest}))
+            with self.assertRaisesRegex(ToolDriftError, "legacy pin"):
+                store.verify(
+                    "issues",
+                    [{"name": "issues.get", "description": "Changed", "inputSchema": {}}],
+                )
+
     def test_rejects_poisoned_tool_metadata_before_pinning(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = ToolIntegrityStore(Path(directory) / "pins.json", ContentGuard())
@@ -305,6 +350,7 @@ class ExternalMCPIntegrationTest(unittest.TestCase):
             self.assertFalse(result.allowed)
             self.assertEqual(result.rule, "tool_integrity")
             self.assertIn("definition drift", result.reason)
+            self.assertIn("judikt pins accept independent --yes", result.reason)
 
     def test_denies_and_audits_mcp_tool_error_response(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

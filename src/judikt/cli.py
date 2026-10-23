@@ -29,16 +29,21 @@ from .paths import (
     DEFAULT_INTEROP_PROFILES_PATH,
     DEFAULT_POLICY_PATH,
     default_audit_path,
+    ensure_private_directory,
+    upstream_state,
 )
+from .pins import run_pins_command
 from .policy_init import (
     STARTER_PROFILES,
     PolicyInitializationError,
     derive_server_name,
     initialize_policy,
+    normalize_server_name,
 )
 from .protocol import MCPProtocolError
 from .real_mcp import serve_real_mcp
 from .runtime import JudiktRuntime
+from .tool_integrity import ToolIntegrityError
 from .upstreams import UpstreamServer
 
 
@@ -54,16 +59,33 @@ class _PolicyPathAction(argparse.Action):
         setattr(namespace, "policy_explicit", True)
 
 
+class _AuditPathAction(argparse.Action):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Path,
+        option_string: str | None = None,
+    ) -> None:
+        setattr(namespace, self.dest, values)
+        setattr(namespace, "audit_explicit", True)
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Judikt runtime firewall")
-    result.set_defaults(policy_explicit=False)
+    result.set_defaults(policy_explicit=False, audit_explicit=False)
     result.add_argument(
         "--policy",
         type=Path,
         action=_PolicyPathAction,
         default=DEFAULT_POLICY_PATH,
     )
-    result.add_argument("--audit-db", type=Path, default=default_audit_path())
+    result.add_argument(
+        "--audit-db",
+        type=Path,
+        action=_AuditPathAction,
+        default=default_audit_path(),
+    )
     subparsers = result.add_subparsers(dest="command", required=True)
     demo = subparsers.add_parser("demo", help="run the deterministic local walkthrough")
     _add_runtime_options(demo)
@@ -152,6 +174,15 @@ def parser() -> argparse.ArgumentParser:
     wrap.add_argument("--identity", default="local-operator")
     wrap.add_argument("--profile", choices=STARTER_PROFILES, default="read-only")
     wrap.add_argument("upstream_command", nargs=argparse.REMAINDER)
+    pins = subparsers.add_parser("pins", help="inspect and explicitly update upstream tool pins")
+    pin_commands = pins.add_subparsers(dest="pins_command", required=True)
+    pin_commands.add_parser("list", help="list per-upstream pin states")
+    pin_show = pin_commands.add_parser("show", help="show one upstream pin state")
+    pin_show.add_argument("state_key")
+    pin_accept = pin_commands.add_parser("accept", help="accept reviewed tool-definition drift")
+    pin_accept.add_argument("state_key")
+    pin_accept.add_argument("--tool", action="append", dest="tools")
+    pin_accept.add_argument("--yes", action="store_true")
     return result
 
 
@@ -162,7 +193,12 @@ def _add_runtime_options(command: argparse.ArgumentParser) -> None:
         action=_PolicyPathAction,
         default=argparse.SUPPRESS,
     )
-    command.add_argument("--audit-db", type=Path, default=argparse.SUPPRESS)
+    command.add_argument(
+        "--audit-db",
+        type=Path,
+        action=_AuditPathAction,
+        default=argparse.SUPPRESS,
+    )
 
 
 def _enabled(name: str) -> bool:
@@ -191,6 +227,13 @@ def main() -> None:
         return
     if args.command == "wrap":
         _run_wrap(args)
+        return
+    if args.command == "pins":
+        try:
+            run_pins_command(args)
+        except (ToolIntegrityError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
+            print(f"pins: {exc}", file=sys.stderr)
+            raise SystemExit(3) from None
         return
     demo_mode = args.command == "demo" or _enabled("JUDIKT_DEMO_MODE")
     if demo_mode and args.policy == DEFAULT_POLICY_PATH:
@@ -263,12 +306,17 @@ def main() -> None:
             serve_real_mcp(args)
         except AuthError as exc:
             raise SystemExit(f"serve-real-mcp: {exc}") from None
+        except ToolIntegrityError as exc:
+            _exit_tool_integrity("serve-real-mcp", exc)
         return
-    runtime = JudiktRuntime(
-        args.policy,
-        args.audit_db,
-        include_demo_servers=demo_mode,
-    )
+    try:
+        runtime = JudiktRuntime(
+            args.policy,
+            args.audit_db,
+            include_demo_servers=demo_mode,
+        )
+    except ToolIntegrityError as exc:
+        _exit_tool_integrity(args.command, exc)
     if args.command == "demo":
         try:
             run_demo(runtime)
@@ -301,16 +349,24 @@ def _run_wrap(args: argparse.Namespace) -> None:
     if upstream_command and upstream_command[0] == "--":
         upstream_command = upstream_command[1:]
     try:
-        server_name = args.name or derive_server_name(upstream_command)
+        server_name = normalize_server_name(args.name or derive_server_name(upstream_command))
+        state = upstream_state(server_name, upstream_command)
+        audit_path = args.audit_db
+        if not getattr(args, "audit_explicit", False) and not os.getenv("JUDIKT_AUDIT_DB"):
+            ensure_private_directory(state.directory)
+            audit_path = state.audit_path
         upstream = UpstreamServer(
             name=server_name,
-            command=tuple(upstream_command),
+            command=state.command,
             environment={},
+            cwd=str(state.cwd),
+            state_key=state.state_key,
+            fingerprint=state.fingerprint,
         )
         if args.policy_explicit:
             runtime = JudiktRuntime(
                 args.policy,
-                args.audit_db,
+                audit_path,
                 upstream_servers=[upstream],
             )
             serve_gateway(runtime)
@@ -327,12 +383,19 @@ def _run_wrap(args: argparse.Namespace) -> None:
             _print_classification_summary(report)
             runtime = JudiktRuntime(
                 policy_path,
-                args.audit_db,
+                audit_path,
                 upstream_servers=[upstream],
             )
             serve_gateway(runtime)
+    except ToolIntegrityError as exc:
+        _exit_tool_integrity("wrap", exc)
     except (PolicyInitializationError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
         raise SystemExit(f"wrap: {exc}") from None
+
+
+def _exit_tool_integrity(command: str, exc: ToolIntegrityError) -> None:
+    print(f"{command}: {exc}", file=sys.stderr)
+    raise SystemExit(3)
 
 
 def _print_classification_summary(report: dict[str, object]) -> None:

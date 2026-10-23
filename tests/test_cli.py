@@ -143,6 +143,7 @@ class CLITest(unittest.TestCase):
             policy_explicit=False,
             policy=Path("policy.json"),
             audit_db=Path("audit.db"),
+            audit_explicit=True,
             identity="local-operator",
             profile="read-only",
         )
@@ -156,6 +157,7 @@ class CLITest(unittest.TestCase):
             policy_explicit=True,
             policy=Path("policy.json"),
             audit_db=Path("audit.db"),
+            audit_explicit=True,
             identity="local-operator",
             profile="read-only",
         )
@@ -177,6 +179,7 @@ class CLITest(unittest.TestCase):
             policy_explicit=False,
             policy=Path("unused.json"),
             audit_db=Path("audit.db"),
+            audit_explicit=True,
             identity="operator",
             profile="approve-writes",
         )

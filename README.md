@@ -107,6 +107,19 @@ Generated-policy profiles:
 
 Tools without annotations are destructive by default. A read-only annotation that conflicts with a mutation-like name such as `delete_cache` is also classified as destructive. The generated policy records every decision under `tool_classification`; this key is informational and ignored during policy evaluation. Pass `--profile` to `judikt init` or policy-free `judikt wrap`. When `judikt wrap --policy ...` is used, Judikt uses that explicit policy as-is and does not reclassify it.
 
+When neither `--audit-db` nor `JUDIKT_AUDIT_DB` is set, each wrapped upstream gets private state under `$XDG_STATE_HOME/judikt/upstreams/<display-name>-<fingerprint>/` (or `~/.local/state/judikt/upstreams/...`). The fingerprint binds the resolved command, working directory, and configured environment-variable names without storing their values. Its `audit.db`, findings database, and tool-pin file are therefore isolated from unrelated upstreams and concurrent writers.
+
+Tool pins use schema v2: an overall digest, upstream fingerprint, safely quoted launch command, pin time, and per-tool digests for the complete definition plus `description`, `inputSchema`, `annotations`, and `outputSchema`. Legacy digest-only pins are read and upgraded after a successful verification. Tool drift or metadata quarantine exits startup with status `3`, writes only safe tool and field names to stderr, and never prints upstream schema or description contents. Review and explicitly accept changes with:
+
+```bash
+judikt pins list
+judikt pins show <state-key>
+judikt pins accept <state-key> --tool <tool-name> --yes
+# Omit --tool to accept the complete current catalog; omit --yes for confirmation.
+```
+
+`JUDIKT_TOOL_PIN_MODE=refresh` remains available for compatibility but warns because it re-trusts every server in the selected pin file.
+
 The launch scripts automatically use `.venv/bin/python` when a project virtual environment exists. Otherwise, they use the system `python3`.
 
 To use an isolated audit database for a run:
