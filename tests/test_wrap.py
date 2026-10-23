@@ -40,7 +40,7 @@ class WrapEndToEndTest(unittest.TestCase):
             ],
             environment={
                 "PYTHONPATH": str(PROJECT_ROOT / "src"),
-                "JUDIKT_APPROVAL_SECRET": "wrap-test-approval",
+                "JUDIKT_APPROVAL_SECRET": "wrap-test-approval-secret-at-least-32-bytes",
                 "JUDIKT_AUDIT_HMAC_SECRET": "wrap-test-audit",
                 "JUDIKT_AUDIT_SINK": "none",
                 "JUDIKT_TELEMETRY": "disabled",
@@ -391,7 +391,7 @@ class WrapProfileEndToEndTest(unittest.TestCase):
     def _environment(root: Path) -> dict[str, str]:
         return {
             "PYTHONPATH": str(PROJECT_ROOT / "src"),
-            "JUDIKT_APPROVAL_SECRET": "profile-test-approval",
+            "JUDIKT_APPROVAL_SECRET": "profile-test-approval-secret-at-least-32-bytes",
             "JUDIKT_AUDIT_HMAC_SECRET": "profile-test-audit",
             "JUDIKT_AUDIT_SINK": "none",
             "JUDIKT_TELEMETRY": "disabled",

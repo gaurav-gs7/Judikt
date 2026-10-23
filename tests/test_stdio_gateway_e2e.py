@@ -21,7 +21,7 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
         root = Path(self.temp_dir.name)
         self.environment = {
             "PYTHONPATH": str(PROJECT_ROOT / "src"),
-            "JUDIKT_APPROVAL_SECRET": "stdio-approval-secret",
+            "JUDIKT_APPROVAL_SECRET": "stdio-approval-secret-at-least-32-bytes",
             "JUDIKT_AUDIT_HMAC_SECRET": "stdio-audit-secret",
             "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
             "JUDIKT_AUDIT_SINK": "none",
@@ -100,7 +100,7 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
             "environment": "production",
             "rollback_plan": "verify health and restore the prior deployment",
         }
-        restart_token = ApprovalAuthority("stdio-approval-secret").issue(
+        restart_token = ApprovalAuthority("stdio-approval-secret-at-least-32-bytes").issue(
             actor="sre-oncall",
             reason="stdio restart",
             server="platform-ops",
@@ -121,7 +121,7 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
             "environment": "production",
             "rollback_plan": "verify health and restore the prior deployment",
         }
-        rollback_token = ApprovalAuthority("stdio-approval-secret").issue(
+        rollback_token = ApprovalAuthority("stdio-approval-secret-at-least-32-bytes").issue(
             actor="sre-oncall",
             reason="stdio rollback",
             server="platform-ops",
@@ -146,7 +146,7 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
             "environment": "production",
             "rollback_plan": "wait for replacement and restore workload if readiness fails",
         }
-        pod_token = ApprovalAuthority("stdio-approval-secret").issue(
+        pod_token = ApprovalAuthority("stdio-approval-secret-at-least-32-bytes").issue(
             actor="sre-oncall",
             reason="stdio pod restart",
             server="kubernetes",
@@ -226,7 +226,7 @@ class StdioServerResilienceTest(unittest.TestCase):
             environment = {
                 **os.environ,
                 "PYTHONPATH": str(PROJECT_ROOT / "src"),
-                "JUDIKT_APPROVAL_SECRET": "resilience-approval-secret",
+                "JUDIKT_APPROVAL_SECRET": "resilience-approval-secret-at-least-32-bytes",
                 "JUDIKT_AUDIT_HMAC_SECRET": "resilience-audit-secret",
                 "JUDIKT_AUDIT_SINK": "none",
                 "JUDIKT_TELEMETRY": "disabled",

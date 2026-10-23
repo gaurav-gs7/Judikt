@@ -221,7 +221,7 @@ class SkillAcceptanceTest(unittest.TestCase):
                 str(UPSTREAM_FIXTURE),
             ],
             "env": {
-                "JUDIKT_APPROVAL_SECRET": "skill-acceptance-approval-secret",
+                "JUDIKT_APPROVAL_SECRET": "skill-acceptance-approval-secret-32-bytes",
                 "JUDIKT_AUDIT_HMAC_SECRET": "skill-acceptance-audit-secret",
                 "JUDIKT_AUDIT_SINK": "none",
                 "JUDIKT_TELEMETRY": "disabled",

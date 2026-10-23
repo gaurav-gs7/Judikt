@@ -15,7 +15,7 @@ services:
     environment:
       JUDIKT_MODE: real-mcp
       JUDIKT_HTTP_BEARER_TOKEN: local-dev-token
-      JUDIKT_APPROVAL_SECRET: local-dev-approval-secret
+      JUDIKT_APPROVAL_SECRET: ${JUDIKT_APPROVAL_SECRET:?JUDIKT_APPROVAL_SECRET is required}
       JUDIKT_AUDIT_HMAC_SECRET: local-dev-audit-secret
       JUDIKT_AUDIT_SIGNATURE_REQUIRED: "true"
       JUDIKT_AUDIT_VERIFY_ON_STARTUP: "true"

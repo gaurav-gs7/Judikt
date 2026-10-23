@@ -225,7 +225,7 @@ def _isolated_runtime_environment(root: Path) -> Iterator[None]:
         "JUDIKT_AUDIT_HMAC_SECRET_VAULT_PATH": "",
         "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
         "JUDIKT_AUDIT_VERIFY_ON_STARTUP": "true",
-        "JUDIKT_APPROVAL_SECRET": "benchmark-approval-secret",
+        "JUDIKT_APPROVAL_SECRET": "benchmark-approval-secret-32-bytes-minimum",
         "JUDIKT_APPROVAL_SECRET_ARN": "",
         "JUDIKT_APPROVAL_SECRET_VAULT_PATH": "",
         "JUDIKT_ARGUS_URL": "",

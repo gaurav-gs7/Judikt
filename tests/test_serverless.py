@@ -143,7 +143,7 @@ class ServerlessGatewayTests(unittest.TestCase):
             os.environ,
             {
                 "JUDIKT_API_TOKEN": "secret",
-                "JUDIKT_APPROVAL_SECRET": "unit-test-secret",
+                "JUDIKT_APPROVAL_SECRET": "unit-test-approval-secret-at-least-32-bytes",
             },
             clear=False,
         ):
@@ -178,7 +178,7 @@ class ServerlessGatewayTests(unittest.TestCase):
             os.environ,
             {
                 "JUDIKT_API_TOKEN": "secret",
-                "JUDIKT_APPROVAL_SECRET": "unit-test-secret",
+                "JUDIKT_APPROVAL_SECRET": "unit-test-approval-secret-at-least-32-bytes",
             },
             clear=False,
         ):
@@ -361,7 +361,11 @@ class ServerlessGatewayTests(unittest.TestCase):
             self.assertFalse(serverless._verify_audit_event(sealed))
 
     def test_serverless_policy_blocks_caller_supplied_upstream_token(self) -> None:
-        with mock.patch.dict(os.environ, {}, clear=False):
+        with mock.patch.dict(
+            os.environ,
+            {"JUDIKT_APPROVAL_SECRET": "serverless-approval-secret-at-least-32-bytes"},
+            clear=False,
+        ):
             policy = serverless.ServerlessPolicy(serverless.DEMO_POLICY_PATH)
         policy._within_distributed_rate_limit = mock.Mock(return_value=True)
 
@@ -375,7 +379,7 @@ class ServerlessGatewayTests(unittest.TestCase):
         self.assertEqual(result.rule, "token_passthrough")
 
     def test_serverless_policy_blocks_non_allowlisted_diagnostic_before_lambda(self) -> None:
-        with mock.patch.dict(os.environ, {"JUDIKT_APPROVAL_SECRET": "secret"}, clear=True), mock.patch(
+        with mock.patch.dict(os.environ, {"JUDIKT_APPROVAL_SECRET": "serverless-approval-secret-at-least-32-bytes"}, clear=True), mock.patch(
             "judikt.serverless._get_state", return_value=None
         ):
             policy = serverless.ServerlessPolicy(serverless.DEMO_POLICY_PATH)
@@ -391,7 +395,7 @@ class ServerlessGatewayTests(unittest.TestCase):
         self.assertEqual(result.rule, "argument_allowlist")
 
     def test_guarded_tool_redacts_result_and_quarantines_injection(self) -> None:
-        with mock.patch.dict(os.environ, {"JUDIKT_APPROVAL_SECRET": "secret"}, clear=True), mock.patch(
+        with mock.patch.dict(os.environ, {"JUDIKT_APPROVAL_SECRET": "serverless-approval-secret-at-least-32-bytes"}, clear=True), mock.patch(
             "judikt.serverless._get_state", return_value=None
         ), mock.patch("judikt.serverless._increment_rate_counter", return_value=True), mock.patch(
             "judikt.serverless._write_audit_event"
@@ -432,7 +436,7 @@ class ServerlessGatewayTests(unittest.TestCase):
         self.assertEqual(audit.call_count, 2)
 
     def test_untrusted_tool_error_is_not_returned_or_audited(self) -> None:
-        with mock.patch.dict(os.environ, {"JUDIKT_APPROVAL_SECRET": "secret"}, clear=True), mock.patch(
+        with mock.patch.dict(os.environ, {"JUDIKT_APPROVAL_SECRET": "serverless-approval-secret-at-least-32-bytes"}, clear=True), mock.patch(
             "judikt.serverless._get_state", return_value=None
         ), mock.patch("judikt.serverless._increment_rate_counter", return_value=True), mock.patch(
             "judikt.serverless._invoke_tool_lambda",
@@ -452,7 +456,7 @@ class ServerlessGatewayTests(unittest.TestCase):
         self.assertNotIn("private upstream credential", json.dumps(audit.call_args.args[0]))
 
     def test_serverless_policy_kill_switch_circuit_shadow_and_rate_limit(self) -> None:
-        with mock.patch.dict(os.environ, {"JUDIKT_APPROVAL_SECRET": "secret"}, clear=True), mock.patch(
+        with mock.patch.dict(os.environ, {"JUDIKT_APPROVAL_SECRET": "serverless-approval-secret-at-least-32-bytes"}, clear=True), mock.patch(
             "judikt.serverless._get_state", return_value=None
         ):
             policy = serverless.ServerlessPolicy(serverless.DEMO_POLICY_PATH)
@@ -680,7 +684,11 @@ class ServerlessGatewayTests(unittest.TestCase):
     def test_eventbridge_outage_never_changes_security_denial(self) -> None:
         with mock.patch.dict(
             os.environ,
-            {"EVENT_BUS_NAME": "security-bus", "JUDIKT_API_TOKEN": "secret"},
+            {
+                "EVENT_BUS_NAME": "security-bus",
+                "JUDIKT_API_TOKEN": "secret",
+                "JUDIKT_APPROVAL_SECRET": "serverless-approval-secret-at-least-32-bytes",
+            },
             clear=False,
         ), mock.patch("judikt.serverless._events_client") as factory, mock.patch(
             "judikt.serverless._write_audit_event"
@@ -711,7 +719,9 @@ class ServerlessGatewayTests(unittest.TestCase):
 
     def test_routine_approval_denial_does_not_publish_finding(self) -> None:
         with mock.patch.dict(
-            os.environ, {"JUDIKT_APPROVAL_SECRET": "unit-test-secret"}, clear=False
+            os.environ,
+            {"JUDIKT_APPROVAL_SECRET": "unit-test-approval-secret-at-least-32-bytes"},
+            clear=False,
         ), mock.patch("judikt.serverless._publish_finding") as publish, mock.patch(
             "judikt.serverless._write_audit_event"
         ):
@@ -740,7 +750,7 @@ class ServerlessGatewayTests(unittest.TestCase):
             os.environ,
             {
                 "JUDIKT_AUDIT_HMAC_SECRET_ARN": "audit-arn",
-                "JUDIKT_APPROVAL_SECRET": "approval-secret",
+                "JUDIKT_APPROVAL_SECRET": "serverless-approval-secret-at-least-32-bytes",
                 "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
             },
             clear=True,

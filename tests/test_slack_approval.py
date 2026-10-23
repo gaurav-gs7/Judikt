@@ -41,7 +41,7 @@ class SlackApprovalWorkflowTest(unittest.TestCase):
             clear=True,
         )
         self.environment.start()
-        self.authority = ApprovalAuthority("approval-secret")
+        self.authority = ApprovalAuthority("approval-secret-at-least-32-bytes")
         self.workflow = SlackApprovalWorkflow(
             Path(self.temp_dir.name) / "approvals.db",
             self.authority,

@@ -29,7 +29,7 @@ class SecretConsumerIntegrationTest(unittest.TestCase):
         client = _SecretsManagerClient(
             {
                 "auth-secret": "brokered-bearer-token",
-                "approval-secret": "brokered-approval-secret",
+                "approval-secret": "brokered-approval-secret-at-least-32-bytes",
             }
         )
         boto3 = types.SimpleNamespace(client=lambda service: client)
@@ -115,7 +115,7 @@ class SecretConsumerIntegrationTest(unittest.TestCase):
         ):
             workflow = SlackApprovalWorkflow(
                 Path(directory) / "approvals.db",
-                ApprovalAuthority("test-approval-secret"),
+                ApprovalAuthority("test-approval-secret-at-least-32-bytes"),
             )
             try:
                 self.assertTrue(workflow.enabled)

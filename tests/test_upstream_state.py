@@ -171,7 +171,7 @@ class UpstreamStateEndToEndTest(unittest.TestCase):
             **os.environ,
             "PYTHONPATH": str(PROJECT_ROOT / "src"),
             "XDG_STATE_HOME": str(root / "state"),
-            "JUDIKT_APPROVAL_SECRET": "state-test-approval",
+            "JUDIKT_APPROVAL_SECRET": "state-test-approval-secret-at-least-32-bytes",
             "JUDIKT_AUDIT_HMAC_SECRET": "state-test-audit",
             "JUDIKT_AUDIT_SINK": "none",
             "JUDIKT_TELEMETRY": "disabled",

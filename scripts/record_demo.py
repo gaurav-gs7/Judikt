@@ -205,7 +205,7 @@ def capture_live_demo() -> list[CommandCapture]:
             "JUDIKT_BASE_URL": f"http://127.0.0.1:{port}",
             "JUDIKT_MCP_URL": f"http://127.0.0.1:{port}/mcp",
             "JUDIKT_HTTP_BEARER_TOKEN": "demo-recording-bearer-token",
-            "JUDIKT_APPROVAL_SECRET": "demo-recording-approval-secret",
+            "JUDIKT_APPROVAL_SECRET": "demo-recording-approval-secret-32-bytes-minimum",
             "JUDIKT_AUDIT_HMAC_SECRET": "demo-recording-independent-audit-secret",
             "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
             "JUDIKT_AUDIT_VERIFY_ON_STARTUP": "true",

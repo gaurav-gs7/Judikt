@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import sys
 import tempfile
 from pathlib import Path
 
+from .approval import ApprovalAuthority, ApprovalConfigurationError
 from .attackbench import (
     AttackBenchError,
     report_passes as attackbench_report_passes,
@@ -304,7 +306,7 @@ def main() -> None:
     if args.command == "serve-real-mcp":
         try:
             serve_real_mcp(args)
-        except AuthError as exc:
+        except (AuthError, ApprovalConfigurationError) as exc:
             raise SystemExit(f"serve-real-mcp: {exc}") from None
         except ToolIntegrityError as exc:
             _exit_tool_integrity("serve-real-mcp", exc)
@@ -314,9 +316,16 @@ def main() -> None:
             args.policy,
             args.audit_db,
             include_demo_servers=demo_mode,
+            approval_authority=(
+                ApprovalAuthority(secrets.token_urlsafe(48))
+                if args.command == "demo"
+                else None
+            ),
         )
     except ToolIntegrityError as exc:
         _exit_tool_integrity(args.command, exc)
+    except ApprovalConfigurationError as exc:
+        raise SystemExit(f"{args.command}: {exc}") from None
     if args.command == "demo":
         try:
             run_demo(runtime)
@@ -389,6 +398,8 @@ def _run_wrap(args: argparse.Namespace) -> None:
             serve_gateway(runtime)
     except ToolIntegrityError as exc:
         _exit_tool_integrity("wrap", exc)
+    except ApprovalConfigurationError as exc:
+        raise SystemExit(f"wrap: {exc}") from None
     except (PolicyInitializationError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
         raise SystemExit(f"wrap: {exc}") from None
 

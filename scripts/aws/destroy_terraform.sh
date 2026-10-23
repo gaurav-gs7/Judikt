@@ -12,7 +12,7 @@ AMI_SSM_PARAMETER="${JUDIKT_AMI_SSM_PARAMETER:-/aws/service/ami-amazon-linux-lat
 ALLOWED_CIDR="${JUDIKT_ALLOWED_CIDR:-127.0.0.1/32}"
 CONTAINER_MODE="${JUDIKT_MODE:-real-mcp}"
 HTTP_BEARER_TOKEN="${JUDIKT_HTTP_BEARER_TOKEN:-}"
-APPROVAL_SECRET="${JUDIKT_APPROVAL_SECRET:-local-dev-approval-secret-change-me}"
+APPROVAL_SECRET="${JUDIKT_APPROVAL_SECRET:-}"
 
 "${ROOT_DIR}/scripts/aws/preflight_identity.sh" >/dev/null
 

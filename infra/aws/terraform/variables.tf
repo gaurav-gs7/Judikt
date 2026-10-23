@@ -94,7 +94,7 @@ variable "http_bearer_token" {
 variable "approval_secret" {
   description = "HMAC secret for signed Judikt approval tokens."
   type        = string
-  default     = "local-dev-approval-secret-change-me"
+  default     = ""
   sensitive   = true
 }
 

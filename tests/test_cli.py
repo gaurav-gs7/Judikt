@@ -282,6 +282,23 @@ class CLITest(unittest.TestCase):
         self.assertEqual(rendered.strip(), "signed-token")
         runtime.close.assert_called_once_with()
 
+    def test_demo_uses_a_fresh_in_memory_approval_secret_per_run(self) -> None:
+        secrets_seen = []
+
+        def runtime_factory(*args: object, **kwargs: object) -> mock.Mock:
+            authority = kwargs["approval_authority"]
+            secrets_seen.append(authority.secret)
+            return mock.Mock()
+
+        with mock.patch.object(cli, "JudiktRuntime", side_effect=runtime_factory), mock.patch.object(
+            cli, "run_demo"
+        ):
+            self.run_main(["demo"])
+            self.run_main(["demo"])
+
+        self.assertEqual(len(secrets_seen), 2)
+        self.assertNotEqual(secrets_seen[0], secrets_seen[1])
+
 
 if __name__ == "__main__":
     unittest.main()

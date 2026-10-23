@@ -243,7 +243,7 @@ class Tier3HTTPIntegrationTest(unittest.TestCase):
             },
             clear=True,
         ):
-            authority = ApprovalAuthority("approval-secret")
+            authority = ApprovalAuthority("approval-secret-at-least-32-bytes")
             workflow = SlackApprovalWorkflow(
                 Path(directory) / "approvals.db", authority
             )

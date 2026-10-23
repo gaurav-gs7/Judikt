@@ -13,7 +13,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from .approval import ApprovalAuthority
+from .approval import ApprovalAuthority, resolve_approval_secret
 from .backends import INCIDENT_TOOLS, KUBERNETES_TOOLS, PLATFORM_TOOLS, IncidentBackend, KubernetesBackend, PlatformOpsBackend
 from .content_guard import ContentGuard, quarantine_result
 from .findings import build_finding_event, should_emit_finding
@@ -228,9 +228,11 @@ class ServerlessPolicy(PolicyEngine):
     """Policy engine with DynamoDB-backed runtime controls."""
 
     def __init__(self, policy_path: Path) -> None:
-        super().__init__(policy_path)
+        super().__init__(
+            policy_path,
+            ApprovalAuthority(_approval_secret(), require_configured=True),
+        )
         self.risk = RiskEngine()
-        self.approvals = ApprovalAuthority(_approval_secret())
 
     def evaluate(self, server: str, tool: str, arguments: dict[str, Any]) -> PolicyDecision:
         with self._lock:
@@ -778,8 +780,11 @@ def _api_token() -> str:
     return _secret_from_env("JUDIKT_API_TOKEN_SECRET_ARN") or os.getenv("JUDIKT_API_TOKEN", "")
 
 
-def _approval_secret() -> str | None:
-    return _secret_from_env("JUDIKT_APPROVAL_SECRET_ARN") or os.getenv("JUDIKT_APPROVAL_SECRET")
+def _approval_secret() -> str:
+    configured = _secret_from_env("JUDIKT_APPROVAL_SECRET_ARN") or os.getenv(
+        "JUDIKT_APPROVAL_SECRET"
+    )
+    return resolve_approval_secret(configured, require_configured=True)
 
 
 def _audit_signing_secret() -> bytes:

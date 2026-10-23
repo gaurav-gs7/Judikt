@@ -274,6 +274,8 @@ curl -s http://127.0.0.1:8080/api/call \
 
 Issue a signed approval token for a rollback:
 
+For local single-machine use, Judikt creates `$XDG_STATE_HOME/judikt/approval.key` (or `~/.local/state/judikt/approval.key`) atomically with mode `0600` inside a mode-`0700` directory. All local commands for the same OS user share that key. Judikt refuses incorrectly owned or group/world-readable key files and rejects approval secrets shorter than 32 bytes. Remote bindings, serverless deployments, and `JUDIKT_PRODUCTION=true` require an explicitly configured shared secret through `JUDIKT_APPROVAL_SECRET`, AWS Secrets Manager, or Vault; they never fall back to the per-machine key.
+
 ```bash
 TOKEN=$(./scripts/python.sh -m judikt.cli issue-approval \
   --actor gaurav \

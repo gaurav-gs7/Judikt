@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .approval import ApprovalAuthority
 from .audit import AuditStore
 from .content_guard import ContentGuard, quarantine_result
 from .findings import FindingDispatcher, build_finding_event, should_emit_finding
@@ -58,8 +59,9 @@ class JudiktOpsRuntime:
         include_demo_servers: bool = False,
         circuit_failure_threshold: int = 3,
         circuit_cooldown_seconds: int = 300,
+        approval_authority: ApprovalAuthority | None = None,
     ) -> None:
-        self.policy = PolicyEngine(policy_path)
+        self.policy = PolicyEngine(policy_path, approval_authority)
         self.content_guard = ContentGuard.from_policy(self.policy.config)
         self.audit = AuditStore(audit_path)
         self.findings = FindingDispatcher(audit_path.with_suffix(".findings.db"))

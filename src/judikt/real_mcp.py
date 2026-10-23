@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from .approval import ApprovalAuthority
 from .auth import AuthError, Authenticator
 from .ops_runtime import JudiktOpsRuntime
 from .request_context import (
@@ -16,13 +17,18 @@ from .request_context import (
 from .slack_approval import SlackApprovalError
 
 
-def build_runtime(policy_path: Path, audit_path: Path) -> JudiktOpsRuntime:
+def build_runtime(
+    policy_path: Path,
+    audit_path: Path,
+    approval_authority: ApprovalAuthority | None = None,
+) -> JudiktOpsRuntime:
     return JudiktOpsRuntime(
         policy_path,
         audit_path,
         include_demo_servers=_enabled("JUDIKT_DEMO_MODE"),
         circuit_failure_threshold=int(os.getenv("JUDIKT_CIRCUIT_FAILURE_THRESHOLD", "3")),
         circuit_cooldown_seconds=int(os.getenv("JUDIKT_CIRCUIT_COOLDOWN_SECONDS", "300")),
+        approval_authority=approval_authority,
     )
 
 
@@ -58,7 +64,8 @@ def serve_real_mcp(args: argparse.Namespace) -> None:
     authenticator.config.validate_for_remote_server(
         require_auth=remote_bind and not allow_unauthenticated_remote
     )
-    runtime = build_runtime(args.policy, args.audit_db)
+    approval_authority = ApprovalAuthority(require_configured=remote_bind)
+    runtime = build_runtime(args.policy, args.audit_db, approval_authority)
     mcp = FastMCP(
         "Judikt Production Ops",
         instructions=(

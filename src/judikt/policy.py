@@ -14,10 +14,14 @@ from .risk import RiskEngine
 
 
 class PolicyEngine:
-    def __init__(self, policy_path: Path) -> None:
+    def __init__(
+        self,
+        policy_path: Path,
+        approval_authority: ApprovalAuthority | None = None,
+    ) -> None:
         # JSON is a YAML subset, which keeps this demo dependency-free.
         self.config = json.loads(policy_path.read_text())
-        self.approvals = ApprovalAuthority()
+        self.approvals = approval_authority or ApprovalAuthority()
         self.argument_guard = ContentGuard.from_policy(self.config)
         self.risk = RiskEngine()
         self._blocked = [re.compile(pattern, re.IGNORECASE) for pattern in self.config["blocked_argument_patterns"]]
