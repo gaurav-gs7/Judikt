@@ -1,5 +1,6 @@
 {
   "local_stdio_identity": "local-operator",
+  "identity_argument_fields": [],
   "allow_demo_boolean_approval": false,
   "blocked_argument_patterns": [
     "(^|/)\\.ssh(/|$)",

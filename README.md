@@ -145,7 +145,7 @@ To expose upstreams from a persistent [`config/upstreams.example.json`](config/u
 ./scripts/run_mcp_gateway.sh
 ```
 
-Unauthenticated stdio sessions take their identity from `local_stdio_identity` in the policy file. Caller-supplied `actor`, `user`, and `requested_by` values are removed before policy evaluation, auditing, approval verification, or upstream execution; declared string identity fields receive the configured local identity instead. Use a separate local policy file when different MCP client installations need different principals.
+Unauthenticated stdio sessions take their identity only from `local_stdio_identity` in the policy file; authenticated remote sessions use the validated subject. Tool arguments are forwarded unchanged for policy evaluation, approval hashing, auditing, and upstream execution. The `identity_argument_fields` policy key is a list of argument names that may act as identity claims only when no trusted identity exists; its default is `[]`, while the demo policy opts into `["actor"]`. When a trusted identity exists, a conflicting value in an opted-in field is denied with `identity_mismatch`. Use a separate local policy file when different MCP client installations need different principals.
 
 For a checkout-based MCP client configuration, use:
 
@@ -185,7 +185,7 @@ Judikt includes:
 - Policy-as-code allowlists and blocked argument patterns
 - JWT/OIDC resource-server authentication with issuer, audience, group, and scope validation
 - Authenticated-subject binding that rejects caller actor spoofing
-- Operator-bound stdio identity that ignores caller-supplied `actor`, `user`, and `requested_by`
+- Trusted-context identity from `local_stdio_identity` or an authenticated subject, with tool arguments forwarded unchanged
 - OAuth protected-resource metadata and caller-token passthrough denial
 - Scoped OAuth challenges and exact HTTP Origin validation
 - HMAC-signed approval tokens for restart and rollback operations

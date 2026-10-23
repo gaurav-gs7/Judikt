@@ -229,8 +229,11 @@ class PolicyEngine:
         return bool(self.config.get("allow_demo_boolean_approval", False) and arguments.get("approved") is True)
 
     def _actor(self, arguments: dict[str, Any]) -> str:
-        actor = arguments.get("actor") or arguments.get("user") or arguments.get("requested_by")
-        return str(actor or "anonymous")
+        for field in self.config.get("identity_argument_fields", []):
+            actor = arguments.get(field)
+            if actor:
+                return str(actor)
+        return "anonymous"
 
     def _actor_can_call(self, actor: str, tool: str) -> bool:
         permissions = self.config.get("actor_permissions", {})

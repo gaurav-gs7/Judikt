@@ -29,6 +29,7 @@ class PolicyInitializationTest(unittest.TestCase):
         policy = json.loads(DEFAULT_POLICY_PATH.read_text())
 
         self.assertEqual(policy["local_stdio_identity"], "local-operator")
+        self.assertEqual(policy["identity_argument_fields"], [])
         self.assertEqual(policy["allowed_tools"], {})
         self.assertEqual(policy["actor_permissions"], {"local-operator": [], "anonymous": []})
         permissions = policy["actor_permissions"]

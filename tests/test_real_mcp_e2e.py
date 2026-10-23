@@ -15,9 +15,11 @@ import urllib.request
 from pathlib import Path
 
 from judikt.auth import create_hs256_jwt
+from judikt.paths import DEFAULT_POLICY_PATH
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+IDENTITY_FIXTURE = PROJECT_ROOT / "tests" / "fixtures" / "external_mcp_server.py"
 
 
 def _free_port() -> int:
@@ -563,6 +565,158 @@ class RealMCPJWTAuthorizationEndToEndTest(unittest.TestCase):
                         self.assertIsInstance(response.structuredContent, dict)
                         results[key] = response.structuredContent
         return results
+
+
+class RealMCPDefaultPolicyIdentityEndToEndTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        root = Path(cls.temp_dir.name)
+        cls.port = _free_port()
+        cls.issuer = "https://issuer.judikt.default-policy.test"
+        cls.audience = "judikt-default-policy-e2e"
+        cls.jwt_secret = "default-policy-jwt-secret"
+
+        policy = json.loads(DEFAULT_POLICY_PATH.read_text())
+        policy["allowed_tools"] = {"external-identities": ["external.get_user"]}
+        policy["actor_permissions"] = {
+            "alice": ["external.get_user"],
+            "local-operator": [],
+            "anonymous": [],
+        }
+        policy_path = root / "policy.json"
+        policy_path.write_text(json.dumps(policy))
+
+        upstream_path = root / "upstreams.json"
+        upstream_path.write_text(
+            json.dumps(
+                {
+                    "servers": {
+                        "external-identities": {
+                            "command": [
+                                sys.executable,
+                                str(IDENTITY_FIXTURE),
+                                "identity-fields",
+                            ]
+                        }
+                    }
+                }
+            )
+        )
+        environment = {
+            **os.environ,
+            "PYTHONPATH": str(PROJECT_ROOT / "src"),
+            "JUDIKT_HTTP_BEARER_TOKEN": "",
+            "JUDIKT_JWT_HS256_SECRET": cls.jwt_secret,
+            "JUDIKT_JWT_ISSUER": cls.issuer,
+            "JUDIKT_JWT_AUDIENCE": cls.audience,
+            "JUDIKT_AUTHORIZATION_SERVER": cls.issuer,
+            "JUDIKT_RESOURCE_URI": f"http://127.0.0.1:{cls.port}/mcp",
+            "JUDIKT_REQUIRED_SCOPES": "mcp:tools",
+            "JUDIKT_APPROVAL_SECRET": "default-policy-approval-secret",
+            "JUDIKT_AUDIT_HMAC_SECRET": "default-policy-audit-secret",
+            "JUDIKT_AUDIT_SINK": "none",
+            "JUDIKT_TELEMETRY": "disabled",
+            "JUDIKT_TOOL_PIN_PATH": str(root / "pins.json"),
+            "JUDIKT_UPSTREAM_CONFIG": str(upstream_path),
+            "JUDIKT_DEMO_MODE": "",
+        }
+        cls.process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "judikt.cli",
+                "--policy",
+                str(policy_path),
+                "--audit-db",
+                str(root / "audit.db"),
+                "serve-real-mcp",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(cls.port),
+                "--log-level",
+                "warning",
+            ],
+            cwd=PROJECT_ROOT,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        cls.base_url = f"http://127.0.0.1:{cls.port}"
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            if cls.process.poll() is not None:
+                stdout, stderr = cls.process.communicate(timeout=3)
+                raise RuntimeError(f"default-policy MCP server exited:\n{stdout}\n{stderr}")
+            try:
+                with urllib.request.urlopen(f"{cls.base_url}/healthz", timeout=1):
+                    break
+            except (OSError, urllib.error.URLError):
+                time.sleep(0.1)
+        else:
+            raise RuntimeError("default-policy MCP server did not become healthy")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if cls.process.poll() is None:
+            cls.process.terminate()
+            try:
+                cls.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                cls.process.kill()
+                cls.process.wait(timeout=5)
+        for stream in (cls.process.stdout, cls.process.stderr):
+            if stream is not None:
+                stream.close()
+        cls.temp_dir.cleanup()
+
+    def test_authenticated_subject_does_not_conflict_with_user_business_argument(self) -> None:
+        token = create_hs256_jwt(
+            {
+                "sub": "alice",
+                "iss": self.issuer,
+                "aud": self.audience,
+                "exp": int(time.time()) + 300,
+                "scope": "mcp:tools",
+            },
+            self.jwt_secret,
+        )
+
+        result = asyncio.run(self._call_get_user(token))
+
+        self.assertTrue(result["allowed"])
+        self.assertEqual(result["rule"], "allow")
+        self.assertEqual(
+            result["result"]["received_arguments"],
+            {"user": "octocat"},
+        )
+
+    async def _call_get_user(self, token: str) -> dict[str, object]:
+        import httpx
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
+
+        async with httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {token}"}, timeout=10
+        ) as http_client:
+            async with streamable_http_client(
+                f"{self.base_url}/mcp", http_client=http_client
+            ) as (read_stream, write_stream, _):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+                    response = await session.call_tool(
+                        "judikt.call_upstream",
+                        {
+                            "server": "external-identities",
+                            "tool": "external.get_user",
+                            "arguments": {"user": "octocat"},
+                        },
+                    )
+                    self.assertFalse(response.isError, response)
+                    self.assertIsInstance(response.structuredContent, dict)
+                    return response.structuredContent
 
 
 if __name__ == "__main__":

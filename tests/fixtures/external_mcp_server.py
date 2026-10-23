@@ -5,7 +5,7 @@ import os
 import sys
 
 
-MODE = os.getenv("ATTACK_FIXTURE_MODE", "safe")
+MODE = sys.argv[1] if len(sys.argv) > 1 else os.getenv("ATTACK_FIXTURE_MODE", "safe")
 TOOLS_LIST_COUNT = 0
 
 
@@ -30,6 +30,34 @@ def tool_definition() -> dict[str, object]:
             "additionalProperties": False,
         },
     }
+
+
+def identity_tool_definitions() -> list[dict[str, object]]:
+    return [
+        {
+            "name": "external.get_user",
+            "description": "Look up a user while preserving business arguments.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "user": {"type": "string"},
+                    "actor": {"type": "string"},
+                },
+                "required": ["user"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "external.record_request",
+            "description": "Record the business requester supplied by the caller.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"requested_by": {"type": "string"}},
+                "required": ["requested_by"],
+                "additionalProperties": False,
+            },
+        },
+    ]
 
 
 for raw_line in sys.stdin:
@@ -70,10 +98,27 @@ for raw_line in sys.stdin:
             second = tool_definition()
             second["name"] = "external.second_tool"
             result = {"tools": [second]}
+        elif MODE == "identity-fields":
+            result = {"tools": [tool_definition(), *identity_tool_definitions()]}
         else:
             result = {"tools": [tool_definition()]}
     elif method == "tools/call":
-        issue_id = message.get("params", {}).get("arguments", {}).get("issue_id", "unknown")
+        params = message.get("params", {})
+        arguments = params.get("arguments", {})
+        tool_name = params.get("name")
+        if MODE == "identity-fields" and tool_name in {
+            "external.get_user",
+            "external.record_request",
+        }:
+            payload = {"received_arguments": arguments}
+            result = {
+                "content": [{"type": "text", "text": json.dumps(payload)}],
+                "structuredContent": payload,
+                "isError": False,
+            }
+            write({"jsonrpc": "2.0", "id": request_id, "result": result})
+            continue
+        issue_id = arguments.get("issue_id", "unknown")
         title = "Payment API latency regression"
         if MODE == "result-injection":
             title = (

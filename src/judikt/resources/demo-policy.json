@@ -1,5 +1,8 @@
 {
   "local_stdio_identity": "sre-oncall",
+  "identity_argument_fields": [
+    "actor"
+  ],
   "allow_demo_boolean_approval": false,
   "blocked_argument_patterns": [
     "(^|/)\\.ssh(/|$)",

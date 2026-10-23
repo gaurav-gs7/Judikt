@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from judikt.gateway import _bind_local_identity, _local_stdio_identity
+from judikt.gateway import _local_stdio_identity
 from judikt.policy import PolicyEngine
 
 
@@ -81,74 +81,21 @@ class LocalStdioIdentityTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "local_stdio_identity"):
             _local_stdio_identity(runtime)
 
-    def test_removes_identity_aliases_not_declared_by_tool_schema(self) -> None:
-        arguments = {
-            "query": "errors",
-            "actor": "spoofed-actor",
-            "user": "spoofed-user",
-            "requested_by": "spoofed-requester",
-        }
-
-        trusted = _bind_local_identity(
-            arguments,
-            {"type": "object", "properties": {"query": {"type": "string"}}},
-            "local-operator",
-        )
-
-        self.assertEqual(trusted, {"query": "errors"})
-        self.assertEqual(arguments["actor"], "spoofed-actor")
-
-    def test_sets_all_declared_string_identity_aliases_from_local_config(self) -> None:
-        trusted = _bind_local_identity(
-            {"actor": "spoofed", "user": "spoofed", "requested_by": "spoofed"},
-            {
-                "type": "object",
-                "properties": {
-                    "actor": {"type": "string"},
-                    "user": {"type": "string"},
-                    "requested_by": {"type": "string"},
-                },
-            },
-            "local-operator",
-        )
-
-        self.assertEqual(
-            trusted,
-            {
-                "actor": "local-operator",
-                "user": "local-operator",
-                "requested_by": "local-operator",
-            },
-        )
-
     def test_caller_cannot_escalate_configured_readonly_identity(self) -> None:
         project_root = Path(__file__).resolve().parents[1]
         runtime = SimpleNamespace(
             policy=SimpleNamespace(config={"local_stdio_identity": "readonly"})
         )
         local_identity = _local_stdio_identity(runtime)
-        arguments = _bind_local_identity(
-            {
-                "service": "payments-api",
-                "actor": "untrusted-actor",
-                "user": "untrusted-actor",
-                "requested_by": "untrusted-actor",
-                "environment": "production",
-                "rollback_plan": "restore the prior deployment",
-                "dry_run": True,
-            },
-            {
-                "type": "object",
-                "properties": {
-                    "service": {"type": "string"},
-                    "actor": {"type": "string"},
-                    "environment": {"type": "string"},
-                    "rollback_plan": {"type": "string"},
-                    "dry_run": {"type": "boolean"},
-                },
-            },
-            local_identity,
-        )
+        arguments = {
+            "service": "payments-api",
+            "actor": "untrusted-actor",
+            "user": "business-user",
+            "requested_by": "ticket-requester",
+            "environment": "production",
+            "rollback_plan": "restore the prior deployment",
+            "dry_run": True,
+        }
 
         decision = PolicyEngine(project_root / "config" / "policies.yaml").evaluate(
             "platform-ops",
@@ -158,11 +105,23 @@ class LocalStdioIdentityTest(unittest.TestCase):
         )
 
         self.assertFalse(decision.allowed)
-        self.assertEqual(decision.rule, "authz")
-        self.assertIn("readonly", decision.reason)
-        self.assertEqual(arguments["actor"], "readonly")
-        self.assertNotIn("user", arguments)
-        self.assertNotIn("requested_by", arguments)
+        self.assertEqual(decision.rule, "identity_mismatch")
+        self.assertEqual(arguments["actor"], "untrusted-actor")
+        self.assertEqual(arguments["user"], "business-user")
+        self.assertEqual(arguments["requested_by"], "ticket-requester")
+
+    def test_demo_policy_rejects_authenticated_actor_mismatch(self) -> None:
+        project_root = Path(__file__).resolve().parents[1]
+
+        decision = PolicyEngine(project_root / "config" / "policies.yaml").evaluate(
+            "platform-ops",
+            "platform.health",
+            {"service": "payments-api", "actor": "bob"},
+            authenticated_actor="alice",
+        )
+
+        self.assertFalse(decision.allowed)
+        self.assertEqual(decision.rule, "identity_mismatch")
 
 
 if __name__ == "__main__":

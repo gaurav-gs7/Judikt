@@ -26,7 +26,7 @@ Do not enable an integration without identifying its endpoint, data sent, creden
 
 ## Identity And Approval Boundaries
 
-Unauthenticated stdio has no per-caller authentication. Judikt removes caller-provided `actor`, `user`, and `requested_by` values and substitutes the policy's `local_stdio_identity` where applicable. This prevents argument-level spoofing but represents every client sharing that policy as the same principal.
+Unauthenticated stdio has no per-caller authentication. Judikt sources identity only from the policy's `local_stdio_identity` and forwards tool arguments unchanged, so every client sharing that policy is represented as the same principal. `identity_argument_fields` is empty by default; policies may explicitly opt argument fields into claim checking, but those claims never override a trusted local or authenticated identity.
 
 Authenticated remote mode binds policy evaluation to the validated subject. Judikt is an OAuth resource server, not an authorization server; the selected IdP owns PKCE, login, consent, and client registration.
 

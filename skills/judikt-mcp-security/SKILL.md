@@ -32,7 +32,7 @@ Stop and ask when the upstream command, client configuration location, intended 
 - Keep smoke tests on `tools/list` and explicitly identified read-only tools. Do not assume a tool is safe from its name alone; inspect its description and schema.
 - Do not broaden actor wildcards, disable approvals, enable unauthenticated remote access, or set permissive content-guard modes as a troubleshooting shortcut.
 - Separate verified controls from controls that are only configured or documented.
-- For unauthenticated stdio, explain that Judikt replaces caller-supplied identity fields with `local_stdio_identity`, but cannot distinguish multiple callers sharing that local policy.
+- For unauthenticated stdio, explain that identity comes only from `local_stdio_identity` and tool arguments are forwarded unchanged, but Judikt cannot distinguish multiple callers sharing that local policy. Authenticated remote identity comes from the validated subject.
 - For remote deployment, require authentication and HTTPS outside loopback. Treat static bearer authentication as a constrained single-operator mode, not user-level identity.
 
 ## Network And Data Disclosure

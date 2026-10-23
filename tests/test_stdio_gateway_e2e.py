@@ -183,8 +183,23 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "unknown tool"):
             self.client.call_tool("missing.tool", {})
 
-    def test_caller_supplied_identity_fields_are_replaced_by_local_config(self) -> None:
-        for identity_field in ("actor", "user", "requested_by"):
+    def test_demo_actor_claim_cannot_spoof_local_identity(self) -> None:
+        result = self.client.call_tool(
+            "platform.restart_deployment",
+            {
+                "service": "payments-api",
+                "actor": "untrusted-actor",
+                "environment": "production",
+                "rollback_plan": "verify health and restore the prior deployment",
+                "dry_run": True,
+            },
+        )
+
+        self.assertTrue(result["blocked"])
+        self.assertIn("does not match authenticated subject", result["reason"])
+
+    def test_non_identity_business_fields_are_forwarded_unchanged(self) -> None:
+        for identity_field in ("user", "requested_by"):
             with self.subTest(identity_field=identity_field):
                 result = self.client.call_tool(
                     "platform.restart_deployment",
@@ -199,9 +214,10 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
 
                 self.assertTrue(result["allowed"])
                 self.assertEqual(result["action"], "DRY_RUN_ONLY")
-                self.assertEqual(result["result"]["arguments"]["actor"], "sre-oncall")
-                self.assertNotIn("user", result["result"]["arguments"])
-                self.assertNotIn("requested_by", result["result"]["arguments"])
+                self.assertEqual(
+                    result["result"]["arguments"][identity_field],
+                    "untrusted-actor",
+                )
 
 
 class StdioServerResilienceTest(unittest.TestCase):

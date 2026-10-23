@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import subprocess
@@ -34,6 +35,7 @@ class WrapEndToEndTest(unittest.TestCase):
                 "--",
                 sys.executable,
                 str(FIXTURE),
+                "identity-fields",
             ],
             environment={
                 "PYTHONPATH": str(PROJECT_ROOT / "src"),
@@ -54,24 +56,47 @@ class WrapEndToEndTest(unittest.TestCase):
 
     def test_wrap_discovers_proxies_guards_and_audits_upstream(self) -> None:
         tools = self.client.list_tools()
-        self.assertEqual([tool["name"] for tool in tools], ["external.fetch_issue"])
+        self.assertEqual(
+            [tool["name"] for tool in tools],
+            [
+                "external.fetch_issue",
+                "external.get_user",
+                "external.record_request",
+            ],
+        )
 
-        allowed = self.client.call_tool(
-            "external.fetch_issue",
-            {
-                "issue_id": "INC-42",
-                "actor": "forged-remote-identity",
-                "user": "forged-user",
-                "requested_by": "forged-requester",
-            },
+        user_lookup = self.client.call_tool(
+            "external.get_user",
+            {"user": "octocat"},
+        )
+        lookup_with_actor = self.client.call_tool(
+            "external.get_user",
+            {"user": "octocat", "actor": "gaurav"},
+        )
+        requested = self.client.call_tool(
+            "external.record_request",
+            {"requested_by": "release-manager"},
         )
         blocked = self.client.call_tool(
             "external.fetch_issue",
             {"issue_id": "/home/operator/.ssh/id_rsa"},
         )
 
-        self.assertTrue(allowed["allowed"])
-        self.assertEqual(allowed["result"]["issue_id"], "INC-42")
+        self.assertTrue(user_lookup["allowed"])
+        self.assertEqual(
+            user_lookup["result"]["received_arguments"],
+            {"user": "octocat"},
+        )
+        self.assertTrue(lookup_with_actor["allowed"])
+        self.assertEqual(
+            lookup_with_actor["result"]["received_arguments"],
+            {"user": "octocat", "actor": "gaurav"},
+        )
+        self.assertTrue(requested["allowed"])
+        self.assertEqual(
+            requested["result"]["received_arguments"],
+            {"requested_by": "release-manager"},
+        )
         self.assertTrue(blocked["blocked"])
         self.assertIn("blocked security pattern", blocked["reason"])
 
@@ -82,10 +107,16 @@ class WrapEndToEndTest(unittest.TestCase):
             ).fetchall()
         finally:
             connection.close()
-        self.assertEqual([row[0] for row in rows], [1, 0])
-        self.assertNotIn("forged-remote-identity", rows[0][1])
-        self.assertNotIn("forged-user", rows[0][1])
-        self.assertNotIn("forged-requester", rows[0][1])
+        self.assertEqual([row[0] for row in rows], [1, 1, 1, 0])
+        self.assertEqual(json.loads(rows[0][1]), {"user": "octocat"})
+        self.assertEqual(
+            json.loads(rows[1][1]),
+            {"actor": "gaurav", "user": "octocat"},
+        )
+        self.assertEqual(
+            json.loads(rows[2][1]),
+            {"requested_by": "release-manager"},
+        )
 
     def test_wrap_does_not_load_configured_or_demo_servers(self) -> None:
         names = {tool["name"] for tool in self.client.list_tools()}
