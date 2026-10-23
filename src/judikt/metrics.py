@@ -10,6 +10,9 @@ class Metrics:
         self._duration_total_ms: Counter[tuple[str, str]] = Counter()
         self._finding_counters: Counter[str] = Counter()
         self._upstream_counters: Counter[tuple[str, str]] = Counter()
+        self._audit_delivery_failures = 0
+        self._audit_outbox_pending = 0
+        self._audit_outbox_oldest_age_seconds = 0.0
         self._lock = threading.Lock()
 
     def observe(self, server: str, tool: str, allowed: bool, duration_ms: float) -> None:
@@ -30,6 +33,15 @@ class Metrics:
 
     def observe_upstream_protocol_violation(self, server: str) -> None:
         self._observe_upstream("protocol_violations", server)
+
+    def observe_audit_delivery_failure(self) -> None:
+        with self._lock:
+            self._audit_delivery_failures += 1
+
+    def set_audit_outbox(self, pending: int, oldest_age_seconds: float) -> None:
+        with self._lock:
+            self._audit_outbox_pending = pending
+            self._audit_outbox_oldest_age_seconds = oldest_age_seconds
 
     def _observe_upstream(self, kind: str, server: str) -> None:
         with self._lock:
@@ -63,6 +75,19 @@ class Metrics:
             )
             for outcome, count in sorted(self._finding_counters.items()):
                 lines.append(f'judikt_findings_total{{outcome="{outcome}"}} {count}')
+            lines.extend(
+                [
+                    "# HELP judikt_audit_outbox_pending Audit records awaiting sink delivery.",
+                    "# TYPE judikt_audit_outbox_pending gauge",
+                    f"judikt_audit_outbox_pending {self._audit_outbox_pending}",
+                    "# HELP judikt_audit_outbox_oldest_age_seconds Age of the oldest pending audit record.",
+                    "# TYPE judikt_audit_outbox_oldest_age_seconds gauge",
+                    f"judikt_audit_outbox_oldest_age_seconds {self._audit_outbox_oldest_age_seconds:.3f}",
+                    "# HELP judikt_audit_delivery_failures_total Audit sink delivery failures.",
+                    "# TYPE judikt_audit_delivery_failures_total counter",
+                    f"judikt_audit_delivery_failures_total {self._audit_delivery_failures}",
+                ]
+            )
             for kind, description in (
                 ("timeouts", "Upstream MCP request deadlines exceeded."),
                 ("restarts", "Upstream MCP subprocess restart attempts."),

@@ -69,7 +69,7 @@ def run_gateway_benchmark(
                 )
                 elapsed_seconds = (time.perf_counter_ns() - started) / 1_000_000_000
                 audit_report = runtime.audit_integrity()
-                expected_audit_events = warmup + iterations
+                expected_audit_events = 2 * (warmup + iterations)
                 if (
                     not audit_report["valid"]
                     or not audit_report["signed"]

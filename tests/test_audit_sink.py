@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from judikt.audit import AuditStore
 from judikt.audit_sink import JsonlAuditSink, NullAuditSink, SiemAuditSink, build_audit_sink
+from judikt.metrics import Metrics
 
 
 class _Response:
@@ -284,7 +285,7 @@ class SiemAuditSinkTest(unittest.TestCase):
                     store = AuditStore(Path(directory) / f"audit-{strict}.db")
                     try:
                         if strict:
-                            with self.assertRaisesRegex(RuntimeError, "private SIEM failure"):
+                            with self.assertRaisesRegex(RuntimeError, "durable outbox"):
                                 store.record(
                                     correlation_id="corr-1",
                                     server="platform-ops",
@@ -310,8 +311,66 @@ class SiemAuditSinkTest(unittest.TestCase):
                             )
                         self.assertEqual(len(store.recent()), 1)
                         self.assertTrue(store.verify_chain()["valid"])
+                        self.assertGreaterEqual(store.outbox_status()["pending"], 1)
                     finally:
                         store.close()
+
+    def test_durable_outbox_retries_and_delivers_each_event_once(self) -> None:
+        class RecoveringSink:
+            name = "recovering-siem"
+
+            def __init__(self) -> None:
+                self.available = False
+                self.deliveries: dict[tuple[str, int, str], int] = {}
+
+            def write(self, event: dict[str, object]) -> None:
+                if not self.available:
+                    raise RuntimeError("sink unavailable")
+                key = (
+                    str(event["chain_id"]),
+                    int(event["seq"]),
+                    str(event.get("record_type", "event")),
+                )
+                self.deliveries[key] = self.deliveries.get(key, 0) + 1
+
+        sink = RecoveringSink()
+        metrics = Metrics()
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "JUDIKT_AUDIT_HMAC_SECRET": "outbox-audit-secret-with-at-least-32-bytes",
+                "JUDIKT_AUDIT_RETRY_INTERVAL_SECONDS": "60",
+            },
+            clear=True,
+        ), patch("judikt.audit.build_audit_sink", return_value=sink):
+            store = AuditStore(Path(directory) / "audit.db", metrics=metrics)
+            for index in range(50):
+                store.record(
+                    correlation_id=f"outbox-{index}",
+                    server="test",
+                    tool="test.read",
+                    allowed=True,
+                    rule="allow",
+                    reason="allowed",
+                    arguments={"index": index},
+                    result={"ok": True},
+                    duration_ms=1,
+                )
+
+            self.assertEqual(store.outbox_status()["pending"], 51)
+            sink.available = True
+            report = store.reconcile()
+
+            event_deliveries = {
+                key: count for key, count in sink.deliveries.items() if key[2] == "event"
+            }
+            self.assertEqual(len(event_deliveries), 50)
+            self.assertEqual(set(event_deliveries.values()), {1})
+            self.assertEqual(report["pending"], 0)
+            rendered = metrics.render()
+            self.assertIn("judikt_audit_outbox_pending 0", rendered)
+            self.assertIn("judikt_audit_delivery_failures_total 50", rendered)
+            store.close()
 
 
 if __name__ == "__main__":

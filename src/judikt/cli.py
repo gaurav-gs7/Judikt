@@ -202,6 +202,13 @@ def parser() -> argparse.ArgumentParser:
     audit_verify.add_argument("--audit-db", type=Path, action=_AuditPathAction, default=argparse.SUPPRESS)
     audit_verify.add_argument("--checkpoint")
     audit_verify.add_argument("--full", action="store_true")
+    audit_status = audit_commands.add_parser("status", help="show durable audit delivery state")
+    audit_status.add_argument("--audit-db", type=Path, action=_AuditPathAction, default=argparse.SUPPRESS)
+    audit_reconcile = audit_commands.add_parser(
+        "reconcile", help="retry pending audit sink deliveries now"
+    )
+    audit_reconcile.add_argument("--audit-db", type=Path, action=_AuditPathAction, default=argparse.SUPPRESS)
+    audit_reconcile.add_argument("--limit", type=int, default=1000)
     return result
 
 
@@ -258,14 +265,21 @@ def main() -> None:
         try:
             store = AuditStore(args.audit_db)
             try:
-                checkpoint = load_checkpoint(args.checkpoint) if args.checkpoint else None
-                report = store.verify_chain(checkpoint)
+                if args.audit_command == "verify":
+                    checkpoint = load_checkpoint(args.checkpoint) if args.checkpoint else None
+                    report = store.verify_chain(checkpoint, full=args.full)
+                elif args.audit_command == "status":
+                    report = store.outbox_status()
+                else:
+                    report = store.reconcile(args.limit)
             finally:
                 store.close()
         except (AuditConfigurationError, RuntimeError, OSError, json.JSONDecodeError) as exc:
             raise SystemExit(f"audit verify: {exc}") from None
         print(json.dumps(report, indent=2))
-        raise SystemExit(0 if report["valid"] else 1)
+        if args.audit_command == "verify":
+            raise SystemExit(0 if report["valid"] else 1)
+        return
     demo_mode = args.command == "demo" or _enabled("JUDIKT_DEMO_MODE")
     if demo_mode and args.policy == DEFAULT_POLICY_PATH:
         args.policy = DEMO_POLICY_PATH

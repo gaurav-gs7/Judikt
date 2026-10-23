@@ -17,6 +17,8 @@ The generated starter policy contains only exact names returned by the upstream'
 
 Local SQLite audit storage uses transactional, sequenced, HMAC-signed hash chains and signed checkpoints. Local keys, approvals, pins, and in-process rate limits remain single-node controls suitable for development and constrained single-host operation. A local checkpoint detects accidental tail loss, but an attacker able to rewrite the database can truncate both event and checkpoint tables. Retain checkpoints in an append-only external destination such as S3 Object Lock or a SIEM when the host itself is in the threat model.
 
+Audit sink delivery is asynchronous and durable through an in-database outbox. Operators must alert on pending count, oldest pending age, and delivery failures, and periodically exercise `judikt audit reconcile`. Production defaults to deny-mode audit backpressure unless policy explicitly selects another mode. An `execution_started` intent is committed before upstream execution and linked to the final outcome; an unmatched intent indicates an interrupted operation, not proof of tampering. Startup verification is incremental from the last fully verified signed checkpoint, while `judikt audit verify --full` replays every event.
+
 Dashboard approval and kill-switch POSTs require a strong random `JUDIKT_API_TOKEN` even on loopback and return `503` when no token is configured. Do not expose the dashboard outside loopback, and do not use `JUDIKT_DEMO_MODE=true` outside an isolated evaluation environment.
 
 ## Authenticated Remote Boundary

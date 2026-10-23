@@ -9,7 +9,6 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
-import uuid
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -61,7 +60,10 @@ class S3AuditSink:
     def write(self, event: dict[str, Any]) -> None:
         created_at = str(event["created_at"])
         day = created_at[:10]
-        key = f"{self.prefix}/date={day}/{created_at}-{uuid.uuid4()}.json"
+        chain_id = str(event.get("chain_id", "legacy"))
+        sequence = str(event.get("seq", event.get("correlation_id", "unknown")))
+        record_type = str(event.get("record_type", "event"))
+        key = f"{self.prefix}/date={day}/chain={chain_id}/{record_type}-{sequence}.json"
         self._client.put_object(
             Bucket=self.bucket,
             Key=key,
@@ -112,6 +114,10 @@ class SiemAuditSink:
             "Content-Type": "application/json",
             "User-Agent": "Judikt/audit-exporter",
             "X-Judikt-Event-SHA256": hashlib.sha256(body).hexdigest(),
+            "X-Judikt-Event-ID": (
+                f"{event.get('chain_id', 'legacy')}:{event.get('seq', 'unknown')}:"
+                f"{event.get('record_type', 'event')}"
+            ),
         }
         if self._hmac_secret:
             signature = hmac.new(

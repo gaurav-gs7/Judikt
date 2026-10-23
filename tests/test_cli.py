@@ -164,6 +164,29 @@ class CLITest(unittest.TestCase):
             self.assertFalse(report["valid"])
             self.assertIn("truncated", {error["error"] for error in report["errors"]})
 
+    def test_audit_status_and_reconcile_commands_render_json(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {
+                "JUDIKT_AUDIT_HMAC_SECRET": "cli-status-audit-secret-at-least-32-bytes",
+                "JUDIKT_AUDIT_SINK": "none",
+            },
+            clear=False,
+        ):
+            audit_path = Path(directory) / "audit.db"
+
+            status = json.loads(
+                self.run_main(["audit", "status", "--audit-db", str(audit_path)])
+            )
+            reconciled = json.loads(
+                self.run_main(
+                    ["audit", "reconcile", "--audit-db", str(audit_path), "--limit", "10"]
+                )
+            )
+
+            self.assertEqual(status["pending"], 0)
+            self.assertEqual(reconciled["delivered_now"], 0)
+
     def test_init_dispatches_and_renders_machine_readable_report(self) -> None:
         report = {"policy": "policy.json", "server": "tools", "tool_count": 1}
         with mock.patch.object(cli, "initialize_policy", return_value=report) as initialize:

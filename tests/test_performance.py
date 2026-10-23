@@ -30,7 +30,7 @@ class PerformanceBenchmarkTest(unittest.TestCase):
         self.assertEqual(report["schema_version"], "judikt.performance.v1")
         self.assertEqual(report["results"]["allowed"], 8)
         self.assertEqual(report["results"]["denied"], 0)
-        self.assertEqual(report["results"]["audit_events_verified"], 10)
+        self.assertEqual(report["results"]["audit_events_verified"], 20)
         self.assertTrue(report["results"]["audit_chain_valid"])
         self.assertTrue(report["results"]["audit_signed"])
         self.assertGreater(report["throughput_calls_per_second"], 0)
@@ -49,7 +49,7 @@ class PerformanceBenchmarkTest(unittest.TestCase):
         self.assertEqual(latency["p50"], latency["p95"])
         self.assertEqual(latency["p95"], latency["p99"])
         self.assertEqual(latency["p99"], latency["max"])
-        self.assertEqual(report["results"]["audit_events_verified"], 1)
+        self.assertEqual(report["results"]["audit_events_verified"], 2)
 
     def test_thresholds_pass_and_fail_deterministically(self) -> None:
         report = {

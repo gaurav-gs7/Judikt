@@ -42,9 +42,16 @@ class JudiktRuntime:
         self.approval_replays = build_approval_replay_store(
             audit_path.with_suffix(".approval-replay.db")
         )
-        self.audit = AuditStore(audit_path)
-        self.findings = FindingDispatcher(audit_path.with_suffix(".findings.db"))
         self.metrics = Metrics()
+        audit_config = self.policy.config.get("audit", {})
+        backpressure = audit_config.get("backpressure") if isinstance(audit_config, dict) else None
+        self.audit = AuditStore(
+            audit_path,
+            backpressure=backpressure,
+            metrics=self.metrics,
+        )
+        self.findings = FindingDispatcher(audit_path.with_suffix(".findings.db"))
+        self._dispatch_startup_integrity_finding()
         self.telemetry = Telemetry()
         self.analyst = IncidentAnalyst(telemetry=self.telemetry)
         self.demo_servers_enabled = include_demo_servers
@@ -152,6 +159,10 @@ class JudiktRuntime:
             allowed = decision.allowed
             rule = decision.rule
             evidence = list(decision.evidence)
+            if allowed and self.audit.deny_for_backpressure():
+                allowed = False
+                rule = "audit_backpressure"
+                reason = "audit delivery backlog exceeded the configured safety threshold"
             if allowed:
                 if decision.action in {"DRY_RUN_ONLY", "SHADOW_MODE"}:
                     result = self._evaluation_only_result(decision.action, server, tool, safe_arguments)
@@ -185,6 +196,13 @@ class JudiktRuntime:
                                     "judikt.correlation_id": correlation_id,
                                 },
                             ) as tool_span:
+                                intent_seq = self.audit.record_intent(
+                                    correlation_id=correlation_id,
+                                    server=server,
+                                    tool=tool,
+                                    arguments=safe_arguments,
+                                )
+                                evidence.append(f"intent_seq:{intent_seq}")
                                 tool_span.set_json_input(safe_arguments)
                                 raw_result = client.call_tool(tool, arguments)
                                 inspection = self.content_guard.inspect(
@@ -346,6 +364,27 @@ class JudiktRuntime:
         self.findings.close()
         self.approval_replays.close()
         self.audit.close()
+
+    def _dispatch_startup_integrity_finding(self) -> None:
+        report = self.audit.startup_integrity_failure
+        if report is None:
+            return
+        outcome = self.findings.dispatch(
+            build_finding_event(
+                correlation_id=str(uuid.uuid4()),
+                server="judikt",
+                tool="audit.verify",
+                allowed=False,
+                rule="audit_integrity",
+                action="DENY",
+                reason="local startup audit verification failed",
+                risk_score=100,
+                risk_level="critical",
+                arguments={},
+                result={"status": report["status"], "errors": report["errors"]},
+            )
+        )
+        self.metrics.observe_finding(outcome)
 
     def _verify_restarted_client(self, server: str, client: StdioMCPClient) -> None:
         tools = client.list_tools()

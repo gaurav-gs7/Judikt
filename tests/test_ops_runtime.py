@@ -76,6 +76,9 @@ class JudiktOpsRuntimeTest(unittest.TestCase):
             audit = runtime.recent_audit()
             self.assertEqual(len(audit), 1)
             self.assertTrue(audit[0]["allowed"])
+            all_events = list(reversed(runtime.audit.recent(include_intents=True)))
+            self.assertEqual(all_events[0]["rule"], "execution_started")
+            self.assertIn(f"intent_seq:{all_events[0]['seq']}", all_events[1]["evidence"])
         finally:
             runtime.close()
 

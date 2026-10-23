@@ -9,6 +9,7 @@ import os
 import secrets
 import sqlite3
 import stat
+import sys
 import threading
 import time
 import uuid
@@ -33,7 +34,14 @@ class AuditConfigurationError(RuntimeError):
 
 
 class AuditStore:
-    def __init__(self, path: Path, *, require_configured_key: bool = False) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        require_configured_key: bool = False,
+        backpressure: dict[str, Any] | None = None,
+        metrics: Any = None,
+    ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._path = path
         self._signing_secret = resolve_audit_secret(
@@ -42,6 +50,11 @@ class AuditStore:
         self._signature_required = True
         self._checkpoint_events = _positive_int_env("JUDIKT_AUDIT_CHECKPOINT_EVENTS", 100)
         self._checkpoint_seconds = _positive_float_env("JUDIKT_AUDIT_CHECKPOINT_SECONDS", 60.0)
+        self._retry_interval = _positive_float_env("JUDIKT_AUDIT_RETRY_INTERVAL_SECONDS", 5.0)
+        self._retry_base = _positive_float_env("JUDIKT_AUDIT_RETRY_BASE_SECONDS", 1.0)
+        self._metrics = metrics
+        self._production = require_configured_key or _enabled("JUDIKT_PRODUCTION")
+        self._backpressure = _normalize_backpressure(backpressure, self._production)
         self._connection = sqlite3.connect(path, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._connection.execute("PRAGMA journal_mode=WAL")
@@ -50,15 +63,33 @@ class AuditStore:
         self._instance_id = os.getenv("JUDIKT_INSTANCE_ID", "local")
         self._sink_strict = os.getenv("JUDIKT_AUDIT_SINK_STRICT", "").lower() in {"1", "true", "yes"}
         self._sink = build_audit_sink(path.with_suffix(".audit.jsonl"))
+        self._stop = threading.Event()
+        self._worker: threading.Thread | None = None
+        self.startup_integrity_failure: dict[str, Any] | None = None
         self._initialize_schema()
-        if _enabled("JUDIKT_AUDIT_VERIFY_ON_STARTUP"):
-            report = self.verify_chain()
+        if _enabled_default("JUDIKT_AUDIT_VERIFY_ON_STARTUP", True):
+            report = self.verify_chain(full=False)
             if not report["valid"]:
-                self._connection.close()
-                raise RuntimeError(
-                    "audit integrity verification failed at startup: "
-                    + json.dumps(report["errors"], separators=(",", ":"))
+                if self._production:
+                    self._connection.close()
+                    raise RuntimeError(
+                        "audit integrity verification failed at startup: "
+                        + json.dumps(report["errors"], separators=(",", ":"))
+                    )
+                self.startup_integrity_failure = report
+                print(
+                    "WARNING: Judikt audit integrity verification failed at startup: "
+                    + json.dumps(report["errors"], separators=(",", ":")),
+                    file=sys.stderr,
                 )
+        if self._sink.name != "none":
+            self._worker = threading.Thread(
+                target=self._retry_loop,
+                name="judikt-audit-outbox",
+                daemon=True,
+            )
+            self._worker.start()
+        self._update_delivery_metrics()
 
     def _ensure_column(self, name: str, ddl: str) -> None:
         columns = {
@@ -125,6 +156,29 @@ class AuditStore:
                 """
             )
             self._connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS audit_outbox (
+                    chain_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    record_type TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at REAL NOT NULL DEFAULT 0,
+                    lease_until REAL NOT NULL DEFAULT 0,
+                    delivered_at TEXT,
+                    last_error_hash TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(chain_id, seq, record_type)
+                )
+                """
+            )
+            self._connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_audit_outbox_delivery
+                ON audit_outbox(delivered_at, next_attempt_at, lease_until)
+                """
+            )
+            self._connection.execute(
                 "INSERT OR IGNORE INTO audit_meta (key, value) VALUES ('chain_id', ?)",
                 (str(uuid.uuid4()),),
             )
@@ -171,7 +225,7 @@ class AuditStore:
         duration_ms: float,
         action: str = "ALLOW",
         evidence: list[str] | None = None,
-    ) -> None:
+    ) -> int:
         with self._lock:
             created_at = dt.datetime.now(dt.UTC).isoformat()
             rounded_duration = round(float(duration_ms), 3)
@@ -237,22 +291,48 @@ class AuditStore:
                         2,
                     ),
                 )
+                envelope = {**event, "event_hash": event_hash, "signature": signature}
+                self._enqueue_outbox(seq, "event", created_at, envelope)
                 self._maybe_checkpoint(seq, event_hash, created_at=created_at)
                 self._connection.commit()
             except Exception:
                 self._connection.rollback()
                 raise
-            envelope = {**event, "event_hash": event_hash, "signature": signature}
-            try:
-                self._sink.write(envelope)
-            except Exception:
-                if self._sink_strict:
-                    raise
+        _, failed = self.flush_outbox(limit=1)
+        if failed and self._sink_strict:
+            raise RuntimeError("audit sink delivery failed; event remains in the durable outbox")
+        return seq
 
-    def recent(self, limit: int = 100) -> list[dict[str, Any]]:
+    def record_intent(
+        self,
+        *,
+        correlation_id: str,
+        server: str,
+        tool: str,
+        arguments: Any,
+    ) -> int:
+        arguments_digest = hashlib.sha256(
+            json.dumps(arguments, sort_keys=True, separators=(",", ":"), default=str).encode()
+        ).hexdigest()
+        return self.record(
+            correlation_id=correlation_id,
+            server=server,
+            tool=tool,
+            allowed=True,
+            rule="execution_started",
+            reason="upstream tool execution started",
+            arguments={"redacted_arguments_sha256": arguments_digest},
+            result=None,
+            duration_ms=0,
+            action="EXECUTION_STARTED",
+            evidence=["intent"],
+        )
+
+    def recent(self, limit: int = 100, *, include_intents: bool = False) -> list[dict[str, Any]]:
         with self._lock:
+            where = "" if include_intents else "WHERE rule != 'execution_started'"
             rows = self._connection.execute(
-                "SELECT * FROM audit_events ORDER BY id DESC LIMIT ?", (limit,)
+                f"SELECT * FROM audit_events {where} ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
         events = []
         for row in rows:
@@ -265,11 +345,21 @@ class AuditStore:
             events.append(event)
         return events
 
-    def verify_chain(self, checkpoint: dict[str, Any] | None = None) -> dict[str, Any]:
+    def verify_chain(
+        self,
+        checkpoint: dict[str, Any] | None = None,
+        *,
+        full: bool = True,
+    ) -> dict[str, Any]:
         with self._lock:
-            rows = self._connection.execute("SELECT * FROM audit_events ORDER BY seq ASC")
-            previous_seq = 0
-            previous_hash = ""
+            checkpoints = self._load_checkpoints()
+            start_checkpoint = None if full else self._last_verified_checkpoint(checkpoints)
+            previous_seq = int(start_checkpoint["seq"]) if start_checkpoint else 0
+            previous_hash = str(start_checkpoint["head_hash"]) if start_checkpoint else ""
+            rows = self._connection.execute(
+                "SELECT * FROM audit_events WHERE seq > ? ORDER BY seq ASC",
+                (previous_seq,),
+            )
             checked = 0
             legacy = 0
             errors: list[dict[str, Any]] = []
@@ -308,13 +398,24 @@ class AuditStore:
                     errors.append({"id": row["id"], "seq": seq, "error": "signature_mismatch"})
                 previous_hash = event_hash
                 checked += 1
-            checkpoints = self._load_checkpoints()
             if checkpoint is not None:
                 checkpoints.append(checkpoint)
             for item in checkpoints:
                 checkpoint_error = self._checkpoint_error(item, previous_seq, previous_hash)
                 if checkpoint_error:
                     errors.append(checkpoint_error)
+            incomplete_intents = self._incomplete_intents()
+            if not errors and checkpoints:
+                latest = checkpoints[-1]
+                self._connection.execute(
+                    "INSERT OR REPLACE INTO audit_meta (key, value) VALUES ('verified_checkpoint_seq', ?)",
+                    (str(latest["seq"]),),
+                )
+                self._connection.execute(
+                    "INSERT OR REPLACE INTO audit_meta (key, value) VALUES ('verified_checkpoint_hash', ?)",
+                    (str(latest["head_hash"]),),
+                )
+                self._connection.commit()
         return {
             "valid": not errors,
             "checked_events": checked,
@@ -326,6 +427,10 @@ class AuditStore:
             "signature_required": self._signature_required,
             "sink": self._sink.name,
             "checkpoints_verified": len(checkpoints),
+            "verification_mode": "full" if full else "incremental",
+            "verified_from_checkpoint_seq": int(start_checkpoint["seq"]) if start_checkpoint else 0,
+            "incomplete_intents": incomplete_intents,
+            "status": "tampered" if errors else ("incomplete" if incomplete_intents else "valid"),
             "checkpoint_limitation": CHECKPOINT_LIMITATION,
             "errors": errors,
         }
@@ -371,7 +476,7 @@ class AuditStore:
             "created_at": created_at or now.isoformat(),
         }
         checkpoint["signature"] = self._sign_checkpoint(checkpoint)
-        self._connection.execute(
+        cursor = self._connection.execute(
             """
             INSERT INTO audit_checkpoints (
                 chain_id, seq, head_hash, created_at, signature
@@ -386,7 +491,177 @@ class AuditStore:
                 checkpoint["signature"],
             ),
         )
+        if cursor.rowcount:
+            self._enqueue_outbox(
+                seq,
+                "checkpoint",
+                str(checkpoint["created_at"]),
+                {"record_type": "checkpoint", **checkpoint},
+            )
         return checkpoint
+
+    def _enqueue_outbox(
+        self,
+        seq: int,
+        record_type: str,
+        created_at: str,
+        payload: dict[str, Any],
+    ) -> None:
+        if self._sink.name == "none":
+            return
+        self._connection.execute(
+            """
+            INSERT OR IGNORE INTO audit_outbox (
+                chain_id, seq, record_type, created_at, payload_json
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                self._chain_id,
+                seq,
+                record_type,
+                created_at,
+                json.dumps(payload, sort_keys=True, separators=(",", ":")),
+            ),
+        )
+
+    def flush_outbox(self, limit: int = 100, *, force: bool = False) -> tuple[int, int]:
+        if self._sink.name == "none" or limit <= 0:
+            return 0, 0
+        now = time.time()
+        with self._lock:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                condition = "delivered_at IS NULL AND lease_until <= ?"
+                parameters: list[Any] = [now]
+                if not force:
+                    condition += " AND next_attempt_at <= ?"
+                    parameters.append(now)
+                parameters.append(limit)
+                rows = self._connection.execute(
+                    f"SELECT * FROM audit_outbox WHERE {condition} "
+                    "ORDER BY seq ASC, CASE record_type WHEN 'event' THEN 0 ELSE 1 END LIMIT ?",
+                    parameters,
+                ).fetchall()
+                lease_until = now + 30
+                for row in rows:
+                    self._connection.execute(
+                        """
+                        UPDATE audit_outbox SET lease_until = ?
+                        WHERE chain_id = ? AND seq = ? AND record_type = ?
+                        """,
+                        (lease_until, row["chain_id"], row["seq"], row["record_type"]),
+                    )
+                self._connection.commit()
+            except Exception:
+                self._connection.rollback()
+                raise
+        delivered = 0
+        failed = 0
+        for row in rows:
+            try:
+                self._sink.write(json.loads(row["payload_json"]))
+            except Exception as exc:
+                failed += 1
+                attempts = int(row["attempts"]) + 1
+                retry_at = now + min(
+                    300, self._retry_base * (2 ** min(attempts - 1, 8))
+                )
+                error_hash = hashlib.sha256(
+                    f"{exc.__class__.__name__}:{exc}".encode()
+                ).hexdigest()
+                with self._lock:
+                    self._connection.execute(
+                        """
+                        UPDATE audit_outbox
+                        SET attempts = ?, next_attempt_at = ?, lease_until = 0,
+                            last_error_hash = ?
+                        WHERE chain_id = ? AND seq = ? AND record_type = ?
+                        """,
+                        (
+                            attempts,
+                            retry_at,
+                            error_hash,
+                            row["chain_id"],
+                            row["seq"],
+                            row["record_type"],
+                        ),
+                    )
+                    self._connection.commit()
+                if self._metrics is not None:
+                    self._metrics.observe_audit_delivery_failure()
+            else:
+                delivered += 1
+                with self._lock:
+                    self._connection.execute(
+                        """
+                        UPDATE audit_outbox
+                        SET attempts = attempts + 1, delivered_at = ?, lease_until = 0,
+                            last_error_hash = ''
+                        WHERE chain_id = ? AND seq = ? AND record_type = ?
+                        """,
+                        (
+                            dt.datetime.now(dt.UTC).isoformat(),
+                            row["chain_id"],
+                            row["seq"],
+                            row["record_type"],
+                        ),
+                    )
+                    self._connection.commit()
+        self._update_delivery_metrics()
+        return delivered, failed
+
+    def outbox_status(self) -> dict[str, Any]:
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN delivered_at IS NULL THEN 1 ELSE 0 END) AS pending,
+                    SUM(CASE WHEN delivered_at IS NOT NULL THEN 1 ELSE 0 END) AS delivered,
+                    MIN(CASE WHEN delivered_at IS NULL THEN created_at END) AS oldest
+                FROM audit_outbox
+                """
+            ).fetchone()
+        pending = int(row["pending"] or 0)
+        oldest_age = 0.0
+        if row["oldest"]:
+            oldest = dt.datetime.fromisoformat(str(row["oldest"]))
+            oldest_age = max(0.0, (dt.datetime.now(dt.UTC) - oldest).total_seconds())
+        return {
+            "enabled": self._sink.name != "none",
+            "sink": self._sink.name,
+            "pending": pending,
+            "delivered": int(row["delivered"] or 0),
+            "oldest_age_seconds": round(oldest_age, 3),
+            "backpressure": dict(self._backpressure),
+            "backpressure_exceeded": self._backpressure_exceeded(pending, oldest_age),
+        }
+
+    def reconcile(self, limit: int = 1000) -> dict[str, Any]:
+        delivered, failed = self.flush_outbox(limit=limit, force=True)
+        return {"delivered_now": delivered, "failed_now": failed, **self.outbox_status()}
+
+    def deny_for_backpressure(self) -> bool:
+        status = self.outbox_status()
+        return bool(
+            self._backpressure["mode"] == "deny" and status["backpressure_exceeded"]
+        )
+
+    def _backpressure_exceeded(self, pending: int, oldest_age: float) -> bool:
+        return pending >= int(self._backpressure["max_pending"]) or (
+            pending > 0 and oldest_age >= float(self._backpressure["max_age_seconds"])
+        )
+
+    def _update_delivery_metrics(self) -> None:
+        if self._metrics is None:
+            return
+        status = self.outbox_status()
+        self._metrics.set_audit_outbox(
+            int(status["pending"]), float(status["oldest_age_seconds"])
+        )
+
+    def _retry_loop(self) -> None:
+        while not self._stop.wait(self._retry_interval):
+            self.flush_outbox()
 
     def _load_checkpoints(self) -> list[dict[str, Any]]:
         return [
@@ -395,6 +670,57 @@ class AuditStore:
                 "SELECT * FROM audit_checkpoints ORDER BY seq ASC, id ASC"
             )
         ]
+
+    def _last_verified_checkpoint(
+        self,
+        checkpoints: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        values = {
+            str(row["key"]): str(row["value"])
+            for row in self._connection.execute(
+                "SELECT key, value FROM audit_meta WHERE key IN "
+                "('verified_checkpoint_seq', 'verified_checkpoint_hash')"
+            )
+        }
+        try:
+            verified_seq = int(values["verified_checkpoint_seq"])
+            verified_hash = values["verified_checkpoint_hash"]
+        except (KeyError, ValueError):
+            return None
+        for checkpoint in checkpoints:
+            if (
+                int(checkpoint["seq"]) == verified_seq
+                and str(checkpoint["head_hash"]) == verified_hash
+                and self._checkpoint_error(checkpoint, verified_seq, verified_hash) is None
+            ):
+                return checkpoint
+        return None
+
+    def _incomplete_intents(self) -> list[dict[str, Any]]:
+        intents: dict[int, dict[str, Any]] = {}
+        for row in self._connection.execute(
+            "SELECT seq, correlation_id, server, tool, rule, evidence_json "
+            "FROM audit_events ORDER BY seq"
+        ):
+            seq = int(row["seq"])
+            if row["rule"] == "execution_started":
+                intents[seq] = {
+                    "seq": seq,
+                    "correlation_id": str(row["correlation_id"]),
+                    "server": str(row["server"]),
+                    "tool": str(row["tool"]),
+                }
+            try:
+                evidence = json.loads(row["evidence_json"])
+            except (json.JSONDecodeError, TypeError):
+                continue
+            for marker in evidence:
+                if isinstance(marker, str) and marker.startswith("intent_seq:"):
+                    try:
+                        intents.pop(int(marker.partition(":")[2]), None)
+                    except ValueError:
+                        continue
+        return list(intents.values())
 
     @staticmethod
     def _checkpoint_from_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -435,13 +761,19 @@ class AuditStore:
         if head_seq == normalized["seq"] and head_hash != normalized["head_hash"]:
             return {"seq": normalized["seq"], "error": "checkpoint_head_mismatch"}
         row = self._connection.execute(
-            "SELECT event_hash FROM audit_events WHERE seq = ?",
+            "SELECT * FROM audit_events WHERE seq = ?",
             (normalized["seq"],),
         ).fetchone()
         if row is None:
             return {"seq": normalized["seq"], "error": "truncated"}
         if str(row["event_hash"] or "") != normalized["head_hash"]:
             return {"seq": normalized["seq"], "error": "checkpoint_head_mismatch"}
+        try:
+            expected = self._hash_event(self._row_hash_payload(row))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return {"seq": normalized["seq"], "error": "malformed_event_payload"}
+        if not hmac.compare_digest(expected, normalized["head_hash"]):
+            return {"seq": normalized["seq"], "error": "checkpoint_event_mismatch"}
         return None
 
     def _row_hash_payload(self, row: sqlite3.Row) -> dict[str, Any]:
@@ -488,6 +820,9 @@ class AuditStore:
         ).hexdigest()
 
     def close(self) -> None:
+        self._stop.set()
+        if self._worker is not None:
+            self._worker.join(timeout=5)
         with self._lock:
             self._connection.execute("BEGIN IMMEDIATE")
             try:
@@ -504,11 +839,45 @@ class AuditStore:
             except Exception:
                 self._connection.rollback()
                 raise
-            self._connection.close()
+        self.flush_outbox(force=True)
+        self._connection.close()
 
 
 def _enabled(name: str) -> bool:
     return os.getenv(name, "").lower() in {"1", "true", "yes"}
+
+
+def _enabled_default(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return value.lower() in {"1", "true", "yes"}
+
+
+def _normalize_backpressure(
+    configured: dict[str, Any] | None,
+    production: bool,
+) -> dict[str, Any]:
+    value = configured or {}
+    if not isinstance(value, dict):
+        raise AuditConfigurationError("audit.backpressure must be an object")
+    try:
+        max_pending = int(value.get("max_pending", 10000))
+        max_age_seconds = float(value.get("max_age_seconds", 300))
+    except (TypeError, ValueError) as exc:
+        raise AuditConfigurationError(
+            "audit.backpressure limits must be positive numbers"
+        ) from exc
+    mode = str(value.get("mode", "deny" if production else "warn"))
+    if max_pending <= 0 or not math.isfinite(max_age_seconds) or max_age_seconds <= 0:
+        raise AuditConfigurationError("audit.backpressure limits must be positive numbers")
+    if mode not in {"warn", "deny"}:
+        raise AuditConfigurationError("audit.backpressure.mode must be warn or deny")
+    return {
+        "max_pending": max_pending,
+        "max_age_seconds": max_age_seconds,
+        "mode": mode,
+    }
 
 
 def resolve_audit_secret(*, require_configured: bool = False) -> str:

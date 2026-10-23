@@ -3,12 +3,14 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import io
 import multiprocessing
 import os
 import sqlite3
 import tempfile
 import threading
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
@@ -94,11 +96,36 @@ class AuditHardeningTest(unittest.TestCase):
                     "JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET,
                     "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
                     "JUDIKT_AUDIT_VERIFY_ON_STARTUP": "true",
+                    "JUDIKT_PRODUCTION": "true",
                 },
                 clear=False,
             ):
                 with self.assertRaisesRegex(RuntimeError, "audit integrity verification failed"):
                     AuditStore(path)
+
+    def test_local_startup_warns_and_exposes_integrity_finding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {"JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET, "JUDIKT_PRODUCTION": ""},
+            clear=False,
+        ):
+            path = Path(directory) / "audit.db"
+            store = AuditStore(path)
+            _record(store)
+            store.close()
+            connection = sqlite3.connect(path)
+            connection.execute("UPDATE audit_events SET result_json = '{\"tampered\": true}'")
+            connection.commit()
+            connection.close()
+            stderr = io.StringIO()
+
+            with redirect_stderr(stderr):
+                reopened = AuditStore(path)
+            try:
+                self.assertIsNotNone(reopened.startup_integrity_failure)
+                self.assertIn("audit integrity verification failed", stderr.getvalue())
+            finally:
+                reopened.close()
 
     def test_signed_chain_verifies_in_required_mode(self) -> None:
         with tempfile.TemporaryDirectory() as directory, patch.dict(
@@ -150,6 +177,7 @@ class AuditHardeningTest(unittest.TestCase):
                     "JUDIKT_AUDIT_HMAC_SECRET": "wrong-audit-key-with-at-least-32-bytes",
                     "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
                     "JUDIKT_AUDIT_VERIFY_ON_STARTUP": "true",
+                    "JUDIKT_PRODUCTION": "true",
                 },
                 clear=False,
             ):
@@ -202,6 +230,7 @@ class AuditHardeningTest(unittest.TestCase):
                     "JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET,
                     "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
                     "JUDIKT_AUDIT_VERIFY_ON_STARTUP": "true",
+                    "JUDIKT_PRODUCTION": "true",
                 },
                 clear=False,
             ):
@@ -358,6 +387,7 @@ class AuditHardeningTest(unittest.TestCase):
                 {
                     "JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET,
                     "JUDIKT_AUDIT_VERIFY_ON_STARTUP": "true",
+                    "JUDIKT_PRODUCTION": "true",
                 },
                 clear=False,
             ):
@@ -408,6 +438,25 @@ class AuditHardeningTest(unittest.TestCase):
             os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": "too-short"}, clear=False
         ), self.assertRaisesRegex(RuntimeError, "at least 32 bytes"):
             AuditStore(Path(directory) / "audit.db")
+
+    def test_unmatched_execution_intent_is_incomplete_not_tampered(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET}, clear=False
+        ):
+            store = AuditStore(Path(directory) / "audit.db")
+            intent_seq = store.record_intent(
+                correlation_id="crash-correlation",
+                server="test",
+                tool="test.write",
+                arguments={"token": "[REDACTED]"},
+            )
+
+            report = store.verify_chain()
+
+            self.assertTrue(report["valid"])
+            self.assertEqual(report["status"], "incomplete")
+            self.assertEqual(report["incomplete_intents"][0]["seq"], intent_seq)
+            store.close()
 
 
 if __name__ == "__main__":

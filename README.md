@@ -247,6 +247,10 @@ Local audit events are appended in one SQLite `BEGIN IMMEDIATE` transaction unde
 
 Judikt signs checkpoints after 100 events, after 60 seconds while events are arriving, and on clean shutdown. Verify the complete chain and its locally recorded checkpoints with `judikt audit verify --full`; add `--checkpoint <file|s3://bucket/key>` to detect a database head that has fallen behind externally retained evidence. Local checkpoints detect accidental loss, but a local attacker with filesystem access can truncate both the event and checkpoint tables. Evidence against that attacker requires exporting checkpoints to an append-only destination such as S3 Object Lock or a SIEM.
 
+Sink delivery uses a durable SQLite outbox committed in the same transaction as each event or checkpoint. `judikt audit status` reports pending count and oldest age; `judikt audit reconcile` retries pending deliveries. Prometheus exposes `judikt_audit_outbox_pending`, `judikt_audit_outbox_oldest_age_seconds`, and `judikt_audit_delivery_failures_total`. Configure `audit.backpressure` in policy with positive `max_pending` and `max_age_seconds` values plus `mode: "warn"` or `"deny"`; the default mode is `warn` locally and `deny` in production. Deny mode returns rule `audit_backpressure` while still recording the refusal locally.
+
+Immediately before an authorized upstream execution, Judikt appends an `execution_started` intent containing a correlation ID and a hash of already-redacted arguments. The outcome event references that intent sequence. Verification reports an unmatched intent as `status: "incomplete"`, separately from cryptographic errors (`status: "tampered"`). Startup verification is enabled by default and resumes after the last fully verified signed checkpoint; production refuses to start on failure, while local mode writes a warning to stderr and dispatches an `audit_integrity` finding when a finding sink is configured.
+
 ## Optional Groq Integration
 
 The demo produces a deterministic local incident summary by default. To add a hosted LLM summary:

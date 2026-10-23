@@ -104,7 +104,8 @@ class WrapEndToEndTest(unittest.TestCase):
         connection = sqlite3.connect(self.audit_path)
         try:
             rows = connection.execute(
-                "SELECT allowed, arguments_json FROM audit_events ORDER BY id"
+                "SELECT allowed, arguments_json FROM audit_events "
+                "WHERE rule != 'execution_started' ORDER BY id"
             ).fetchall()
         finally:
             connection.close()

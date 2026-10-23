@@ -141,7 +141,11 @@ class Tier3HTTPIntegrationTest(unittest.TestCase):
         self.assertEqual(integrity["sink"], "siem")
         self.assertTrue(integrity["valid"])
         self.assertTrue(integrity["signed"])
-        request = observed[0]
+        request = next(
+            item
+            for item in observed
+            if json.loads(item["body"])["event"].get("rule") == "allow"
+        )
         body = request["body"]
         payload = json.loads(body)
         self.assertEqual(request["path"], "/events")
@@ -209,9 +213,10 @@ class Tier3HTTPIntegrationTest(unittest.TestCase):
             store.close()
 
         self.assertEqual(failures, [])
-        self.assertEqual(len(observed), 16)
-        self.assertEqual({event["correlation_id"] for event in observed}, {f"corr-{i}" for i in range(16)})
-        self.assertEqual(len({event["event_hash"] for event in observed}), 16)
+        events = [event for event in observed if event.get("record_type") != "checkpoint"]
+        self.assertEqual(len(events), 16)
+        self.assertEqual({event["correlation_id"] for event in events}, {f"corr-{i}" for i in range(16)})
+        self.assertEqual(len({event["event_hash"] for event in events}), 16)
         self.assertTrue(integrity["valid"], integrity["errors"])
         self.assertEqual(integrity["checked_events"], 16)
 

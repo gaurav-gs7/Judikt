@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from judikt.runtime import JudiktRuntime
 
@@ -34,6 +37,53 @@ class RuntimeTest(unittest.TestCase):
             finally:
                 runtime.close()
 
+    def test_deny_mode_audit_backpressure_blocks_execution_and_is_audited(self) -> None:
+        class DownSink:
+            name = "down-siem"
+
+            def write(self, event: dict[str, object]) -> None:
+                raise RuntimeError("unavailable")
+
+        with tempfile.TemporaryDirectory() as directory:
+            policy = json.loads((PROJECT_ROOT / "config" / "policies.yaml").read_text())
+            policy["audit"] = {
+                "backpressure": {
+                    "max_pending": 1,
+                    "max_age_seconds": 3600,
+                    "mode": "deny",
+                }
+            }
+            policy_path = Path(directory) / "policy.json"
+            policy_path.write_text(json.dumps(policy))
+            with patch.dict(
+                os.environ,
+                {
+                    "JUDIKT_AUDIT_HMAC_SECRET": "backpressure-audit-secret-at-least-32-bytes",
+                    "JUDIKT_AUDIT_RETRY_INTERVAL_SECONDS": "60",
+                },
+                clear=False,
+            ), patch("judikt.audit.build_audit_sink", return_value=DownSink()):
+                runtime = JudiktRuntime(
+                    policy_path,
+                    Path(directory) / "audit.db",
+                    include_demo_servers=True,
+                )
+                try:
+                    first = runtime.call_tool(
+                        "platform-ops", "platform.health", {"service": "payments-api"}
+                    )
+                    blocked = runtime.call_tool(
+                        "platform-ops", "platform.health", {"service": "payments-api"}
+                    )
+                    events = runtime.audit.recent()
+                finally:
+                    runtime.close()
+
+            self.assertTrue(first.allowed)
+            self.assertFalse(blocked.allowed)
+            self.assertEqual(blocked.rule, "audit_backpressure")
+            self.assertEqual(events[0]["rule"], "audit_backpressure")
+
     def test_allows_health_check_and_redacts_upstream_secret(self) -> None:
         health = self.runtime.call_tool("platform-ops", "platform.health", {"service": "payments-api"})
         config = self.runtime.call_tool("platform-ops", "platform.read_config", {"service": "payments-api"})
@@ -42,6 +92,18 @@ class RuntimeTest(unittest.TestCase):
         self.assertEqual(health.result["status"], "degraded")
         self.assertTrue(config.allowed)
         self.assertEqual(config.result["api_key"], "[REDACTED]")
+
+    def test_executed_call_records_intent_and_linked_outcome(self) -> None:
+        result = self.runtime.call_tool(
+            "platform-ops", "platform.health", {"service": "payments-api"}
+        )
+
+        events = list(reversed(self.runtime.audit.recent(include_intents=True)))
+
+        self.assertTrue(result.allowed)
+        self.assertEqual(events[0]["rule"], "execution_started")
+        self.assertIn(f"intent_seq:{events[0]['seq']}", events[1]["evidence"])
+        self.assertEqual(self.runtime.audit.verify_chain()["status"], "valid")
 
     def test_blocks_sensitive_path_and_requires_rollback_approval(self) -> None:
         sensitive_read = self.runtime.call_tool(
