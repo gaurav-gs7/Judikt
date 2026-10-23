@@ -22,6 +22,16 @@ from judikt.policy_init import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = PROJECT_ROOT / "tests" / "fixtures" / "external_mcp_server.py"
+PROFILE_TOOLS = [
+    {"name": "read_file", "annotations": {"readOnlyHint": True}},
+    {
+        "name": "update_issue",
+        "annotations": {"readOnlyHint": False, "destructiveHint": False},
+    },
+    {"name": "delete_repo", "annotations": {"destructiveHint": True}},
+    {"name": "list_things"},
+    {"name": "delete_cache", "annotations": {"readOnlyHint": True}},
+]
 
 
 class PolicyInitializationTest(unittest.TestCase):
@@ -36,19 +46,80 @@ class PolicyInitializationTest(unittest.TestCase):
         self.assertNotIn("*", permissions["local-operator"])
         self.assertEqual(set(permissions), {"local-operator", "anonymous"})
 
-    def test_starter_policy_uses_exact_discovered_tool_names(self) -> None:
+    def test_starter_policy_defaults_to_annotated_read_tools(self) -> None:
         policy = starter_policy(
             "company-tools",
             [
-                {"name": "issues.read"},
-                {"name": "deployments.restart"},
+                {"name": "issues.read", "annotations": {"readOnlyHint": True}},
+                {
+                    "name": "deployments.restart",
+                    "annotations": {"readOnlyHint": True},
+                },
             ],
         )
 
-        expected = ["issues.read", "deployments.restart"]
+        expected = ["issues.read"]
         self.assertEqual(policy["allowed_tools"], {"company-tools": expected})
         self.assertEqual(policy["actor_permissions"]["local-operator"], expected)
         self.assertEqual(policy["actor_permissions"]["anonymous"], [])
+        self.assertTrue(policy["tool_classification"]["deployments.restart"]["conflict"])
+
+    def test_classifies_spec_defaults_name_conflicts_and_profiles(self) -> None:
+        read_only = starter_policy("profile-tools", PROFILE_TOOLS)
+
+        self.assertEqual(
+            read_only["tool_classification"],
+            {
+                "read_file": {
+                    "tier": "read",
+                    "annotations": {"readOnlyHint": True},
+                    "conflict": False,
+                },
+                "update_issue": {
+                    "tier": "write",
+                    "annotations": {
+                        "readOnlyHint": False,
+                        "destructiveHint": False,
+                    },
+                    "conflict": False,
+                },
+                "delete_repo": {
+                    "tier": "destructive",
+                    "annotations": {"destructiveHint": True},
+                    "conflict": False,
+                },
+                "list_things": {
+                    "tier": "destructive",
+                    "annotations": {},
+                    "conflict": False,
+                },
+                "delete_cache": {
+                    "tier": "destructive",
+                    "annotations": {"readOnlyHint": True},
+                    "conflict": True,
+                },
+            },
+        )
+        self.assertEqual(read_only["allowed_tools"]["profile-tools"], ["read_file"])
+
+        approve_writes = starter_policy(
+            "profile-tools", PROFILE_TOOLS, profile="approve-writes"
+        )
+        self.assertEqual(
+            approve_writes["allowed_tools"]["profile-tools"],
+            [tool["name"] for tool in PROFILE_TOOLS],
+        )
+        self.assertEqual(
+            approve_writes["approval_required"],
+            ["update_issue", "delete_repo", "list_things", "delete_cache"],
+        )
+
+        permissive = starter_policy("profile-tools", PROFILE_TOOLS, profile="permissive")
+        self.assertEqual(
+            permissive["allowed_tools"]["profile-tools"],
+            [tool["name"] for tool in PROFILE_TOOLS],
+        )
+        self.assertEqual(permissive["approval_required"], [])
 
     def test_starter_policy_rejects_empty_duplicate_and_malformed_catalogs(self) -> None:
         cases = [
@@ -107,6 +178,8 @@ class PolicyInitializationTest(unittest.TestCase):
             report = json.loads(created.stdout)
             policy = json.loads(output.read_text())
             self.assertEqual(report["tool_count"], 1)
+            self.assertEqual(report["classification_summary"]["counts"]["read"], 1)
+            self.assertIn("Judikt starter policy (read-only)", created.stderr)
             self.assertEqual(
                 policy["allowed_tools"],
                 {"external-incidents": ["external.fetch_issue"]},
@@ -117,7 +190,9 @@ class PolicyInitializationTest(unittest.TestCase):
 
     def test_initialize_policy_closes_client_and_writes_discovered_catalog(self) -> None:
         client = mock.Mock()
-        client.list_tools.return_value = [{"name": "issues.read"}]
+        client.list_tools.return_value = [
+            {"name": "issues.read", "annotations": {"readOnlyHint": True}}
+        ]
         with tempfile.TemporaryDirectory() as directory, mock.patch(
             "judikt.policy_init.StdioMCPClient", return_value=client
         ) as client_type:
@@ -132,6 +207,7 @@ class PolicyInitializationTest(unittest.TestCase):
             policy = json.loads(output.read_text())
             self.assertEqual(report["tools"], ["issues.read"])
             self.assertEqual(policy["local_stdio_identity"], "operator")
+            self.assertEqual(report["classification_summary"]["excluded_tools"], [])
             client_type.assert_called_once_with(
                 "company-tools",
                 command=("company-mcp", "--stdio"),
@@ -158,6 +234,19 @@ class PolicyInitializationTest(unittest.TestCase):
                         output_path=output,
                     )
                 client_type.assert_not_called()
+
+    def test_rejects_unknown_profile_before_starting_client(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, mock.patch(
+            "judikt.policy_init.StdioMCPClient"
+        ) as client_type:
+            with self.assertRaisesRegex(PolicyInitializationError, "profile must be one of"):
+                initialize_policy(
+                    ["server"],
+                    server_name="upstream",
+                    output_path=Path(directory) / "policy.json",
+                    profile="unsafe",
+                )
+            client_type.assert_not_called()
 
     def test_command_and_server_name_validation_is_fail_closed(self) -> None:
         for command in ([], [""], ["server", ""]):

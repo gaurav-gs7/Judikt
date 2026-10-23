@@ -50,7 +50,7 @@ Some clients place global options more reliably before the subcommand. This equi
 }
 ```
 
-For a disposable evaluation only, omit `--policy` and let `judikt wrap` discover an ephemeral exact-tool policy. State clearly that the policy was generated at startup and was not operator-reviewed.
+For a disposable evaluation only, omit `--policy` and let `judikt wrap` discover an ephemeral annotation-derived starter policy (read-only by default). Upstream annotations are self-reported and the generated policy is only a starting point to review. `--profile approve-writes` approval-gates write and destructive tools; `--profile permissive` allows every discovered tool and emits a warning. State clearly that the policy was generated at startup and was not operator-reviewed. When `--policy` is present, profile classification is bypassed and the explicit policy is used as-is.
 
 ## Upstream Credentials
 

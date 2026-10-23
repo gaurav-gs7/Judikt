@@ -55,7 +55,7 @@ Install from a checkout:
 python3 -m pip install .
 ```
 
-Wrap any stdio MCP server with one command. Judikt discovers `tools/list`, creates an ephemeral exact-tool policy, and exposes the guarded catalog over stdio:
+Wrap any stdio MCP server with one command. Judikt discovers `tools/list`, creates an annotation-derived starter policy (read-only by default), and exposes only its authorized catalog over stdio:
 
 ```bash
 judikt wrap -- npx -y @modelcontextprotocol/server-filesystem /absolute/safe/path
@@ -81,7 +81,7 @@ Use this command directly in an MCP client configuration:
 }
 ```
 
-To review and customize a persistent policy first, generate one from the upstream's actual catalog:
+To review and customize a persistent annotation-derived starter policy first, generate one from the upstream's actual catalog:
 
 ```bash
 judikt init \
@@ -95,7 +95,17 @@ judikt wrap \
   -- npx -y @modelcontextprotocol/server-filesystem /absolute/safe/path
 ```
 
-The packaged default policy is deliberately neutral and fail-closed. `judikt init` grants the configured local identity only the exact names returned by `tools/list`; it grants anonymous callers nothing and refuses to overwrite an existing file unless `--force` is supplied.
+The packaged default policy is deliberately neutral and fail-closed. `judikt init` and policy-free `judikt wrap` classify discovered tools from their names and MCP annotations. Annotations are self-reported by the upstream, are not trusted security facts, and can only make the generated policy stricter than the name check. Every generated policy is a starting point that must be reviewed. Anonymous callers receive no permissions, and `judikt init` refuses to overwrite an existing file unless `--force` is supplied.
+
+Generated-policy profiles:
+
+| Profile | Generated behavior |
+| --- | --- |
+| `read-only` (default) | Advertise and allow only tools with `readOnlyHint: true` whose names contain no mutation segment. |
+| `approve-writes` | Allow all discovered tools, but require a signed approval token for every write or destructive tool. |
+| `permissive` | Allow every discovered tool without generated approval gates and print a warning to stderr on every generated-policy start. |
+
+Tools without annotations are destructive by default. A read-only annotation that conflicts with a mutation-like name such as `delete_cache` is also classified as destructive. The generated policy records every decision under `tool_classification`; this key is informational and ignored during policy evaluation. Pass `--profile` to `judikt init` or policy-free `judikt wrap`. When `judikt wrap --policy ...` is used, Judikt uses that explicit policy as-is and does not reclassify it.
 
 The launch scripts automatically use `.venv/bin/python` when a project virtual environment exists. Otherwise, they use the system `python3`.
 

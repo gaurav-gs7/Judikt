@@ -1,6 +1,6 @@
 ---
 name: judikt-mcp-security
-description: Set up, configure, connect, smoke-test, troubleshoot, or assess MCP servers protected by Judikt. Use when a user asks to wrap an stdio MCP upstream, generate a least-privilege policy from tools/list, add Judikt to an MCP client, validate local or authenticated remote controls, or produce an evidence-based MCP security assessment. Requires a separately installed Judikt runtime; this skill does not bundle Judikt.
+description: Set up, configure, connect, smoke-test, troubleshoot, or assess MCP servers protected by Judikt. Use when a user asks to wrap an stdio MCP upstream, generate an annotation-derived starter policy (read-only by default) from tools/list, add Judikt to an MCP client, validate local or authenticated remote controls, or produce an evidence-based MCP security assessment. Requires a separately installed Judikt runtime; this skill does not bundle Judikt.
 ---
 
 # Judikt MCP Security
@@ -13,7 +13,7 @@ Use Judikt as a policy and security boundary between an MCP client and an operat
 
 1. **Detect the environment.** Run `python3 scripts/diagnose.py` from this skill directory. This reads local version, executable, and candidate client-config metadata only. Do not install software, start an upstream, or change files during detection.
 2. **Plan setup.** Read [references/setup.md](references/setup.md). Report detected Python, Judikt, MCP client, upstream command, intended policy path, and intended audit path. Ask for explicit consent before any installation or file change.
-3. **Configure the upstream.** Prefer `judikt init` so the starter policy is derived from the upstream's real `tools/list` response. Show the exact command and destination first. Treat launching the upstream and writing the policy as consent-requiring actions.
+3. **Configure the upstream.** Prefer `judikt init` so an annotation-derived starter policy (read-only by default) is generated from the upstream's real `tools/list` response. Treat annotations as self-reported and the policy as a starting point to review. Show the exact command, profile, and destination first. Treat launching the upstream and writing the policy as consent-requiring actions.
 4. **Connect the client.** Read [references/mcp-configuration.md](references/mcp-configuration.md). Identify the exact client configuration file, show a minimal proposed diff, preserve unrelated entries, and obtain consent before editing it. Never place credentials in client configuration.
 5. **Run a smoke test.** Reload the client, initialize the MCP connection, and request `tools/list`. Call only a clearly read-only tool when the user authorizes that call. Do not use a mutating tool merely to prove connectivity.
 6. **Produce an assessment.** Report each control as `verified`, `configured-not-verified`, `not-configured`, or `not-applicable`. Include sanitized evidence, unresolved gaps, and the exact scope tested. Never infer a passing control from configuration alone.

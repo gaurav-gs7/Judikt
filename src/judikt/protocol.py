@@ -32,9 +32,15 @@ SAFE_ENVIRONMENT_KEYS = (
 )
 
 
-def serve_stdio(name: str, tools: list[Tool], handler: ToolHandler) -> None:
+def serve_stdio(
+    name: str,
+    tools: list[Tool],
+    handler: ToolHandler,
+    *,
+    accepted_tool_names: set[str] | None = None,
+) -> None:
     """Serve the small MCP surface needed by the demo over JSON-RPC stdio."""
-    tool_index = {tool.name: tool for tool in tools}
+    tool_index = accepted_tool_names if accepted_tool_names is not None else {tool.name for tool in tools}
     for raw_line in sys.stdin:
         message: dict[str, Any] = {}
         try:

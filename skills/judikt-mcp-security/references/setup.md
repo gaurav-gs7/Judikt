@@ -48,21 +48,22 @@ Do not claim successful installation until the command exits successfully.
 
 ## 3. Generate A Reviewable Policy
 
-`judikt init` starts the selected upstream, requests its real `tools/list`, and writes a starter policy containing exact discovered tool names. It refuses to overwrite an existing destination unless `--force` is supplied.
+`judikt init` starts the selected upstream, requests its real `tools/list`, and writes an annotation-derived starter policy (read-only by default). Upstream annotations are self-reported, not trusted security facts, and can only make generation stricter than Judikt's mutation-name check. The generated policy and its `tool_classification` entries are a starting point to review. Judikt refuses to overwrite an existing destination unless `--force` is supplied.
 
 Show the exact command and obtain consent before running it:
 
 ```bash
 judikt init \
+  --profile read-only \
   --name <stable-server-name> \
   --identity <local-identity> \
   --output /absolute/path/judikt-policy.json \
   -- <upstream-executable> <upstream-arguments...>
 ```
 
-Review the generated tool names and policy controls. Do not add wildcard permissions to make setup easier. Do not use `--force` without separate overwrite consent.
+Profiles are `read-only` (only read-tier tools are allowed), `approve-writes` (write and destructive tools require signed approval), and `permissive` (all discovered tools are allowed and Judikt prints a warning). Review the generated tool names, classifications, conflicts, and policy controls. Do not add wildcard permissions to make setup easier. Do not use `--force` without separate overwrite consent.
 
-For quick disposable evaluation, `judikt wrap -- <upstream command>` can generate an ephemeral exact-tool policy. Prefer a persistent reviewed policy for ongoing use.
+For quick disposable evaluation, `judikt wrap -- <upstream command>` generates the same ephemeral annotation-derived starter policy with the `read-only` profile by default. Prefer a persistent reviewed policy for ongoing use. An explicit `judikt wrap --policy ...` policy is used as-is and is never reclassified.
 
 ## 4. Connect And Smoke-Test
 

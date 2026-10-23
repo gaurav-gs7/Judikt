@@ -31,3 +31,7 @@ Unauthenticated stdio has no per-caller authentication. Judikt sources identity 
 Authenticated remote mode binds policy evaluation to the validated subject. Judikt is an OAuth resource server, not an authorization server; the selected IdP owns PKCE, login, consent, and client registration.
 
 Direct approval issuance remains sensitive even though the runtime also requires the explicit `JUDIKT_ALLOW_DIRECT_APPROVAL` switch and administrator authorization for authenticated remote callers. Never fabricate or expose an approval token and never enable direct issuance only to make a test pass.
+
+## Generated Policy Boundary
+
+`judikt init` and policy-free `judikt wrap` generate an annotation-derived starter policy (read-only by default). MCP annotations are self-reported by the upstream and are not trusted security facts. They can only make generation stricter than the mutation-name check. Treat `tool_classification` and every generated permission as a starting point for operator review. `approve-writes` gates write and destructive tools with approvals; `permissive` allows all discovered tools and emits a warning. An explicit policy passed to `judikt wrap --policy` is used as-is.

@@ -10,6 +10,13 @@ from .paths import DEFAULT_POLICY_PATH
 from .protocol import StdioMCPClient
 
 
+STARTER_PROFILES = ("read-only", "approve-writes", "permissive")
+MUTATION_NAME_PATTERN = re.compile(
+    r"(?:^|[^a-z0-9])(?:delete|remove|drop|destroy|purge|write|update|create|put|post|patch|set|move|rename|exec|execute|run|kill|restart|rollback|deploy|push|merge|send|upload)(?:$|[^a-z0-9])",
+    re.IGNORECASE,
+)
+
+
 class PolicyInitializationError(ValueError):
     pass
 
@@ -20,6 +27,7 @@ def initialize_policy(
     server_name: str,
     output_path: Path,
     identity: str = "local-operator",
+    profile: str = "read-only",
     force: bool = False,
 ) -> dict[str, Any]:
     normalized_command = normalize_command(command)
@@ -27,6 +35,7 @@ def initialize_policy(
     normalized_identity = identity.strip()
     if not normalized_identity:
         raise PolicyInitializationError("local identity must not be empty")
+    normalized_profile = normalize_profile(profile)
     if output_path.exists() and not force:
         raise PolicyInitializationError(
             f"refusing to overwrite existing policy: {output_path}; pass --force to replace it"
@@ -42,7 +51,12 @@ def initialize_policy(
     finally:
         client.close()
 
-    policy = starter_policy(normalized_name, tools, identity=normalized_identity)
+    policy = starter_policy(
+        normalized_name,
+        tools,
+        identity=normalized_identity,
+        profile=normalized_profile,
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(policy, indent=2, sort_keys=True) + "\n")
     return {
@@ -50,6 +64,7 @@ def initialize_policy(
         "server": normalized_name,
         "tool_count": len(policy["allowed_tools"][normalized_name]),
         "tools": policy["allowed_tools"][normalized_name],
+        "classification_summary": classification_summary(policy, normalized_profile),
     }
 
 
@@ -58,12 +73,15 @@ def starter_policy(
     tools: Sequence[dict[str, Any]],
     *,
     identity: str = "local-operator",
+    profile: str = "read-only",
 ) -> dict[str, Any]:
     server_name = normalize_server_name(server_name)
     identity = identity.strip()
     if not identity:
         raise PolicyInitializationError("local identity must not be empty")
+    profile = normalize_profile(profile)
     names: list[str] = []
+    classifications: dict[str, dict[str, Any]] = {}
     seen: set[str] = set()
     for tool in tools:
         name = tool.get("name") if isinstance(tool, dict) else None
@@ -74,14 +92,78 @@ def starter_policy(
             raise PolicyInitializationError(f"upstream tools/list returned duplicate tool name: {name}")
         seen.add(name)
         names.append(name)
+        classifications[name] = classify_tool(name, tool)
     if not names:
         raise PolicyInitializationError("upstream tools/list returned no tools")
 
     policy = deepcopy(json.loads(DEFAULT_POLICY_PATH.read_text()))
+    if profile == "read-only":
+        allowed_names = [name for name in names if classifications[name]["tier"] == "read"]
+        approval_required: list[str] = []
+    elif profile == "approve-writes":
+        allowed_names = names
+        approval_required = [name for name in names if classifications[name]["tier"] != "read"]
+    else:
+        allowed_names = names
+        approval_required = []
     policy["local_stdio_identity"] = identity
-    policy["actor_permissions"] = {identity: names, "anonymous": []}
-    policy["allowed_tools"] = {server_name: names}
+    policy["actor_permissions"] = {identity: allowed_names, "anonymous": []}
+    policy["allowed_tools"] = {server_name: allowed_names}
+    policy["approval_required"] = approval_required
+    policy["tool_classification"] = classifications
     return policy
+
+
+def classify_tool(name: str, tool: dict[str, Any]) -> dict[str, Any]:
+    raw_annotations = tool.get("annotations", {})
+    annotations = dict(raw_annotations) if isinstance(raw_annotations, dict) else {}
+    read_only = annotations.get("readOnlyHint") is True
+    mutation_name = MUTATION_NAME_PATTERN.search(name) is not None
+    conflict = read_only and mutation_name
+    if read_only and not mutation_name:
+        tier = "read"
+    elif not read_only and annotations.get("destructiveHint") is False:
+        tier = "write"
+    else:
+        tier = "destructive"
+    return {
+        "tier": tier,
+        "annotations": annotations,
+        "conflict": conflict,
+    }
+
+
+def classification_summary(policy: dict[str, Any], profile: str) -> dict[str, Any]:
+    classifications = policy["tool_classification"]
+    allowed = {
+        tool
+        for tools in policy["allowed_tools"].values()
+        for tool in tools
+    }
+    approval_required = set(policy["approval_required"])
+    return {
+        "profile": profile,
+        "counts": {
+            tier: sum(
+                details["tier"] == tier for details in classifications.values()
+            )
+            for tier in ("read", "write", "destructive")
+        },
+        "excluded_tools": [tool for tool in classifications if tool not in allowed],
+        "approval_gated_tools": [
+            tool for tool in classifications if tool in approval_required
+        ],
+        "conflicts": [
+            tool for tool, details in classifications.items() if details["conflict"]
+        ],
+    }
+
+
+def normalize_profile(value: str) -> str:
+    if value not in STARTER_PROFILES:
+        choices = ", ".join(STARTER_PROFILES)
+        raise PolicyInitializationError(f"profile must be one of: {choices}")
+    return value
 
 
 def derive_server_name(command: Sequence[str]) -> str:

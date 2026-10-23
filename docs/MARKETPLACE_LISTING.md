@@ -12,14 +12,16 @@
 
 ## Description
 
-The Judikt MCP Security skill guides an agent through a consent-based security onboarding workflow for Model Context Protocol servers. It detects the local environment without changing it, generates a least-privilege policy from the upstream server's real `tools/list`, configures a supported MCP client, performs a read-only smoke test, and produces an evidence-based assessment that separates verified controls from configuration alone.
+The Judikt MCP Security skill guides an agent through a consent-based security onboarding workflow for Model Context Protocol servers. It detects the local environment without changing it, generates an annotation-derived starter policy (read-only by default) from the upstream server's real `tools/list`, configures a supported MCP client, performs a read-only smoke test, and produces an evidence-based assessment that separates verified controls from configuration alone.
+
+Upstream annotations are self-reported and are not trusted security facts. Judikt combines them with conservative tool-name checks, records the classification for review, and never lets an annotation make the generated policy looser than the name check. The generated policy is a starting point to review: `read-only` exposes only read-tier tools, `approve-writes` approval-gates write and destructive tools, and `permissive` exposes every discovered tool with a prominent warning.
 
 Judikt itself is installed separately. The runtime sits between an MCP client and an operator-selected tool server, applying deterministic policy, local or authenticated identity, argument and response inspection, tool-definition pinning, approval controls, rate limits, kill switches, redaction, and tamper-evident audit evidence. The skill does not bundle the runtime, silently install dependencies, edit client configuration without consent, or invent privileged approval tokens.
 
 ## Use Cases
 
 - Wrap a local stdio MCP server with `judikt wrap -- <upstream command>`.
-- Discover an upstream's actual tool catalog and generate a reviewable starter policy with `judikt init`.
+- Discover an upstream's actual tool catalog and generate a reviewable, annotation-derived starter policy with `judikt init`.
 - Add a Judikt-protected server to Claude Code or Cursor without overwriting unrelated MCP entries.
 - Smoke-test MCP initialization, `tools/list`, and one explicitly authorized read-only call.
 - Verify an allowed call, a policy denial, actor-spoofing protection, and signed audit-chain evidence.

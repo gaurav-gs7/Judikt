@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 
@@ -29,7 +30,12 @@ from .paths import (
     DEFAULT_POLICY_PATH,
     default_audit_path,
 )
-from .policy_init import PolicyInitializationError, derive_server_name, initialize_policy
+from .policy_init import (
+    STARTER_PROFILES,
+    PolicyInitializationError,
+    derive_server_name,
+    initialize_policy,
+)
 from .protocol import MCPProtocolError
 from .real_mcp import serve_real_mcp
 from .runtime import JudiktRuntime
@@ -133,6 +139,7 @@ def parser() -> argparse.ArgumentParser:
     )
     init.add_argument("--name", default="")
     init.add_argument("--identity", default="local-operator")
+    init.add_argument("--profile", choices=STARTER_PROFILES, default="read-only")
     init.add_argument("--output", type=Path, default=Path("judikt-policy.json"))
     init.add_argument("--force", action="store_true")
     init.add_argument("upstream_command", nargs=argparse.REMAINDER)
@@ -143,6 +150,7 @@ def parser() -> argparse.ArgumentParser:
     _add_runtime_options(wrap)
     wrap.add_argument("--name", default="")
     wrap.add_argument("--identity", default="local-operator")
+    wrap.add_argument("--profile", choices=STARTER_PROFILES, default="read-only")
     wrap.add_argument("upstream_command", nargs=argparse.REMAINDER)
     return result
 
@@ -173,10 +181,12 @@ def main() -> None:
                 server_name=args.name or derive_server_name(upstream_command),
                 output_path=args.output,
                 identity=args.identity,
+                profile=args.profile,
                 force=args.force,
             )
         except (PolicyInitializationError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
             raise SystemExit(f"init: {exc}") from None
+        _print_classification_summary(report)
         print(json.dumps(report, indent=2))
         return
     if args.command == "wrap":
@@ -307,12 +317,14 @@ def _run_wrap(args: argparse.Namespace) -> None:
             return
         with tempfile.TemporaryDirectory(prefix="judikt-wrap-") as directory:
             policy_path = Path(directory) / "policy.json"
-            initialize_policy(
+            report = initialize_policy(
                 upstream_command,
                 server_name=server_name,
                 output_path=policy_path,
                 identity=args.identity,
+                profile=args.profile,
             )
+            _print_classification_summary(report)
             runtime = JudiktRuntime(
                 policy_path,
                 args.audit_db,
@@ -321,6 +333,34 @@ def _run_wrap(args: argparse.Namespace) -> None:
             serve_gateway(runtime)
     except (PolicyInitializationError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
         raise SystemExit(f"wrap: {exc}") from None
+
+
+def _print_classification_summary(report: dict[str, object]) -> None:
+    summary = report.get("classification_summary")
+    if not isinstance(summary, dict):
+        return
+    profile = str(summary["profile"])
+    counts = summary["counts"]
+    assert isinstance(counts, dict)
+    print(
+        f"Judikt starter policy ({profile}): "
+        f"read={counts['read']} write={counts['write']} "
+        f"destructive={counts['destructive']}",
+        file=sys.stderr,
+    )
+    for label, key in (
+        ("Excluded tools", "excluded_tools"),
+        ("Approval-gated tools", "approval_gated_tools"),
+        ("Annotation/name conflicts", "conflicts"),
+    ):
+        values = summary[key]
+        assert isinstance(values, list)
+        print(f"{label}: {', '.join(str(value) for value in values) or 'none'}", file=sys.stderr)
+    if profile == "permissive":
+        print(
+            "WARNING: permissive profile allows every discovered tool without generated approval gates.",
+            file=sys.stderr,
+        )
 
 
 if __name__ == "__main__":

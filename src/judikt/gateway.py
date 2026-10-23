@@ -15,13 +15,17 @@ def serve_gateway(runtime: JudiktRuntime) -> None:
         for server, upstream_tools in runtime.list_tools().items():
             for upstream in upstream_tools:
                 indexed_tools[upstream["name"]] = server
-                tools.append(
-                    Tool(
-                        upstream["name"],
-                        f"[proxied via Judikt from {server}] {upstream['description']}",
-                        upstream["inputSchema"],
+                if (
+                    upstream["name"] in runtime.policy.config["allowed_tools"].get(server, [])
+                    and runtime.policy.actor_can_call(local_identity, upstream["name"])
+                ):
+                    tools.append(
+                        Tool(
+                            upstream["name"],
+                            f"[proxied via Judikt from {server}] {upstream['description']}",
+                            upstream["inputSchema"],
+                        )
                     )
-                )
 
         def call(tool: str, arguments: dict[str, Any]) -> Any:
             server = indexed_tools.get(tool)
@@ -38,10 +42,11 @@ def serve_gateway(runtime: JudiktRuntime) -> None:
                     "blocked": True,
                     "correlation_id": guarded.correlation_id,
                     "reason": guarded.reason,
+                    "rule": guarded.rule,
                 }
             return guarded.as_dict()
 
-        serve_stdio("judikt", tools, call)
+        serve_stdio("judikt", tools, call, accepted_tool_names=set(indexed_tools))
     finally:
         runtime.close()
 

@@ -197,6 +197,9 @@ class PolicyEngine:
                 "disabled_servers": sorted(self._disabled_servers),
             }
 
+    def actor_can_call(self, actor: str, tool: str) -> bool:
+        return self._actor_can_call(actor, tool)
+
     def _within_rate_limit(self, tool: str, actor: str, arguments: dict[str, Any]) -> bool:
         limit = self.config["rate_limits_per_minute"].get(
             tool, self.config["rate_limits_per_minute"]["default"]

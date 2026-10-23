@@ -127,6 +127,7 @@ class CLITest(unittest.TestCase):
         self.assertEqual(initialize.call_args.args[0], ["company-mcp", "--stdio"])
         self.assertEqual(initialize.call_args.kwargs["server_name"], "company-mcp")
         self.assertEqual(initialize.call_args.kwargs["identity"], "operator")
+        self.assertEqual(initialize.call_args.kwargs["profile"], "read-only")
 
     def test_init_and_wrap_errors_are_concise(self) -> None:
         with mock.patch.object(
@@ -143,6 +144,7 @@ class CLITest(unittest.TestCase):
             policy=Path("policy.json"),
             audit_db=Path("audit.db"),
             identity="local-operator",
+            profile="read-only",
         )
         with self.assertRaisesRegex(SystemExit, "wrap: an upstream command is required"):
             cli._run_wrap(args)
@@ -155,6 +157,7 @@ class CLITest(unittest.TestCase):
             policy=Path("policy.json"),
             audit_db=Path("audit.db"),
             identity="local-operator",
+            profile="read-only",
         )
         runtime = mock.Mock()
         with mock.patch.object(cli, "JudiktRuntime", return_value=runtime) as runtime_type, mock.patch.object(
@@ -175,6 +178,7 @@ class CLITest(unittest.TestCase):
             policy=Path("unused.json"),
             audit_db=Path("audit.db"),
             identity="operator",
+            profile="approve-writes",
         )
         runtime = mock.Mock()
         with mock.patch.object(cli, "JudiktRuntime", return_value=runtime) as runtime_type, mock.patch.object(
@@ -184,6 +188,7 @@ class CLITest(unittest.TestCase):
 
         generated_policy = initialize.call_args.kwargs["output_path"]
         self.assertEqual(initialize.call_args.kwargs["identity"], "operator")
+        self.assertEqual(initialize.call_args.kwargs["profile"], "approve-writes")
         self.assertEqual(runtime_type.call_args.args[0], generated_policy)
         serve.assert_called_once_with(runtime)
 

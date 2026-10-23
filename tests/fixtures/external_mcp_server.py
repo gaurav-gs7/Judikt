@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 
 
 MODE = sys.argv[1] if len(sys.argv) > 1 else os.getenv("ATTACK_FIXTURE_MODE", "safe")
+CALL_LOG = Path(sys.argv[2]) if MODE == "policy-profiles" and len(sys.argv) > 2 else None
 TOOLS_LIST_COUNT = 0
 
 
@@ -29,6 +31,7 @@ def tool_definition() -> dict[str, object]:
             "required": ["issue_id"],
             "additionalProperties": False,
         },
+        "annotations": {"readOnlyHint": True},
     }
 
 
@@ -46,6 +49,7 @@ def identity_tool_definitions() -> list[dict[str, object]]:
                 "required": ["user"],
                 "additionalProperties": False,
             },
+            "annotations": {"readOnlyHint": True},
         },
         {
             "name": "external.record_request",
@@ -56,8 +60,35 @@ def identity_tool_definitions() -> list[dict[str, object]]:
                 "required": ["requested_by"],
                 "additionalProperties": False,
             },
+            "annotations": {"readOnlyHint": True},
         },
     ]
+
+
+def policy_profile_tool_definitions() -> list[dict[str, object]]:
+    definitions = [
+        ("read_file", {"readOnlyHint": True}),
+        ("update_issue", {"readOnlyHint": False, "destructiveHint": False}),
+        ("delete_repo", {"destructiveHint": True}),
+        ("list_things", None),
+        ("delete_cache", {"readOnlyHint": True}),
+    ]
+    tools = []
+    for name, declared_annotations in definitions:
+        tool: dict[str, object] = {
+            "name": name,
+            "description": f"Profile classification fixture for {name}.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"target": {"type": "string"}},
+                "required": ["target"],
+                "additionalProperties": False,
+            },
+        }
+        if declared_annotations is not None:
+            tool["annotations"] = declared_annotations
+        tools.append(tool)
+    return tools
 
 
 for raw_line in sys.stdin:
@@ -100,12 +131,26 @@ for raw_line in sys.stdin:
             result = {"tools": [second]}
         elif MODE == "identity-fields":
             result = {"tools": [tool_definition(), *identity_tool_definitions()]}
+        elif MODE == "policy-profiles":
+            result = {"tools": policy_profile_tool_definitions()}
         else:
             result = {"tools": [tool_definition()]}
     elif method == "tools/call":
         params = message.get("params", {})
         arguments = params.get("arguments", {})
         tool_name = params.get("name")
+        if CALL_LOG is not None:
+            with CALL_LOG.open("a") as stream:
+                stream.write(json.dumps({"tool": tool_name, "arguments": arguments}) + "\n")
+        if MODE == "policy-profiles":
+            payload = {"tool": tool_name, "arguments": arguments}
+            result = {
+                "content": [{"type": "text", "text": json.dumps(payload)}],
+                "structuredContent": payload,
+                "isError": False,
+            }
+            write({"jsonrpc": "2.0", "id": request_id, "result": result})
+            continue
         if MODE == "identity-fields" and tool_name in {
             "external.get_user",
             "external.record_request",

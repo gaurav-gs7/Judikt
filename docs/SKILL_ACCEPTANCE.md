@@ -22,6 +22,8 @@ The runner builds the current wheel, creates an empty temporary home and virtual
 | Audit evidence | Read both resulting SQLite events through `AuditStore` | Ordered allow/deny outcomes, no spoofed actor, valid two-event HMAC chain |
 | Unauthorized privileged action | Call `judikt.issue_approval` without an authenticated admin context | `admin_authorization` denial and no approval token |
 
+The fixture marks `external.fetch_issue` with `readOnlyHint: true`, so the default annotation-derived starter policy exposes it. This validates the read-only default; it does not treat upstream annotations as trusted proof or skip operator review.
+
 The activation cases are deterministic metadata tests, not a claim that every model or marketplace uses the same activation algorithm. They define the intended trigger boundary and catch descriptions that become too broad or too narrow.
 
 ## Client Qualification Record
