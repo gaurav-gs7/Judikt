@@ -10,14 +10,13 @@ from .backends import (
     KubernetesBackend,
     PlatformOpsBackend,
 )
-from .protocol import StdioMCPClient
 from .tool_integrity import verify_unique_tool_names
 from .upstreams import MCP_TOOL_NAME_PATTERN
 
 
 class UpstreamRegistry(Protocol):
     @property
-    def clients(self) -> dict[str, StdioMCPClient]: ...
+    def clients(self) -> dict[str, Any]: ...
 
     @property
     def incident_backend(self) -> IncidentBackend | None: ...
@@ -34,14 +33,14 @@ class StdioUpstreamRegistry:
 
     def __init__(
         self,
-        clients: dict[str, StdioMCPClient],
+        clients: dict[str, Any],
         tool_name_prefixes: dict[str, str] | None = None,
     ) -> None:
         self._clients = clients
         self._tool_name_prefixes = tool_name_prefixes or {}
 
     @property
-    def clients(self) -> dict[str, StdioMCPClient]:
+    def clients(self) -> dict[str, Any]:
         return self._clients
 
     @property
@@ -81,7 +80,7 @@ class OperationsUpstreamRegistry:
         platform: PlatformOpsBackend | None,
         kubernetes: KubernetesBackend | None,
         incidents: IncidentBackend | None,
-        external_clients: dict[str, StdioMCPClient],
+        external_clients: dict[str, Any],
         tool_name_prefixes: dict[str, str] | None = None,
     ) -> None:
         self.platform = platform
@@ -91,7 +90,7 @@ class OperationsUpstreamRegistry:
         self._tool_name_prefixes = tool_name_prefixes or {}
 
     @property
-    def clients(self) -> dict[str, StdioMCPClient]:
+    def clients(self) -> dict[str, Any]:
         return self._clients
 
     @property

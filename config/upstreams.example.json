@@ -31,6 +31,20 @@
           "json_key": "api_token"
         }
       }
+    },
+    "remote-streamable-http-example": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": {
+        "Authorization": {
+          "from_env": "COMPANY_MCP_AUTHORIZATION"
+        }
+      },
+      "timeouts": {
+        "initialize": 15,
+        "list": 15,
+        "call": 60
+      },
+      "allow_private_network": false
     }
   }
 }

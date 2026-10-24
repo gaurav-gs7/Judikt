@@ -11,6 +11,7 @@ from typing import Any
 from .content_guard import ContentGuard
 from .paths import state_root
 from .protocol import StdioMCPClient
+from .remote_protocol import StreamableHTTPMCPClient
 from .tool_integrity import ToolIntegrityError, ToolIntegrityStore, ToolPinMetadata
 
 
@@ -91,13 +92,22 @@ def _accept_pin(state_key: str, tool_names: list[str] | None, yes: bool) -> None
         cwd=cwd or "",
         environment_names=names,
     )
-    client = StdioMCPClient(
-        server,
-        command=command,
-        environment=environment,
-        cwd=cwd,
-        inherit_environment=False,
-    )
+    if command[0] == "streamable-http":
+        allow_private_network = "--allow-private-network" in command[1:-1]
+        client = StreamableHTTPMCPClient(
+            server,
+            url=command[-1],
+            headers=environment,
+            allow_private_network=allow_private_network,
+        )
+    else:
+        client = StdioMCPClient(
+            server,
+            command=command,
+            environment=environment,
+            cwd=cwd,
+            inherit_environment=False,
+        )
     try:
         tools = client.list_tools()
     finally:

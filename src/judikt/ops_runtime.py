@@ -21,13 +21,12 @@ from .pipeline import (
     RequestContextIdentityProvider,
 )
 from .policy import PolicyEngine
-from .protocol import StdioMCPClient
 from .request_context import authenticated_subject
 from .slack_approval import SlackApprovalWorkflow
 from .telemetry import Telemetry
 from .tool_integrity import ToolIntegrityStore, ToolPinMetadata
 from .upstream_registry import OperationsUpstreamRegistry
-from .upstreams import load_upstream_servers
+from .upstreams import create_upstream_client, load_upstream_servers
 
 
 class JudiktOpsRuntime:
@@ -87,7 +86,7 @@ class JudiktOpsRuntime:
         self.platform = PlatformOpsBackend() if include_demo_servers else None
         self.kubernetes = KubernetesBackend() if include_demo_servers else None
         self.incidents = IncidentBackend() if include_demo_servers else None
-        self.external_clients: dict[str, StdioMCPClient] = {}
+        self.external_clients: dict[str, Any] = {}
         pin_metadata: dict[str, ToolPinMetadata] = {}
         tool_name_prefixes: dict[str, str] = {}
         for upstream in load_upstream_servers():
@@ -99,21 +98,23 @@ class JudiktOpsRuntime:
                 raise ValueError(
                     f"upstream MCP server name collides with demo server: {upstream.name}"
                 )
-            self.external_clients[upstream.name] = StdioMCPClient(
-                upstream.name,
-                command=upstream.command,
-                environment=upstream.environment,
-                cwd=upstream.cwd,
-                inherit_environment=False,
-                timeouts=upstream.timeouts,
-                metrics=self.metrics,
+            self.external_clients[upstream.name] = create_upstream_client(
+                upstream,
+                self.metrics,
             )
             pin_metadata[upstream.name] = ToolPinMetadata(
                 state_key=upstream.state_key or upstream.name,
                 fingerprint=upstream.fingerprint,
-                command=upstream.command,
+                command=upstream.command
+                or (
+                    "streamable-http",
+                    *(("--allow-private-network",) if upstream.allow_private_network else ()),
+                    upstream.url,
+                ),
                 cwd=upstream.cwd or "",
-                environment_names=tuple(sorted(upstream.environment)),
+                environment_names=tuple(
+                    sorted(upstream.environment or upstream.headers)
+                ),
             )
             tool_name_prefixes[upstream.name] = upstream.tool_name_prefix
 
@@ -309,7 +310,7 @@ class JudiktOpsRuntime:
     def _verify_restarted_client(
         self,
         server: str,
-        client: StdioMCPClient,
+        client: Any,
     ) -> None:
         del client
         tools = self.upstreams.definitions()[server]

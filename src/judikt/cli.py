@@ -6,6 +6,7 @@ import os
 import secrets
 import sys
 import tempfile
+import urllib.parse
 from pathlib import Path
 
 from .approval import ApprovalAuthority, ApprovalConfigurationError
@@ -44,13 +45,18 @@ from .policy_init import (
     PolicyInitializationError,
     derive_server_name,
     initialize_policy,
+    initialize_policy_from_tools,
     normalize_server_name,
 )
 from .protocol import MCPProtocolError
 from .real_mcp import serve_real_mcp
 from .runtime import JudiktRuntime
 from .tool_integrity import ToolIntegrityError
-from .upstreams import UpstreamServer
+from .upstreams import (
+    UpstreamConfigError,
+    UpstreamServer,
+    create_upstream_client,
+)
 
 
 class _PolicyPathAction(argparse.Action):
@@ -182,12 +188,18 @@ def parser() -> argparse.ArgumentParser:
     init.add_argument("upstream_command", nargs=argparse.REMAINDER)
     wrap = subparsers.add_parser(
         "wrap",
-        help="run a stdio MCP server through Judikt",
+        help="run an MCP server through Judikt",
     )
     _add_runtime_options(wrap)
     wrap.add_argument("--name", default="")
     wrap.add_argument("--identity", default="local-operator")
     wrap.add_argument("--profile", choices=STARTER_PROFILES, default="read-only")
+    wrap.add_argument("--url", default="", help="remote Streamable HTTP MCP endpoint")
+    wrap.add_argument(
+        "--allow-private-network",
+        action="store_true",
+        help="allow a localhost/private remote endpoint after URL validation",
+    )
     wrap.add_argument("upstream_command", nargs=argparse.REMAINDER)
     pins = subparsers.add_parser("pins", help="inspect and explicitly update upstream tool pins")
     pin_commands = pins.add_subparsers(dest="pins_command", required=True)
@@ -469,19 +481,44 @@ def _run_wrap(args: argparse.Namespace) -> None:
     if upstream_command and upstream_command[0] == "--":
         upstream_command = upstream_command[1:]
     try:
-        server_name = normalize_server_name(args.name or derive_server_name(upstream_command))
-        state = upstream_state(server_name, upstream_command)
+        remote_url = str(getattr(args, "url", "")).strip()
+        if remote_url and upstream_command:
+            raise PolicyInitializationError("configure either --url or an upstream command, not both")
+        if not remote_url and not upstream_command:
+            raise PolicyInitializationError(
+                "an upstream command is required unless --url is provided"
+            )
+        default_name = (
+            urllib.parse.urlsplit(remote_url).hostname or "remote"
+            if remote_url
+            else derive_server_name(upstream_command)
+        )
+        server_name = normalize_server_name(args.name or default_name)
+        state_command = (
+            (
+                "streamable-http",
+                *(("--allow-private-network",) if getattr(args, "allow_private_network", False) else ()),
+                remote_url,
+            )
+            if remote_url
+            else tuple(upstream_command)
+        )
+        state = upstream_state(server_name, state_command)
         audit_path = args.audit_db
         if not getattr(args, "audit_explicit", False) and not os.getenv("JUDIKT_AUDIT_DB"):
             ensure_private_directory(state.directory)
             audit_path = state.audit_path
         upstream = UpstreamServer(
             name=server_name,
-            command=state.command,
+            command=state.command if not remote_url else (),
             environment={},
-            cwd=str(state.cwd),
+            cwd=str(state.cwd) if not remote_url else None,
             state_key=state.state_key,
             fingerprint=state.fingerprint,
+            url=remote_url,
+            allow_private_network=bool(
+                getattr(args, "allow_private_network", False)
+            ),
         )
         if args.policy_explicit:
             runtime = JudiktRuntime(
@@ -493,13 +530,26 @@ def _run_wrap(args: argparse.Namespace) -> None:
             return
         with tempfile.TemporaryDirectory(prefix="judikt-wrap-") as directory:
             policy_path = Path(directory) / "policy.json"
-            report = initialize_policy(
-                upstream_command,
-                server_name=server_name,
-                output_path=policy_path,
-                identity=args.identity,
-                profile=args.profile,
-            )
+            if remote_url:
+                client = create_upstream_client(upstream)
+                try:
+                    report = initialize_policy_from_tools(
+                        client.list_tools(),
+                        server_name=server_name,
+                        output_path=policy_path,
+                        identity=args.identity,
+                        profile=args.profile,
+                    )
+                finally:
+                    client.close()
+            else:
+                report = initialize_policy(
+                    upstream_command,
+                    server_name=server_name,
+                    output_path=policy_path,
+                    identity=args.identity,
+                    profile=args.profile,
+                )
             _print_classification_summary(report)
             runtime = JudiktRuntime(
                 policy_path,
@@ -511,7 +561,13 @@ def _run_wrap(args: argparse.Namespace) -> None:
         _exit_tool_integrity("wrap", exc)
     except (ApprovalConfigurationError, AuditConfigurationError) as exc:
         raise SystemExit(f"wrap: {exc}") from None
-    except (PolicyInitializationError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
+    except (
+        PolicyInitializationError,
+        UpstreamConfigError,
+        MCPProtocolError,
+        OSError,
+        json.JSONDecodeError,
+    ) as exc:
         raise SystemExit(f"wrap: {exc}") from None
 
 

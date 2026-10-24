@@ -51,20 +51,65 @@ def initialize_policy(
     finally:
         client.close()
 
-    policy = starter_policy(
-        normalized_name,
+    return _write_starter_policy(
         tools,
+        server_name=normalized_name,
+        output_path=output_path,
         identity=normalized_identity,
         profile=normalized_profile,
+    )
+
+
+def initialize_policy_from_tools(
+    tools: Sequence[dict[str, Any]],
+    *,
+    server_name: str,
+    output_path: Path,
+    identity: str = "local-operator",
+    profile: str = "read-only",
+    force: bool = False,
+) -> dict[str, Any]:
+    normalized_name = normalize_server_name(server_name)
+    normalized_identity = identity.strip()
+    if not normalized_identity:
+        raise PolicyInitializationError("local identity must not be empty")
+    normalized_profile = normalize_profile(profile)
+    if output_path.exists() and not force:
+        raise PolicyInitializationError(
+            f"refusing to overwrite existing policy: {output_path}; pass --force to replace it"
+        )
+    return _write_starter_policy(
+        tools,
+        server_name=normalized_name,
+        output_path=output_path,
+        identity=normalized_identity,
+        profile=normalized_profile,
+    )
+
+
+def _write_starter_policy(
+    tools: Sequence[dict[str, Any]],
+    *,
+    server_name: str,
+    output_path: Path,
+    identity: str,
+    profile: str,
+) -> dict[str, Any]:
+
+    policy = starter_policy(
+        server_name,
+        tools,
+        identity=identity,
+        profile=profile,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(policy, indent=2, sort_keys=True) + "\n")
     return {
         "policy": str(output_path),
-        "server": normalized_name,
-        "tool_count": len(policy["allowed_tools"][normalized_name]),
-        "tools": policy["allowed_tools"][normalized_name],
-        "classification_summary": classification_summary(policy, normalized_profile),
+        "server": server_name,
+        "tool_count": len(policy["allowed_tools"][server_name]),
+        "tools": policy["allowed_tools"][server_name],
+        "classification_summary": classification_summary(policy, profile),
     }
 
 

@@ -63,6 +63,13 @@ Wrap any stdio MCP server with one command. Judikt discovers `tools/list`, creat
 judikt wrap -- npx -y @modelcontextprotocol/server-filesystem /absolute/safe/path
 ```
 
+The same entry point wraps a remote Streamable HTTP upstream. HTTPS is required except for localhost; local/private addresses additionally require explicit operator consent:
+
+```bash
+judikt wrap --url https://mcp.example.com/mcp
+judikt wrap --url http://127.0.0.1:9000/mcp --allow-private-network
+```
+
 Use this command directly in an MCP client configuration:
 
 ```json
@@ -192,13 +199,15 @@ For a checkout-based MCP client configuration, use:
 
 ### External MCP Servers
 
-Set `JUDIKT_UPSTREAM_CONFIG` to a JSON file using the shape in [`config/upstreams.example.json`](config/upstreams.example.json). Commands are executed directly without a shell. Sensitive upstream credentials should use `from_env` or `from_aws_secret`; caller-supplied OAuth tokens are denied recursively by policy.
+Set `JUDIKT_UPSTREAM_CONFIG` to a JSON file using the shape in [`config/upstreams.example.json`](config/upstreams.example.json). Each entry configures exactly one local `command` or remote `url`. Commands are executed directly without a shell. Remote request headers accept only operator-brokered `from_env`, `from_aws_secret`, or `from_vault` values; Judikt never forwards the caller's Authorization header or tool-supplied credentials upstream.
+
+Remote endpoints require HTTPS except on localhost. Before connection and before every request, Judikt resolves the hostname and rejects private, loopback, link-local, reserved, unspecified, multicast, and cloud-metadata addresses unless `allow_private_network` is explicitly enabled. Redirects are refused, streamed HTTP responses and decoded MCP results are size-bounded, and remote list/call deadlines cancel the in-flight SDK request.
 
 Both stdio and Streamable HTTP clients receive policy- and pin-filtered native upstream tools with their original title, schema, output schema, metadata, and stricter-only annotations. HTTP calls use the same guarded pipeline and return standard MCP `CallToolResult` denials with `isError: true` and Judikt decision metadata. Live upstream `tools/list_changed` notifications rebuild the catalog and notify connected HTTP sessions. The deprecated `judikt.call_upstream` envelope is disabled by default and is available only when `http.legacy_call_upstream` is explicitly `true`.
 
 When independently built servers expose the same tool name, set a `tool_name_prefix` such as `"github."` on an upstream. Judikt validates the prefix and resulting names against MCP tool-name rules, then applies the exposed name consistently to policy, risk, pinning, audit, and routing.
 
-Upstream requests default to 30-second `initialize` and `tools/list` deadlines and a 120-second `tools/call` deadline. Set `JUDIKT_UPSTREAM_TIMEOUT_SECONDS` for one global deadline or add per-server `timeouts` with `initialize`, `list`, and `call` values in the registry. Timed-out calls receive MCP `notifications/cancelled`; crashed subprocesses restart with bounded exponential backoff and must pass tool-pin verification again before calls resume.
+Upstream requests default to 30-second `initialize` and `tools/list` deadlines and a 120-second `tools/call` deadline. Set `JUDIKT_UPSTREAM_TIMEOUT_SECONDS` for one global deadline or add per-server `timeouts` with `initialize`, `list`, and `call` values in the registry. Timed-out calls receive MCP `notifications/cancelled`. Crashed stdio subprocesses restart with bounded exponential backoff and must pass tool-pin verification again before calls resume; remote sessions fail closed and are recreated by the owning Judikt process.
 
 The `platform-ops`, `kubernetes`, and `incident` adapters are walkthrough fixtures loaded only by `judikt demo` or the explicit `JUDIKT_DEMO_MODE=true` test harness. Production gateway commands load only operator-selected upstream servers.
 
@@ -218,9 +227,10 @@ Judikt includes:
 
 - MCP gateway proxying over JSON-RPC stdio
 - Official MCP SDK Streamable HTTP server for production-facing clients
-- Operator-configured proxying to independently built stdio MCP servers
+- Operator-configured proxying to independently built stdio and Streamable HTTP MCP servers
 - Versioned interoperability harness for official Filesystem, Memory, and GitHub MCP servers
 - Minimal subprocess environments that expose only explicitly brokered upstream credentials
+- Brokered remote headers, HTTPS enforcement, redirect refusal, DNS-rechecked SSRF controls, and bounded responses
 - Recursive tool-description and JSON Schema inspection before trust
 - SHA-256 tool-definition pinning and fail-closed rug-pull detection
 - Deterministic direct and indirect prompt-injection inspection across tool arguments, metadata, and results
@@ -243,7 +253,7 @@ Judikt includes:
 - Optional Redis-backed distributed rate limits for multi-replica deployments
 - Atomic multi-key GCRA limits with retry metadata and privacy-preserving Redis keys
 - Circuit breakers for repeated upstream tool failures
-- Concurrent stdio upstream requests with deadlines, cancellation, bounded stderr capture, restart budgets, and post-restart pin verification
+- Concurrent stdio and remote upstream requests with deadlines and cancellation, plus bounded stderr capture, restart budgets, and post-restart pin verification for subprocesses
 - Native MCP result passthrough, metadata preservation, protocol-version negotiation, and live `tools/listChanged` pin enforcement
 - Hash-chained and optionally HMAC-signed local audit evidence
 - Fail-closed audit signing and full-chain startup verification for production mode
