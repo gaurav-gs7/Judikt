@@ -11,6 +11,93 @@
   "tool_pinning": {
     "first_use": "auto"
   },
+  "risk": {
+    "tier_scores": {
+      "read": 10,
+      "write": 10,
+      "destructive": 10
+    },
+    "annotation_modifiers": [],
+    "tool_rules": [
+      {
+        "match": "platform.*",
+        "add": 10,
+        "evidence": "production operations server"
+      },
+      {
+        "match": "kubernetes.*",
+        "add": 20,
+        "evidence": "kubernetes operations server"
+      },
+      {
+        "match": "*.rollback_deployment",
+        "add": 55,
+        "evidence": "deployment rollback can change live production traffic"
+      },
+      {
+        "match": "*.restart_deployment",
+        "add": 45,
+        "evidence": "deployment restart can affect availability"
+      },
+      {
+        "match": "*.restart_pod",
+        "add": 50,
+        "evidence": "pod restart can affect production availability"
+      },
+      {
+        "match": "*.run_diagnostic",
+        "add": 25,
+        "evidence": "diagnostic commands can expose infrastructure details"
+      },
+      {
+        "match": "*.read_config",
+        "add": 20,
+        "evidence": "configuration may contain secrets"
+      },
+      {
+        "match": "*.read_logs",
+        "add": 15,
+        "evidence": "logs may include sensitive operational context"
+      }
+    ],
+    "argument_rules": [
+      {
+        "argument": "service",
+        "in": [
+          "payments-api"
+        ],
+        "add": 10,
+        "evidence": "payments-api is business critical"
+      },
+      {
+        "argument": "namespace",
+        "in": [
+          "prod",
+          "production"
+        ],
+        "add": 10,
+        "evidence": "request targets a production namespace"
+      },
+      {
+        "argument": "pod",
+        "regex": "payment",
+        "add": 10,
+        "evidence": "request targets a payment-system pod"
+      },
+      {
+        "argument": "version",
+        "prefix": "payments-api@",
+        "add": 5,
+        "evidence": "request references a production release artifact"
+      }
+    ],
+    "levels": {
+      "critical": 80,
+      "high": 60,
+      "medium": 35
+    },
+    "risk_actions": {}
+  },
   "blocked_argument_patterns": [
     "(^|/)\\.ssh(/|$)",
     "(^|/)\\.aws(/|$)",

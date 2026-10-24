@@ -31,7 +31,7 @@ The demo still accepts `approved: true` for quick walkthroughs, but the signed t
 
 ## Risk Scoring
 
-Each request receives a deterministic risk score. The score is not a machine-learning model; it is an explainable heuristic based on tool type, server, service criticality, and release references. That makes it useful for demos and policy decisions without making enforcement opaque.
+Each request receives a deterministic risk score. The policy's `risk` section defines tier baselines, annotation modifiers, tool-name rules, argument rules, severity thresholds, and optional approval actions. MCP annotations are untrusted: they may raise risk, but cannot lower the baseline implied by reviewed classification or a mutation-like tool name. Matched evidence is included in both the decision and audit record, keeping enforcement explainable without putting a model in the decision path.
 
 ## Observability
 

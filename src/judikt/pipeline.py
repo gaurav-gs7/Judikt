@@ -307,7 +307,18 @@ class GuardedCallPipeline:
         arguments: dict[str, Any],
         actor: str,
     ) -> PolicyDecision:
-        risk = self.policy.risk.assess(server, tool, arguments)
+        definitions = self.upstreams.definitions()
+        tool_definition = next(
+            (
+                definition
+                for definition in definitions.get(server, [])
+                if definition.get("name") == tool
+            ),
+            None,
+        )
+        risk = self.policy.risk.assess(
+            server, tool, arguments, tool_definition
+        )
         try:
             switches = self.kill_switches.get_state()
         except KillSwitchUnavailable:
@@ -349,6 +360,7 @@ class GuardedCallPipeline:
                 tool,
                 arguments,
                 authenticated_actor=actor,
+                tool_definition=tool_definition,
             )
             policy_span.set_policy(
                 allowed=decision.allowed,

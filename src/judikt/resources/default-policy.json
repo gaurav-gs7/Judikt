@@ -13,6 +13,36 @@
       "destructive": "require_approval"
     }
   },
+  "risk": {
+    "tier_scores": {
+      "read": 10,
+      "write": 40,
+      "destructive": 70
+    },
+    "annotation_modifiers": [
+      {
+        "annotation": "openWorldHint",
+        "equals": true,
+        "add": 10,
+        "evidence": "tool may interact with an open-world environment"
+      },
+      {
+        "annotation": "idempotentHint",
+        "equals": false,
+        "add": 5,
+        "evidence": "tool is not declared idempotent"
+      }
+    ],
+    "tool_rules": [],
+    "argument_rules": [],
+    "levels": {
+      "critical": 80,
+      "high": 60,
+      "medium": 30
+    },
+    "risk_actions": {}
+  },
+  "tool_classification": {},
   "blocked_argument_patterns": [
     "(^|/)\\.ssh(/|$)",
     "(^|/)\\.aws(/|$)",

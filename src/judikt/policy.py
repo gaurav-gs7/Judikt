@@ -27,7 +27,7 @@ class PolicyEngine:
         self.config = json.loads(policy_path.read_text())
         self.approvals = approval_authority or ApprovalAuthority()
         self.argument_guard = ContentGuard.from_policy(self.config)
-        self.risk = RiskEngine()
+        self.risk = RiskEngine(self.config)
         self._blocked = [re.compile(pattern, re.IGNORECASE) for pattern in self.config["blocked_argument_patterns"]]
         self._redacted_keys = [
             re.compile(pattern, re.IGNORECASE) for pattern in self.config["redacted_key_patterns"]
@@ -55,9 +55,10 @@ class PolicyEngine:
         tool: str,
         arguments: dict[str, Any],
         authenticated_actor: str = "",
+        tool_definition: dict[str, Any] | None = None,
     ) -> PolicyDecision:
         with self._lock:
-            risk = self.risk.assess(server, tool, arguments)
+            risk = self.risk.assess(server, tool, arguments, tool_definition)
             if self._kill_switch_store is not None:
                 state = self._kill_switch_store.get_state()
                 self._disabled_tools = set(state["tools"])
@@ -142,7 +143,12 @@ class PolicyEngine:
                     risk,
                     action="SHADOW_MODE",
                 )
-            if tool in self.config["approval_required"] and not self._has_approval(server, tool, arguments):
+            risk_requires_approval = (
+                self.risk.action_for(risk.level) == "require_approval"
+            )
+            if (
+                tool in self.config["approval_required"] or risk_requires_approval
+            ) and not self._has_approval(server, tool, arguments):
                 return self._decision(
                     False,
                     f"approval token is required for this {risk.level}-risk action",

@@ -253,7 +253,7 @@ class ServerlessPolicy(PolicyEngine):
             policy_path,
             ApprovalAuthority(_approval_secret(), require_configured=True),
         )
-        self.risk = RiskEngine()
+        self.risk = RiskEngine(self.config)
 
     def evaluate(self, server: str, tool: str, arguments: dict[str, Any]) -> PolicyDecision:
         with self._lock:
@@ -319,7 +319,12 @@ class ServerlessPolicy(PolicyEngine):
                     risk,
                     action="SHADOW_MODE",
                 )
-            if tool in self.config["approval_required"] and not self._has_approval(server, tool, arguments):
+            risk_requires_approval = (
+                self.risk.action_for(risk.level) == "require_approval"
+            )
+            if (
+                tool in self.config["approval_required"] or risk_requires_approval
+            ) and not self._has_approval(server, tool, arguments):
                 return self._decision(
                     False,
                     f"approval token is required for this {risk.level}-risk action",
