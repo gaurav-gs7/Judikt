@@ -57,6 +57,7 @@ class ToolDriftError(ToolIntegrityError):
         changed_tools: dict[str, list[str]],
         legacy: bool = False,
         integrity_failed: bool = False,
+        pending_tools: list[str] | None = None,
     ) -> None:
         self.server = server
         self.state_key = state_key
@@ -64,6 +65,10 @@ class ToolDriftError(ToolIntegrityError):
         self.added_tools = added_tools
         self.removed_tools = removed_tools
         self.changed_tools = changed_tools
+        # Tools already recorded as awaiting first-use approval. They are not
+        # "added": the operator has seen them before and they stay hidden
+        # until accepted.
+        self.pending_tools = list(pending_tools or [])
         self.legacy = legacy
         self.integrity_failed = integrity_failed
         super().__init__(self.format_message())
@@ -89,6 +94,8 @@ class ToolDriftError(ToolIntegrityError):
                     for name, fields in self.changed_tools.items()
                 )
                 parts.append(f"changed: {changed}")
+            if self.pending_tools:
+                parts.append(f"pending approval: {_safe_names(self.pending_tools)}")
             details = "; ".join(parts) or "catalog digest changed"
         return (
             f"tool definition drift detected for {_safe_name(self.server)}: {details}; "
@@ -121,6 +128,8 @@ class ToolDriftError(ToolIntegrityError):
                     ),
                 ]
             )
+            if self.pending_tools:
+                lines.append(f"Pending approval: {_safe_names(self.pending_tools)}")
         lines.extend(
             [
                 f"Review: judikt pins show {shlex.quote(self.state_key)}",
@@ -147,6 +156,8 @@ class ToolIntegrityReport:
     tool_count: int
     pending_count: int = 0
     integrity_status: str = "verified"
+    pinned_count: int | None = None
+    accepted_tools: list[str] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -271,8 +282,19 @@ class ToolIntegrityStore:
                 return None if observed == _legacy_tool_digest(tools) else self._drift(
                     server, {}, tools, legacy=True
                 )
-            drift = self._drift(server, _pinned_tools(observed), tools)
-            return drift if drift.added_tools or drift.removed_tools or drift.changed_tools else None
+            drift = self._drift(
+                server,
+                _pinned_tools(observed),
+                tools,
+                pending=_pending_tools(observed),
+            )
+            changed = (
+                drift.added_tools
+                or drift.removed_tools
+                or drift.changed_tools
+                or drift.pending_tools
+            )
+            return drift if changed else None
 
     def accept(
         self,
@@ -280,6 +302,12 @@ class ToolIntegrityStore:
         tools: list[dict[str, Any]],
         tool_names: list[str] | None = None,
     ) -> ToolIntegrityReport:
+        """Pin the selected tools (or the whole current catalog).
+
+        The report's ``pinned_count`` and ``pending_count`` describe the stored
+        state after this call, and ``accepted_tools`` lists what this call
+        accepted.
+        """
         self._inspect(server, tools)
         with self._lock, self._file_lock():
             pins, _ = self._read_unlocked(allow_invalid_mac=True)
@@ -306,10 +334,22 @@ class ToolIntegrityStore:
                     observed,
                     pending=pending,
                 )
+                accepted = sorted(set(tool_names))
             else:
+                pinned = dict(current)
+                pending = {}
                 pins[server] = self._entry_from_records(server, current, observed)
+                accepted = sorted(current)
             self._write_unlocked(pins)
-        return ToolIntegrityReport(server, _tool_digest(tools), "accepted", len(tools))
+        return ToolIntegrityReport(
+            server,
+            _tool_digest(tools),
+            "accepted",
+            len(tools),
+            pending_count=len(pending),
+            pinned_count=len(pinned),
+            accepted_tools=accepted,
+        )
 
     def entries(self, *, allow_invalid_mac: bool = False) -> dict[str, Any]:
         with self._lock, self._file_lock():
@@ -428,9 +468,11 @@ class ToolIntegrityStore:
         tools: list[dict[str, Any]],
         *,
         legacy: bool = False,
+        pending: dict[str, Any] | None = None,
     ) -> ToolDriftError:
         current = _tool_records(tools)
-        added = sorted(set(current) - set(pinned))
+        pending_names = sorted(set(pending or {}) & set(current))
+        added = sorted(set(current) - set(pinned) - set(pending_names))
         removed = sorted(set(pinned) - set(current))
         changed = {}
         for name in sorted(set(pinned) & set(current)):
@@ -452,6 +494,7 @@ class ToolIntegrityStore:
             removed_tools=removed,
             changed_tools=changed,
             legacy=legacy,
+            pending_tools=pending_names,
         )
 
     def _integrity_drift(

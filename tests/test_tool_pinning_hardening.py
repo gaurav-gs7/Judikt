@@ -128,6 +128,57 @@ class ToolPinningHardeningTest(unittest.TestCase):
             finally:
                 second.close()
 
+    def test_accepting_one_of_four_pending_tools_reports_real_counts(self) -> None:
+        from judikt.pins import accept_summary
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = ToolIntegrityStore(Path(directory) / "pins.json", ContentGuard())
+            tools = [
+                _tool("fixture.read", "read"),
+                _tool("fixture.update", "write"),
+                _tool("fixture.create", "write"),
+                _tool("fixture.delete", "destructive"),
+                _tool("fixture.drop", "destructive"),
+            ]
+            first = store.verify("fixture", tools)
+            self.assertEqual(first.pending_count, 4)
+
+            drift = store.compare("fixture", tools)
+            assert drift is not None
+            self.assertEqual(drift.added_tools, [])
+            self.assertEqual(
+                drift.pending_tools,
+                ["fixture.create", "fixture.delete", "fixture.drop", "fixture.update"],
+            )
+            rendered = drift.format_message()
+            self.assertIn("Added tools: none", rendered)
+            self.assertIn(
+                "Pending approval: fixture.create, fixture.delete, fixture.drop, fixture.update",
+                rendered,
+            )
+
+            summary = accept_summary(store.accept("fixture", tools, ["fixture.update"]))
+
+        self.assertEqual(summary["accepted_tools"], ["fixture.update"])
+        self.assertEqual(summary["pinned_count"], 2)
+        self.assertEqual(summary["pending_count"], 3)
+        self.assertEqual(summary["upstream_tool_count"], 5)
+        self.assertNotIn("tool_count", summary)
+
+    def test_new_unpinned_tool_is_still_reported_as_added(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = ToolIntegrityStore(
+                Path(directory) / "pins.json", ContentGuard(), policy=AUTO_POLICY
+            )
+            store.verify("fixture", [_tool("fixture.read", "read")])
+            drift = store.compare(
+                "fixture", [_tool("fixture.read", "read"), _tool("fixture.list", "read")]
+            )
+
+        assert drift is not None
+        self.assertEqual(drift.added_tools, ["fixture.list"])
+        self.assertEqual(drift.pending_tools, [])
+
     def test_destructive_tool_added_after_first_verify_becomes_pending(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = ToolIntegrityStore(Path(directory) / "pins.json", ContentGuard())

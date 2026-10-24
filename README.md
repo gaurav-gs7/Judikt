@@ -153,6 +153,8 @@ judikt pins accept <state-key> --tool <tool-name> --yes
 # Omit --tool to accept the complete current catalog; omit --yes for confirmation.
 ```
 
+The drift report lists tools awaiting first-use approval under `Pending approval`, separately from genuinely new `Added tools`. `pins accept` prints a JSON summary: `accepted_tools` (what this call accepted), `pinned_count` and `pending_count` (the stored pin state after the call), and `upstream_tool_count` (the size of the catalog the upstream advertised).
+
 `JUDIKT_TOOL_PIN_MODE=refresh` remains available for compatibility but warns because it re-trusts every server in the selected pin file.
 
 The launch scripts automatically use `.venv/bin/python` when a project virtual environment exists. Otherwise, they use the system `python3`.

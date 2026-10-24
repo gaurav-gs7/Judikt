@@ -127,7 +127,26 @@ def _accept_pin(state_key: str, tool_names: list[str] | None, yes: bool) -> None
         if sys.stdin.readline().strip().lower() not in {"y", "yes"}:
             raise ToolIntegrityError("pin acceptance cancelled")
     report = store.accept(server, tools, tool_names)
-    print(json.dumps(report.as_dict(), indent=2, sort_keys=True))
+    print(json.dumps(accept_summary(report), indent=2, sort_keys=True))
+
+
+def accept_summary(report: Any) -> dict[str, Any]:
+    """CLI output for ``judikt pins accept``.
+
+    ``pinned_count`` and ``pending_count`` describe the stored pin state after
+    the call, ``accepted_tools`` lists what this call accepted, and
+    ``upstream_tool_count`` is the size of the catalog the upstream advertised.
+    """
+
+    return {
+        "server": report.server,
+        "digest": report.digest,
+        "status": report.status,
+        "accepted_tools": list(report.accepted_tools or []),
+        "pinned_count": report.pinned_count,
+        "pending_count": report.pending_count,
+        "upstream_tool_count": report.tool_count,
+    }
 
 
 def _state_paths(state_key: str) -> tuple[Path, Path]:
