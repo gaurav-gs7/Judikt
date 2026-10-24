@@ -399,6 +399,28 @@ class KubernetesKubectlRestartTest(unittest.TestCase):
         self.assertEqual(raised.exception.rule, "invalid_kubernetes_name")
         run.assert_not_called()
 
+    def test_kubectl_never_inherits_the_gateway_stdin(self) -> None:
+        # In stdio gateway mode Judikt's stdin is the MCP JSON-RPC channel and
+        # stays open. Hold fd 0 open as a pipe nobody writes to: a kubectl that
+        # inherited it and read stdin (the fake always does) would block until
+        # the subprocess timeout instead of returning promptly.
+        read_fd, write_fd = os.pipe()
+        saved_stdin = os.dup(0)
+        try:
+            os.dup2(read_fd, 0)
+            with mock.patch.dict(os.environ, self.environment, clear=False):
+                result = self.backend(subprocess_timeout_seconds=5).call(
+                    "kubernetes.get_pod",
+                    {"namespace": "prod", "pod": "payments-abc"},
+                )
+        finally:
+            os.dup2(saved_stdin, 0)
+            for descriptor in (saved_stdin, read_fd, write_fd):
+                os.close(descriptor)
+        self.assertEqual(result["metadata"]["name"], "payments-abc")
+        logged = [json.loads(line) for line in self.log_path.read_text().splitlines()]
+        self.assertEqual(logged[-1]["stdin"], "")
+
     def test_subprocess_timeout_is_enforced(self) -> None:
         environment = {**self.environment, "FAKE_KUBECTL_SLEEP": "0.2"}
         with mock.patch.dict(os.environ, environment, clear=False), self.assertRaisesRegex(

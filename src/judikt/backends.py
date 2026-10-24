@@ -1090,12 +1090,16 @@ class KubernetesBackend:
     def _kubectl(self, args: list[str], *, input_text: str | None = None) -> str:
         command = ["kubectl", "--context", self.context, *args]
         try:
+            # Always give kubectl its own stdin. With input=None the child would
+            # inherit Judikt's stdin, which in stdio gateway mode is the MCP
+            # JSON-RPC channel: a child that reads stdin could block on it or
+            # consume protocol messages. An empty string closes stdin at EOF.
             completed = subprocess.run(
                 command,
                 check=False,
                 capture_output=True,
                 text=True,
-                input=input_text,
+                input=input_text if input_text is not None else "",
                 timeout=self.subprocess_timeout,
             )
         except FileNotFoundError as exc:
