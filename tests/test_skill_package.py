@@ -11,7 +11,13 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from scripts.build_skill_release import SkillReleaseError, build_skill_release, project_version
+from scripts.build_skill_release import (
+    VERSION_TOKEN,
+    SkillReleaseError,
+    build_skill_release,
+    project_version,
+    stamp_version,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -176,8 +182,22 @@ class SkillPackageTest(unittest.TestCase):
                     source = SKILL_ROOT / relative
                     self.assertEqual(
                         hashlib.sha256(archive.read(archived_name)).digest(),
-                        hashlib.sha256(source.read_bytes()).digest(),
+                        hashlib.sha256(stamp_version(source, project_version(PYPROJECT))).digest(),
                     )
+                    self.assertNotIn(VERSION_TOKEN.encode(), archive.read(archived_name))
+
+    def test_released_setup_pins_the_runtime_version(self) -> None:
+        version = project_version(PYPROJECT)
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = build_skill_release(
+                skill_root=SKILL_ROOT, pyproject=PYPROJECT, output_dir=Path(directory)
+            )
+            with zipfile.ZipFile(artifact) as archive:
+                setup = archive.read("judikt-mcp-security/references/setup.md").decode()
+        self.assertIn(f'"judikt @ git+https://github.com/gaurav-gs7/Judikt@v{version}"', setup)
+        self.assertIn(f'"judikt=={version}"', setup)
+        self.assertNotIn(VERSION_TOKEN, setup)
+        self.assertNotRegex(setup, r"pip install judikt\s*$")
 
     def test_skill_archive_is_reproducible_and_rejects_version_drift(self) -> None:
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:

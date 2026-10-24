@@ -25,11 +25,21 @@ Report the findings and proposed changes. Do not continue to installation or con
 
 Judikt requires Python 3.11 or newer. The skill does not include the runtime.
 
-After the user approves the source, version, environment, and network access, install a published release:
+This skill release was built for Judikt `__JUDIKT_VERSION__`. Install exactly that version, and only from a source you have verified. Never run an unpinned `pip install judikt`: a package name alone does not prove who published it. (In a repository checkout the version placeholder is unfilled; install that checkout instead, as shown below.)
+
+After the user approves the source, version, environment, and network access, install the matching tagged release from the project's GitHub repository:
 
 ```bash
-python3 -m pip install judikt
+python3 -m pip install "judikt @ git+https://github.com/gaurav-gs7/Judikt@v__JUDIKT_VERSION__"
 ```
+
+The same version may also be on PyPI, published by the repository's release workflow. Use PyPI only when `https://pypi.org/project/judikt/__JUDIKT_VERSION__/` exists and its project links point to `https://github.com/gaurav-gs7/Judikt`; then pin the version:
+
+```bash
+python3 -m pip install "judikt==__JUDIKT_VERSION__"
+```
+
+If neither source has this version, stop and ask the user. Do not substitute another version or package.
 
 For a trusted local checkout, install that checkout instead:
 
@@ -41,10 +51,10 @@ Prefer an isolated virtual environment when the client can reference its absolut
 
 ```bash
 command -v judikt
-judikt --help
+judikt --version
 ```
 
-Do not claim successful installation until the command exits successfully.
+Do not claim successful installation until the command exits successfully and reports the expected version.
 
 ## 3. Generate A Reviewable Policy
 

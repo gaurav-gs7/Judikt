@@ -12,6 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SKILL_ROOT = PROJECT_ROOT / "skills" / "judikt-mcp-security"
 DEFAULT_PYPROJECT = PROJECT_ROOT / "pyproject.toml"
 ALLOWED_TOP_LEVEL = {"SKILL.md", "agents", "assets", "references", "scripts"}
+VERSION_TOKEN = "__JUDIKT_VERSION__"
 LINK_PATTERN = re.compile(r"\[[^]]*]\(([^)]+)\)")
 SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -101,8 +102,20 @@ def build_skill_release(
             info = zipfile.ZipInfo(archived, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = (0o755 if source.stat().st_mode & 0o111 else 0o644) << 16
-            archive.writestr(info, source.read_bytes())
+            archive.writestr(info, stamp_version(source, version))
     return artifact
+
+
+def stamp_version(source: Path, version: str) -> bytes:
+    """Return a skill file's bytes with the runtime version filled in.
+
+    Markdown references carry the VERSION_TOKEN placeholder so a released skill
+    tells agents to install exactly the runtime it was built and tested with.
+    """
+    data = source.read_bytes()
+    if source.suffix == ".md":
+        data = data.replace(VERSION_TOKEN.encode(), version.encode())
+    return data
 
 
 def _frontmatter(text: str) -> dict[str, str]:
