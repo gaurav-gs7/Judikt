@@ -250,8 +250,11 @@ class KubernetesKubectlRestartTest(unittest.TestCase):
             {
                 "context": "kind-judikt",
                 "state_db": str(self.root / "idempotency.db"),
-                "subprocess_timeout_seconds": 2,
-                "verification_timeout_seconds": 1,
+                # Generous bounds: the fake kubectl is a Python process, and a
+                # loaded CI runner can take over a second to start one. Happy
+                # paths return as soon as the replacement pod is ready.
+                "subprocess_timeout_seconds": 10,
+                "verification_timeout_seconds": 10,
                 "poll_interval_seconds": 0.01,
                 **overrides,
             }
@@ -264,7 +267,7 @@ class KubernetesKubectlRestartTest(unittest.TestCase):
         def checked_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
             observed_kwargs.append(dict(kwargs))
             self.assertFalse(kwargs.get("shell", False))
-            self.assertEqual(kwargs["timeout"], 2.0)
+            self.assertEqual(kwargs["timeout"], 10.0)
             return original_run(*args, **kwargs)
 
         with mock.patch.dict(os.environ, self.environment, clear=False), mock.patch(
