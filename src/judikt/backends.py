@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import Tool
-from .paths import ensure_private_directory, state_root
+from .paths import connect_private_sqlite, ensure_private_directory, state_root
 from .protocol import GuardedToolError, MCPProtocolError, serve_stdio
 
 
@@ -1078,7 +1078,7 @@ class KubernetesBackend:
 
     def _state_connection(self) -> sqlite3.Connection:
         ensure_private_directory(self.state_path.parent)
-        connection = sqlite3.connect(self.state_path, timeout=5)
+        connection = connect_private_sqlite(self.state_path, timeout=5)
         connection.execute(
             "CREATE TABLE IF NOT EXISTS kubernetes_restart_idempotency ("
             "idempotency_key TEXT PRIMARY KEY, namespace TEXT NOT NULL, pod TEXT NOT NULL, "

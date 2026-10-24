@@ -11,7 +11,7 @@ from typing import Any, Callable, Protocol
 
 from .audit import AuditStore
 from .metrics import Metrics
-from .paths import ensure_private_directory, state_root
+from .paths import connect_private_sqlite, ensure_private_directory, state_root
 
 
 class KillSwitchStoreError(RuntimeError):
@@ -50,7 +50,7 @@ class SQLiteKillSwitchStore:
         else:
             self.path = configured
             self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(
+        self._connection = connect_private_sqlite(
             self.path,
             timeout=5,
             check_same_thread=False,

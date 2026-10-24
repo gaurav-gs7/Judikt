@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from .audit_sink import build_audit_sink
-from .paths import ensure_private_directory, state_root
+from .paths import connect_private_sqlite, ensure_private_directory, state_root
 from .secrets import resolve_configured_secret
 
 
@@ -55,7 +55,7 @@ class AuditStore:
         self._metrics = metrics
         self._production = require_configured_key or _enabled("JUDIKT_PRODUCTION")
         self._backpressure = _normalize_backpressure(backpressure, self._production)
-        self._connection = sqlite3.connect(path, check_same_thread=False)
+        self._connection = connect_private_sqlite(path, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._connection.execute("PRAGMA journal_mode=WAL")
         self._connection.execute("PRAGMA busy_timeout=5000")

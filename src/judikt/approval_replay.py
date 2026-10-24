@@ -9,6 +9,8 @@ import time
 from pathlib import Path
 from typing import Any, Protocol
 
+from .paths import connect_private_sqlite
+
 
 class ApprovalReplayConfigurationError(RuntimeError):
     """Approval replay protection cannot be built from the configured settings."""
@@ -29,7 +31,7 @@ class SQLiteApprovalReplayStore:
 
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(path, check_same_thread=False, timeout=30)
+        self._connection = connect_private_sqlite(path, check_same_thread=False, timeout=30)
         self._connection.execute("PRAGMA busy_timeout = 30000")
         self._connection.execute("PRAGMA journal_mode = WAL")
         self._connection.execute(

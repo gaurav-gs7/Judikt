@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from .approval import ApprovalAuthority, arguments_hash
+from .paths import connect_private_sqlite
 from .secrets import resolve_configured_secret
 
 
@@ -54,7 +55,7 @@ class SlackApprovalWorkflow:
         self.authority = authority
         self._lock = threading.Lock()
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(path, check_same_thread=False)
+        self._connection = connect_private_sqlite(path, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._connection.execute(
             """

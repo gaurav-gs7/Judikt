@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
+from .paths import connect_private_sqlite
 from .secrets import SecretBrokerError, read_aws_secret, resolve_configured_secret
 
 
@@ -102,7 +103,7 @@ class FindingDispatcher:
             "JUDIKT_FINDING_RETRY_BASE_SECONDS", 1.0, minimum=0.01
         )
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(path, check_same_thread=False)
+        self._connection = connect_private_sqlite(path, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._connection.execute(
             """

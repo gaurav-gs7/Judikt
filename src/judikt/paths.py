@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import os
 import hashlib
 import json
+import os
+import sqlite3
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
@@ -98,6 +99,32 @@ def ensure_private_directory(path: Path) -> None:
     path.mkdir(parents=True, mode=0o700, exist_ok=True)
     path.chmod(0o700)
 
+
+
+def connect_private_sqlite(path: Path, **kwargs: object) -> sqlite3.Connection:
+    """Open a SQLite database whose files only the owner can read or write.
+
+    Judikt's databases hold audit evidence, approval state and kill-switch
+    state. sqlite3 creates new files with the process umask (usually 0644),
+    so create the file 0600 first and tighten any existing database and its
+    WAL and shared-memory files. SQLite gives new -wal/-shm files the same
+    mode as the database.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        pass
+    else:
+        os.close(descriptor)
+    for candidate in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
+        try:
+            if candidate.exists():
+                candidate.chmod(0o600)
+        except OSError:
+            pass
+    return sqlite3.connect(path, **kwargs)  # type: ignore[arg-type]
 
 def _resolve_file_argument(value: str, cwd: Path) -> str:
     candidate = Path(value).expanduser()
