@@ -36,6 +36,22 @@ class PackageResourcesTest(unittest.TestCase):
         with patch.dict(os.environ, {"JUDIKT_AUDIT_DB": "~/custom.db"}, clear=True):
             self.assertEqual(default_audit_path(), Path.home() / "custom.db")
 
+    def test_repository_config_copies_match_packaged_resources(self) -> None:
+        # config/ holds the documented, editable copies; the package ships its own.
+        # They must never drift, or docs describe behaviour the runtime does not have.
+        config = Path(__file__).resolve().parents[1] / "config"
+        pairs = {
+            "interop_profiles.json": DEFAULT_INTEROP_PROFILES_PATH,
+            "mcp38_coverage.json": DEFAULT_MCP38_COVERAGE_PATH,
+            "policies.yaml": DEMO_POLICY_PATH,
+        }
+        for name, packaged in pairs.items():
+            with self.subTest(config=name):
+                self.assertEqual(
+                    json.loads((config / name).read_text()),
+                    json.loads(packaged.read_text()),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,12 +3,12 @@
   "profiles": {
     "modelcontextprotocol-filesystem": {
       "implementation": "@modelcontextprotocol/server-filesystem",
-      "version": "2026.7.10",
+      "version": "2.0.0",
       "source_url": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
       "command": [
         "npx",
         "--yes",
-        "@modelcontextprotocol/server-filesystem@2026.7.10",
+        "@modelcontextprotocol/server-filesystem@2.0.0",
         "${SANDBOX}"
       ],
       "env": {
@@ -30,12 +30,12 @@
     },
     "modelcontextprotocol-memory": {
       "implementation": "@modelcontextprotocol/server-memory",
-      "version": "2026.7.4",
+      "version": "2.0.0",
       "source_url": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
       "command": [
         "npx",
         "--yes",
-        "@modelcontextprotocol/server-memory@2026.7.4"
+        "@modelcontextprotocol/server-memory@2.0.0"
       ],
       "env": {
         "NPM_CONFIG_CACHE": "${SANDBOX}/npm-cache",
