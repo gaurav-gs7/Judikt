@@ -67,6 +67,10 @@
   "rollback_plan_required": [],
   "dry_run_supported": [],
   "shadow_mode_supported": [],
+  "rate_limits": {
+    "backend": "local",
+    "max_local_keys": 100000
+  },
   "rate_limits_per_minute": {
     "default": 30
   },

@@ -42,12 +42,18 @@ class JudiktRuntime:
         circuit_failure_threshold: int = 3,
         circuit_cooldown_seconds: int = 300,
     ) -> None:
-        self.policy = PolicyEngine(policy_path, approval_authority)
+        production = _enabled("JUDIKT_PRODUCTION")
+        self.metrics = Metrics()
+        self.policy = PolicyEngine(
+            policy_path,
+            approval_authority,
+            metrics=self.metrics,
+            production=production,
+        )
         self.content_guard = ContentGuard.from_policy(self.policy.config)
         self.approval_replays = build_approval_replay_store(
             audit_path.with_suffix(".approval-replay.db")
         )
-        self.metrics = Metrics()
         audit_config = self.policy.config.get("audit", {})
         backpressure = (
             audit_config.get("backpressure")
@@ -63,7 +69,7 @@ class JudiktRuntime:
             self.policy.config,
             metrics=self.metrics,
             audit=self.audit,
-            production=_enabled("JUDIKT_PRODUCTION"),
+            production=production,
         )
         self.policy.bind_kill_switch_store(self.kill_switch_store)
         self.findings = FindingDispatcher(audit_path.with_suffix(".findings.db"))

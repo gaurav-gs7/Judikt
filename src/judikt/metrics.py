@@ -14,6 +14,7 @@ class Metrics:
         self._audit_outbox_pending = 0
         self._audit_outbox_oldest_age_seconds = 0.0
         self._kill_switch_store_failures: Counter[str] = Counter()
+        self._rate_limiter_fallbacks: Counter[str] = Counter()
         self._lock = threading.Lock()
 
     def observe(self, server: str, tool: str, allowed: bool, duration_ms: float) -> None:
@@ -47,6 +48,10 @@ class Metrics:
     def observe_kill_switch_store_failure(self, mode: str) -> None:
         with self._lock:
             self._kill_switch_store_failures[mode] += 1
+
+    def observe_rate_limiter_fallback(self, mode: str) -> None:
+        with self._lock:
+            self._rate_limiter_fallbacks[mode] += 1
 
     def _observe_upstream(self, kind: str, server: str) -> None:
         with self._lock:
@@ -98,6 +103,16 @@ class Metrics:
             for mode, count in sorted(self._kill_switch_store_failures.items()):
                 lines.append(
                     f'judikt_kill_switch_store_failures_total{{mode="{mode}"}} {count}'
+                )
+            lines.extend(
+                [
+                    "# HELP judikt_rate_limiter_fallback_total Redis rate-limiter backend failures.",
+                    "# TYPE judikt_rate_limiter_fallback_total counter",
+                ]
+            )
+            for mode, count in sorted(self._rate_limiter_fallbacks.items()):
+                lines.append(
+                    f'judikt_rate_limiter_fallback_total{{mode="{mode}"}} {count}'
                 )
             for kind, description in (
                 ("timeouts", "Upstream MCP request deadlines exceeded."),

@@ -181,9 +181,9 @@ export JUDIKT_REDIS_URL="redis://localhost:6379/0"
 export JUDIKT_REDIS_REQUIRED=true
 ```
 
-The policy engine applies rate limits by tool, actor/tool, production environment/tool, and optional global budget. Redis makes those counters shared across replicas.
+Set `rate_limits.backend` to `redis` or `redis_required`. Production mode forces `redis_required`; startup fails if the backend cannot be reached. `rate_limits.on_backend_failure` selects fail-closed `deny` or a bounded `local_fallback` for runtime outages.
 
-The Redis operation uses one atomic Lua script for increment and expiry. Logical keys are SHA-256 hashed before storage, so actor names are not exposed in the Redis keyspace. CI starts Redis 7 and proves that two separate limiter instances consume the same limit.
+The policy engine applies GCRA limits by tool, actor/tool, production environment/tool, and optional global budget. It checks all applicable keys atomically, so a denial never consumes only part of a request's quota. Redis runs the complete decision in one Lua script and hashes logical keys with SHA-256, so actor names are not exposed in the keyspace. Local mode uses the identical algorithm with a bounded, idle-evicting LRU map. Denials expose `retry_after_seconds`; backend failures increment `judikt_rate_limiter_fallback_total`.
 
 ## Argus Incident And RCA Integration
 

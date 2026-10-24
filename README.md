@@ -231,7 +231,7 @@ Judikt includes:
 - Secret redaction for audit logs and agent-visible responses
 - Per-tool rate limits and immediate kill switches
 - Optional Redis-backed distributed rate limits for multi-replica deployments
-- Atomic Redis counters with privacy-preserving hashed actor/tool keys and live multi-instance CI
+- Atomic multi-key GCRA limits with retry metadata and privacy-preserving Redis keys
 - Circuit breakers for repeated upstream tool failures
 - Concurrent stdio upstream requests with deadlines, cancellation, bounded stderr capture, restart budgets, and post-restart pin verification
 - Native MCP result passthrough, metadata preservation, protocol-version negotiation, and live `tools/listChanged` pin enforcement
@@ -272,6 +272,14 @@ judikt unkill tool platform.restart_deployment --reason "incident resolved"
 ```
 
 The CLI, local dashboard, stdio gateway, and authenticated HTTP admin tools all read the same configured store. Remote mutations still require the control-plane `admin` role.
+
+### Atomic Shared Rate Limits
+
+Local and Redis backends use the same GCRA token-bucket-equivalent algorithm. A call checks its tool, actor/tool, production-environment/tool, and global budgets atomically: every budget is charged, or none is. Quota denials include `retry_after_seconds` in decision evidence and MCP `_meta`.
+
+Configure `rate_limits.backend` as `local`, `redis`, or `redis_required`; `rate_limits.on_backend_failure` as `local_fallback` or `deny`; and `rate_limits.max_local_keys` to bound local memory (default `100000`). `JUDIKT_PRODUCTION=true` forces `redis_required`, as does setting both `JUDIKT_REDIS_URL` and `JUDIKT_REDIS_REQUIRED=true`. Production startup fails when required Redis is unavailable. A runtime Redis outage either returns `rate_limiter_unavailable` or warns on stderr and uses the bounded local fallback, while `judikt_rate_limiter_fallback_total` records both outcomes.
+
+Each `rate_limits_per_minute` value may be a number, where burst defaults to that rate, or an object such as `{"rate": 60, "burst": 5}`. Redis evaluates every hashed logical key in one Lua script; local mode uses one lock and a two-phase decision. Local state evicts fully refilled idle keys and applies an LRU hard cap.
 
 ## Optional Groq Integration
 

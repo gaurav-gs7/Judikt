@@ -8,8 +8,9 @@ from typing import Any
 
 from .approval import ApprovalAuthority, ApprovalClaims, ApprovalTokenError
 from .content_guard import ContentGuard
+from .metrics import Metrics
 from .models import PolicyDecision
-from .rate_limiter import build_rate_limiter
+from .rate_limiter import RateLimit, RateLimitResult, build_rate_limiter
 from .risk import RiskEngine
 
 
@@ -18,6 +19,9 @@ class PolicyEngine:
         self,
         policy_path: Path,
         approval_authority: ApprovalAuthority | None = None,
+        *,
+        metrics: Metrics | None = None,
+        production: bool = False,
     ) -> None:
         # JSON is a YAML subset, which keeps this demo dependency-free.
         self.config = json.loads(policy_path.read_text())
@@ -31,7 +35,11 @@ class PolicyEngine:
         self._redacted_values = [
             re.compile(pattern, re.IGNORECASE) for pattern in self.config["redacted_value_patterns"]
         ]
-        self._rate_limiter = build_rate_limiter()
+        self._rate_limiter = build_rate_limiter(
+            self.config,
+            metrics=metrics,
+            production=production,
+        )
         self._disabled_tools: set[str] = set()
         self._disabled_servers: set[str] = set()
         self._kill_switch_store: Any = None
@@ -150,8 +158,24 @@ class PolicyEngine:
                     risk,
                     action="DENY",
                 )
-            if not self._within_rate_limit(tool, actor, arguments):
-                return self._decision(False, "tool call exceeded its per-minute limit", "rate_limit", risk)
+            rate_limit = self._within_rate_limit(tool, actor, arguments)
+            if rate_limit.unavailable:
+                return self._decision(
+                    False,
+                    "shared rate-limiter backend is unavailable",
+                    "rate_limiter_unavailable",
+                    risk,
+                )
+            if not rate_limit.allowed:
+                return self._decision(
+                    False,
+                    "tool call exceeded its per-minute limit",
+                    "rate_limit",
+                    risk,
+                    extra_evidence=[
+                        f"retry_after_seconds:{rate_limit.retry_after_seconds:.3f}"
+                    ],
+                )
             return self._decision(True, "allowed by policy", "allow", risk)
 
     def issue_approval(
@@ -288,23 +312,37 @@ class PolicyEngine:
         except ApprovalTokenError:
             return None
 
-    def _within_rate_limit(self, tool: str, actor: str, arguments: dict[str, Any]) -> bool:
-        limit = self.config["rate_limits_per_minute"].get(
+    def _within_rate_limit(
+        self,
+        tool: str,
+        actor: str,
+        arguments: dict[str, Any],
+    ) -> RateLimitResult:
+        configured_limit = self.config["rate_limits_per_minute"].get(
             tool, self.config["rate_limits_per_minute"]["default"]
         )
+        rate, burst = self._rate_limit_values(configured_limit)
         environment = str(arguments.get("environment", "default")).lower()
         keys = [f"tool:{tool}"]
         if actor != "anonymous":
             keys.append(f"actor:{actor}:tool:{tool}")
         if environment in {"prod", "production"}:
             keys.append(f"environment:{environment}:tool:{tool}")
-        for key in keys:
-            if not self._rate_limiter.allow(key, limit, 60):
-                return False
-        global_limit = int(self.config.get("global_rate_limit_per_minute", 0) or 0)
-        if global_limit and not self._rate_limiter.allow("global", global_limit, 60):
-            return False
-        return True
+        limits = [RateLimit(key, rate, burst) for key in keys]
+        configured_global = self.config.get("global_rate_limit_per_minute", 0)
+        global_rate, global_burst = self._rate_limit_values(configured_global)
+        if global_rate:
+            limits.append(RateLimit("global", global_rate, global_burst))
+        return self._rate_limiter.allow_all(limits)
+
+    @staticmethod
+    def _rate_limit_values(configured: Any) -> tuple[float, int | None]:
+        if isinstance(configured, dict):
+            rate = float(configured.get("rate", 0))
+            burst_value = configured.get("burst")
+            burst = int(burst_value) if burst_value is not None else None
+            return rate, burst
+        return float(configured or 0), None
 
     def _is_redacted_key(self, key: str) -> bool:
         return any(pattern.search(key) for pattern in self._redacted_keys)
@@ -381,7 +419,14 @@ class PolicyEngine:
         return None
 
     @staticmethod
-    def _decision(allowed: bool, reason: str, rule: str, risk: Any, action: str | None = None) -> PolicyDecision:
+    def _decision(
+        allowed: bool,
+        reason: str,
+        rule: str,
+        risk: Any,
+        action: str | None = None,
+        extra_evidence: list[str] | None = None,
+    ) -> PolicyDecision:
         if action is None:
             action = "ALLOW" if allowed else "DENY"
         return PolicyDecision(
@@ -391,5 +436,5 @@ class PolicyEngine:
             action=action,
             risk_score=risk.score,
             risk_level=risk.level,
-            evidence=risk.evidence,
+            evidence=[*risk.evidence, *(extra_evidence or [])],
         )

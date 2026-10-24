@@ -13,7 +13,7 @@ document records their pre-unification behavior and the target runtime contract.
 | Kill switch | In-memory policy state; no runtime helper | In-memory policy state and admin tools | DynamoDB runtime state |
 | Circuit breaker | Missing | In-memory per server/tool circuit | DynamoDB runtime state |
 | Policy allowlist and argument rules | `PolicyEngine` | `PolicyEngine` | `ServerlessPolicy`, derived from `PolicyEngine` |
-| Rate limiting | Local or Redis through `PolicyEngine` | Local or Redis through `PolicyEngine` | DynamoDB fixed-window counter |
+| Rate limiting | Atomic GCRA through local or Redis `PolicyEngine` backend | Atomic GCRA through local or Redis `PolicyEngine` backend | DynamoDB fixed-window counter |
 | Approval verification | Signed, argument-bound approval | Signed, argument-bound approval | Signed, argument-bound approval |
 | Slack approval workflow | Missing | Available | Missing |
 | Tool integrity and pinning | Verified before execution and after restart | Verified before execution and after restart | Not implemented |

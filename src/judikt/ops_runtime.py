@@ -44,13 +44,19 @@ class JudiktOpsRuntime:
         approval_authority: ApprovalAuthority | None = None,
         remote_mode: bool = False,
     ) -> None:
-        self.policy = PolicyEngine(policy_path, approval_authority)
+        production = _enabled("JUDIKT_PRODUCTION")
+        self.metrics = Metrics()
+        self.policy = PolicyEngine(
+            policy_path,
+            approval_authority,
+            metrics=self.metrics,
+            production=production,
+        )
         self.content_guard = ContentGuard.from_policy(self.policy.config)
         self.approval_replays = build_approval_replay_store(
             audit_path.with_suffix(".approval-replay.db"),
             remote_mode=remote_mode,
         )
-        self.metrics = Metrics()
         audit_config = self.policy.config.get("audit", {})
         backpressure = (
             audit_config.get("backpressure")
@@ -67,7 +73,7 @@ class JudiktOpsRuntime:
             self.policy.config,
             metrics=self.metrics,
             audit=self.audit,
-            production=remote_mode or _enabled("JUDIKT_PRODUCTION"),
+            production=remote_mode or production,
         )
         self.policy.bind_kill_switch_store(self.kill_switch_store)
         self.findings = FindingDispatcher(audit_path.with_suffix(".findings.db"))

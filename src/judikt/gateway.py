@@ -155,7 +155,11 @@ def _gateway_result(guarded: ToolCallResult) -> dict[str, Any]:
     for evidence in guarded.evidence:
         if evidence.startswith("approval_jti_sha256:"):
             decision["approval_jti_sha256"] = evidence.partition(":")[2]
-            break
+        elif evidence.startswith("retry_after_seconds:"):
+            try:
+                decision["retry_after_seconds"] = float(evidence.partition(":")[2])
+            except ValueError:
+                continue
     if guarded.mcp_result is not None and (
         guarded.allowed or guarded.mcp_result.get("isError") is True
     ):

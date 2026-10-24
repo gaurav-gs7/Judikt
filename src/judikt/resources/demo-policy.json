@@ -145,6 +145,10 @@
     "platform.rollback_deployment",
     "kubernetes.restart_pod"
   ],
+  "rate_limits": {
+    "backend": "local",
+    "max_local_keys": 100000
+  },
   "rate_limits_per_minute": {
     "default": 30,
     "platform.health": 10,
