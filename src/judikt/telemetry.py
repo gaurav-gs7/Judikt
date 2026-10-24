@@ -5,6 +5,8 @@ import os
 from contextlib import contextmanager
 from typing import Any, Iterator
 
+from . import __version__
+
 
 class TraceSpan:
     """Small adapter that keeps OpenTelemetry optional for the default demo."""
@@ -75,7 +77,7 @@ class Telemetry:
                 endpoint=os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://127.0.0.1:6006/v1/traces")
             )
         provider.add_span_processor(SimpleSpanProcessor(exporter))
-        self._tracer = provider.get_tracer("judikt", "0.3.0")
+        self._tracer = provider.get_tracer("judikt", __version__)
 
     def status(self) -> dict[str, Any]:
         result = {"enabled": self._tracer is not None, "mode": self.mode}

@@ -14,6 +14,7 @@ from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from typing import Any
 
+from . import __version__
 from .diagnostics import safe_rule, strip_control_characters
 from .metrics import Metrics
 from .models import Tool
@@ -197,7 +198,7 @@ def serve_stdio(
                         else STABLE_PROTOCOL_VERSION
                     ),
                     "capabilities": {"tools": {"listChanged": True}},
-                    "serverInfo": {"name": name, "version": "0.1.0"},
+                    "serverInfo": {"name": name, "version": __version__},
                 }
             elif method == "ping":
                 result = {}
@@ -534,7 +535,7 @@ class StdioMCPClient:
             {
                 "protocolVersion": STABLE_PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": {"name": "judikt", "version": "0.3.0"},
+                "clientInfo": {"name": "judikt", "version": __version__},
             },
             timeout=self._timeouts["initialize"],
         )

@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .approval import ApprovalAuthority, ApprovalConfigurationError
 from .attackbench import (
     AttackBenchError,
@@ -90,6 +91,7 @@ class _AuditPathAction(argparse.Action):
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Judikt runtime firewall")
+    result.add_argument("--version", action="version", version=f"judikt {__version__}")
     result.set_defaults(policy_explicit=False, audit_explicit=False)
     result.add_argument(
         "--policy",
