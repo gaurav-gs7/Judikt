@@ -378,7 +378,9 @@ class WrappedGatewayDiagnosticsTest(unittest.TestCase):
                     if "id" in message:
                         line = process.stdout.readline()
                         responses[message["id"]] = json.loads(line)
-                process.stdin.close()
+                # communicate() flushes and closes stdin itself; closing it
+                # here first makes that flush raise ValueError on a closed
+                # file instead of the BrokenPipeError it guards against.
                 _, gateway_stderr = process.communicate(timeout=10)
             finally:
                 if process.poll() is None:
