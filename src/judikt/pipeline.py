@@ -5,7 +5,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
-from .approval_replay import ApprovalReplayStore, approval_jti_digest
+from .approval_replay import ApprovalReplayStore, ApprovalReplayUnavailable, approval_jti_digest
 from .audit import AuditStore
 from .content_guard import ContentGuard, quarantine_result
 from .diagnostics import (
@@ -489,7 +489,20 @@ class GuardedCallPipeline:
             claims = self.policy.approval_claims(server, tool, arguments)
             if claims is not None:
                 evidence.append(f"approval_jti_sha256:{approval_jti_digest(claims.jti)}")
-                if not self.approval_replays.consume(claims.jti, claims.expires_at):
+                try:
+                    consumed = self.approval_replays.consume(claims.jti, claims.expires_at)
+                except ApprovalReplayUnavailable:
+                    # Fail closed, and do not count this against the tool's
+                    # circuit breaker: the upstream was never called.
+                    return (
+                        False,
+                        "approval_replay_unavailable",
+                        "approval replay protection is unavailable, so the approval was not honoured",
+                        None,
+                        None,
+                        "",
+                    )
+                if not consumed:
                     return (
                         False,
                         "approval_replay",

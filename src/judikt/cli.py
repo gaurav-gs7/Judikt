@@ -12,6 +12,7 @@ from typing import Any
 
 from . import __version__
 from .approval import ApprovalAuthority, ApprovalConfigurationError
+from .approval_replay import ApprovalReplayConfigurationError
 from .attackbench import (
     AttackBenchError,
     report_passes as attackbench_report_passes,
@@ -73,6 +74,7 @@ from .upstreams import (
 # reports them as one line instead of a traceback; anything else still raises.
 STARTUP_CONFIGURATION_ERRORS: tuple[type[BaseException], ...] = (
     ApprovalConfigurationError,
+    ApprovalReplayConfigurationError,
     AuditConfigurationError,
     PolicyConfigurationError,
     RiskConfigError,

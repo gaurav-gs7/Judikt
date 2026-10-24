@@ -130,6 +130,28 @@ class CLITest(unittest.TestCase):
                 ),
             ]
             cases.extend((["serve-mcp"], expected, extra) for extra, expected in env_cases)
+            remote_secrets = {
+                "JUDIKT_HTTP_BEARER_TOKEN": "cli-test-bearer-token-at-least-32-bytes-long",
+                "JUDIKT_APPROVAL_SECRET": "cli-test-approval-secret-at-least-32-bytes",
+                "JUDIKT_AUDIT_HMAC_SECRET": "cli-test-independent-audit-secret-32-bytes",
+                "JUDIKT_RESOURCE_URI": "http://127.0.0.1:18089/mcp",
+                "JUDIKT_REDIS_URL": "",
+                "JUDIKT_SINGLE_INSTANCE": "",
+            }
+            cases.append(
+                (
+                    ["serve-real-mcp", "--host", "0.0.0.0", "--port", "18089"],
+                    "requires Redis approval replay protection",
+                    remote_secrets,
+                )
+            )
+            cases.append(
+                (
+                    ["serve-real-mcp", "--host", "0.0.0.0", "--port", "18089"],
+                    "Redis approval replay backend is unavailable",
+                    {**remote_secrets, "JUDIKT_REDIS_URL": "redis://127.0.0.1:1/0"},
+                )
+            )
             for case in cases:
                 argv, expected = case[0], case[1]
                 extra_environment = case[2] if len(case) > 2 else {}

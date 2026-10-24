@@ -15,6 +15,8 @@ from unittest import mock
 
 from judikt.approval import ApprovalAuthority, ApprovalTokenError
 from judikt.approval_replay import (
+    ApprovalReplayConfigurationError,
+    ApprovalReplayUnavailable,
     DynamoDBApprovalReplayStore,
     RedisApprovalReplayStore,
     SQLiteApprovalReplayStore,
@@ -110,6 +112,36 @@ class ApprovalReplayStoreTest(unittest.TestCase):
             finally:
                 connection.close()
             self.assertEqual(rows, [(approval_jti_digest("current"),)])
+
+    def test_unreachable_redis_fails_remote_startup_and_falls_back_locally(self) -> None:
+        unreachable = {"JUDIKT_REDIS_URL": "redis://127.0.0.1:1/0", "JUDIKT_SINGLE_INSTANCE": ""}
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ, unreachable, clear=False
+        ):
+            with self.assertRaisesRegex(
+                ApprovalReplayConfigurationError, "Redis approval replay backend is unavailable"
+            ):
+                build_approval_replay_store(Path(directory) / "replay.db", remote_mode=True)
+            with mock.patch("sys.stderr") as stderr:
+                store = build_approval_replay_store(Path(directory) / "replay.db")
+            try:
+                self.assertIsInstance(store, SQLiteApprovalReplayStore)
+                self.assertTrue(store.consume("local-jti", int(time.time()) + 60))
+                self.assertFalse(store.consume("local-jti", int(time.time()) + 60))
+            finally:
+                store.close()
+            warning = "".join(str(call.args[0]) for call in stderr.write.call_args_list)
+            self.assertIn("using the local SQLite replay store", warning)
+
+    def test_redis_error_during_consume_is_reported_as_unavailable(self) -> None:
+        store = RedisApprovalReplayStore.__new__(RedisApprovalReplayStore)
+        import redis
+
+        store._redis_error = redis.RedisError
+        store._client = mock.Mock()
+        store._client.set.side_effect = redis.ConnectionError("down")
+        with self.assertRaises(ApprovalReplayUnavailable):
+            store.consume("jti", int(time.time()) + 60)
 
     def test_remote_sqlite_requires_single_instance_opt_in(self) -> None:
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
@@ -262,6 +294,35 @@ class ApprovalReplayRuntimeTest(unittest.TestCase):
             self.assertTrue(dry_run.allowed)
             self.assertEqual(dry_run.action, "DRY_RUN_ONLY")
             self.assertTrue(executed.allowed)
+
+    def test_unavailable_replay_store_fails_closed_without_tripping_circuit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = self._runtime(Path(directory))
+            arguments = _arguments()
+            token = runtime.policy.issue_approval(
+                actor="demo-operator",
+                reason="replay store outage",
+                server="platform-ops",
+                tool="platform.rollback_deployment",
+                arguments=arguments,
+            )
+            with mock.patch.object(
+                runtime.approval_replays,
+                "consume",
+                side_effect=ApprovalReplayUnavailable("down"),
+            ), mock.patch.object(runtime.platform, "call") as upstream:
+                result = runtime.call_tool(
+                    "platform-ops",
+                    "platform.rollback_deployment",
+                    {**arguments, "approval_token": token},
+                )
+                upstream.assert_not_called()
+            circuits = runtime.pipeline.circuits.snapshot()
+            runtime.close()
+
+            self.assertFalse(result.allowed)
+            self.assertEqual(result.rule, "approval_replay_unavailable")
+            self.assertNotIn("platform-ops/platform.rollback_deployment", json.dumps(circuits))
 
     def test_failed_upstream_attempt_still_consumes_token(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

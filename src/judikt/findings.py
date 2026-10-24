@@ -22,6 +22,8 @@ from .secrets import SecretBrokerError, read_aws_secret, resolve_configured_secr
 
 DEFAULT_FINDING_RULES = {
     "allowlist",
+    "approval_replay",
+    "approval_replay_unavailable",
     "authz",
     "blocked_pattern",
     "circuit_breaker",

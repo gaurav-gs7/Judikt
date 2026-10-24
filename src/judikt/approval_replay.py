@@ -3,10 +3,19 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
+import sys
 import threading
 import time
 from pathlib import Path
 from typing import Any, Protocol
+
+
+class ApprovalReplayConfigurationError(RuntimeError):
+    """Approval replay protection cannot be built from the configured settings."""
+
+
+class ApprovalReplayUnavailable(RuntimeError):
+    """The approval replay store could not answer; the approval must not be honoured."""
 
 
 class ApprovalReplayStore(Protocol):
@@ -67,14 +76,26 @@ class RedisApprovalReplayStore:
         try:
             import redis
         except ImportError as exc:  # pragma: no cover - optional dependency
-            raise RuntimeError(
-                "Redis approval replay protection requires: python3 -m pip install -e '.[redis]'"
+            raise ApprovalReplayConfigurationError(
+                "Redis approval replay protection requires: python3 -m pip install 'judikt[redis]'"
             ) from exc
+        self._redis_error = redis.RedisError
         self._client = redis.Redis.from_url(url, decode_responses=True)
+        # Fail at startup, like the Redis rate limiter, instead of on the first
+        # approved call.
+        try:
+            self._client.ping()
+        except redis.RedisError as exc:
+            raise ApprovalReplayConfigurationError(
+                "Redis approval replay backend is unavailable"
+            ) from exc
 
     def consume(self, jti: str, expires_at: int) -> bool:
         key = f"judikt:approval:jti:{approval_jti_digest(jti)}"
-        return bool(self._client.set(key, "1", nx=True, pxat=expires_at * 1000))
+        try:
+            return bool(self._client.set(key, "1", nx=True, pxat=expires_at * 1000))
+        except self._redis_error as exc:
+            raise ApprovalReplayUnavailable("approval replay store is unavailable") from exc
 
     def close(self) -> None:
         self._client.close()
@@ -85,7 +106,9 @@ class DynamoDBApprovalReplayStore:
 
     def __init__(self, table: Any) -> None:
         if table is None:
-            raise RuntimeError("serverless approval replay protection requires STATE_TABLE_NAME")
+            raise ApprovalReplayConfigurationError(
+                "serverless approval replay protection requires STATE_TABLE_NAME"
+            )
         self._table = table
 
     def consume(self, jti: str, expires_at: int) -> bool:
@@ -117,11 +140,24 @@ def build_approval_replay_store(
     remote_mode: bool = False,
 ) -> ApprovalReplayStore:
     redis_url = os.getenv("JUDIKT_REDIS_URL", "")
-    if redis_url:
-        return RedisApprovalReplayStore(redis_url)
     distributed_required = remote_mode or _enabled("JUDIKT_PRODUCTION")
+    if redis_url:
+        try:
+            return RedisApprovalReplayStore(redis_url)
+        except ApprovalReplayConfigurationError:
+            if distributed_required:
+                raise
+            # Local mode mirrors the rate limiter's local fallback: the SQLite
+            # store still makes tokens single-use for every process on this
+            # machine that shares the state directory.
+            print(
+                "WARNING: Redis approval replay backend is unavailable; "
+                "using the local SQLite replay store",
+                file=sys.stderr,
+            )
+            return SQLiteApprovalReplayStore(path)
     if distributed_required and not _enabled("JUDIKT_SINGLE_INSTANCE"):
-        raise RuntimeError(
+        raise ApprovalReplayConfigurationError(
             "remote or production mode requires Redis approval replay protection via "
             "JUDIKT_REDIS_URL; set JUDIKT_SINGLE_INSTANCE=true only for a single-instance deployment"
         )
