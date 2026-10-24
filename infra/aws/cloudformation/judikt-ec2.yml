@@ -179,6 +179,7 @@ Resources:
             -e JUDIKT_AUDIT_HMAC_SECRET="$AUDIT_HMAC_SECRET" \
             -e JUDIKT_AUDIT_SIGNATURE_REQUIRED=true \
             -e JUDIKT_AUDIT_VERIFY_ON_STARTUP=true \
+            -e JUDIKT_SINGLE_INSTANCE=true \
             ${ImageUri}
 
 Outputs:

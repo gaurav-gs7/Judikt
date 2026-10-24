@@ -450,11 +450,21 @@ Build and run the production-facing real MCP container:
 ```bash
 make docker-build
 docker run --rm -p 8080:8080 \
-  -e JUDIKT_HTTP_BEARER_TOKEN="local-dev-token" \
+  -v judikt-data:/app/data \
+  -e JUDIKT_HTTP_BEARER_TOKEN="$(openssl rand -hex 24)" \
+  -e JUDIKT_APPROVAL_SECRET="$(openssl rand -hex 32)" \
+  -e JUDIKT_AUDIT_HMAC_SECRET="$(openssl rand -hex 32)" \
+  -e JUDIKT_SINGLE_INSTANCE=true \
   judikt:local
 ```
 
-The container binds to `0.0.0.0`, so startup fails closed unless bearer/JWT auth is configured or `JUDIKT_ALLOW_UNAUTHENTICATED_REMOTE=true` is explicitly set for an isolated lab.
+The container binds to `0.0.0.0`, so it runs in remote mode and fails closed at startup unless all of these hold:
+
+- bearer or JWT authentication is configured (or `JUDIKT_ALLOW_UNAUTHENTICATED_REMOTE=true` is set for an isolated lab);
+- `JUDIKT_APPROVAL_SECRET` and an independent `JUDIKT_AUDIT_HMAC_SECRET` are set, each at least 32 bytes;
+- approval tokens can be made single-use: set `JUDIKT_REDIS_URL` for more than one instance, or `JUDIKT_SINGLE_INSTANCE=true` for exactly one.
+
+The image keeps all state (audit chain, approval replay store, kill switches, pins) under `/app/data`. Mount a volume there to keep it across restarts.
 
 The container defaults to the official MCP Streamable HTTP server:
 
@@ -465,18 +475,11 @@ POST /mcp
 GET  /mcp
 ```
 
-Use a bearer token for remote demos:
-
-```bash
-docker run --rm -p 8080:8080 \
-  -e JUDIKT_HTTP_BEARER_TOKEN="$(openssl rand -hex 24)" \
-  judikt:local
-```
-
 To run the dashboard container instead:
 
 ```bash
 docker run --rm -p 8080:8080 \
+  -v judikt-data:/app/data \
   -e JUDIKT_MODE=dashboard \
   -e JUDIKT_API_TOKEN="$(openssl rand -hex 24)" \
   judikt:local

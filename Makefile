@@ -52,7 +52,7 @@ helm-template:
 	helm template judikt charts/judikt \
 		--set-string auth.bearerToken=local-render-token \
 		--set-string auth.resourceUri=http://127.0.0.1:8080/mcp \
-		--set-string approvalSecret=local-render-approval-secret \
+		--set-string approvalSecret=local-render-approval-secret-at-least-32-bytes \
 		--set-string audit.hmacSecret=local-render-independent-audit-secret
 
 aws-build-push:

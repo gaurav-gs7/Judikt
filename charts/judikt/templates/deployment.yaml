@@ -1,3 +1,9 @@
+{{- if and (gt (int .Values.replicaCount) 1) (not .Values.redis.url) }}
+{{- fail "replicaCount > 1 requires redis.url: approval tokens must stay single-use across replicas, and the SQLite replay store is per pod" }}
+{{- end }}
+{{- if and (gt (int .Values.replicaCount) 1) .Values.persistence.enabled }}
+{{- fail "replicaCount > 1 cannot share one persistence volume: each pod keeps its own SQLite audit chain. Set persistence.enabled=false and ship audit events to an external sink (audit.sink), or run a single replica" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -40,6 +46,12 @@ spec:
           env:
             - name: JUDIKT_MODE
               value: real-mcp
+            {{- if not .Values.redis.url }}
+            # One replica without Redis: approval replay protection uses the
+            # pod's SQLite store, which is only safe for a single instance.
+            - name: JUDIKT_SINGLE_INSTANCE
+              value: "true"
+            {{- end }}
             - name: JUDIKT_APPROVAL_SECRET
               valueFrom:
                 secretKeyRef:
@@ -90,6 +102,11 @@ spec:
               value: {{ .Values.redis.url | quote }}
             - name: JUDIKT_REDIS_REQUIRED
               value: {{ .Values.redis.required | quote }}
+            {{- if .Values.redis.url }}
+            # Share kill switches across replicas instead of per-pod SQLite.
+            - name: JUDIKT_KILL_SWITCH_BACKEND
+              value: redis
+            {{- end }}
             - name: JUDIKT_ARGUS_URL
               value: {{ .Values.argus.url | quote }}
             - name: JUDIKT_ARGUS_API_TOKEN
@@ -146,25 +163,25 @@ spec:
             periodSeconds: 2
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if .Values.persistence.enabled }}
           volumeMounts:
+            # Judikt keeps its audit chain, replay store, kill switches and
+            # pins under /app/data. The root filesystem is read-only, so the
+            # data volume is always mounted: a PVC when persistence is enabled,
+            # otherwise an emptyDir that lasts for the pod's lifetime.
             - name: data
               mountPath: /app/data
             - name: tmp
               mountPath: /tmp
-          {{- else }}
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-          {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
-      {{- if .Values.persistence.enabled }}
         - name: data
+          {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "judikt.fullname" . }}
-      {{- end }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -79,8 +79,8 @@ jobs:
           helm template judikt charts/judikt
           --set-string auth.bearerToken=ci-bearer-token
           --set-string auth.resourceUri=http://127.0.0.1:8080/mcp
-          --set-string approvalSecret=ci-approval-secret
-          --set-string audit.hmacSecret=ci-independent-audit-secret
+          --set-string approvalSecret=ci-approval-secret-at-least-32-bytes-long
+          --set-string audit.hmacSecret=ci-independent-audit-secret-at-least-32-bytes
       - name: Validate EC2 real MCP Terraform
         run: |
           terraform -chdir=infra/aws/terraform init -backend=false
