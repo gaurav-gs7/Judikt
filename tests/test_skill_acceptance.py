@@ -73,6 +73,16 @@ class SkillAcceptanceTest(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 self.assertFalse(_should_activate(prompt))
 
+    @unittest.skipUnless(
+        os.getenv("JUDIKT_ACCEPTANCE_FRESH_INSTALL") == "1",
+        "only meaningful when run by scripts/run_skill_acceptance.sh",
+    )
+    def test_runtime_under_test_is_the_installed_wheel(self) -> None:
+        self.assertTrue(
+            Path(judikt.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()),
+            f"judikt imported from {judikt.__file__}, not from the fresh wheel in {sys.prefix}",
+        )
+
     def test_diagnostic_is_clean_on_an_empty_home(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory) / "home"
