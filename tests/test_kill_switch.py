@@ -7,16 +7,20 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 import uuid
 from pathlib import Path
 
 from judikt.audit import AuditStore
 from judikt.kill_switch import (
     CachedKillSwitchStore,
+    DynamoDBKillSwitchStore,
     KillSwitchStoreError,
     KillSwitchUnavailable,
     RedisKillSwitchStore,
     SQLiteKillSwitchStore,
+    _validate_change,
+    build_kill_switch_store,
 )
 from judikt.metrics import Metrics
 
@@ -179,6 +183,141 @@ class KillSwitchStoreTest(unittest.TestCase):
 
         self.assertEqual(state["tools"], {"company.restart"})
         self.assertEqual(state["version"], version)
+
+
+class _FakeDynamoDBTable:
+    """Just enough of the boto3 Table API for DynamoDBKillSwitchStore."""
+
+    def __init__(self) -> None:
+        self.items: list[dict[str, object]] = []
+        self.version = 0
+        self.query_error: Exception | None = None
+        self.update_error: Exception | None = None
+
+    def query(self, **kwargs: object) -> dict[str, object]:
+        if self.query_error is not None:
+            raise self.query_error
+        return {"Items": list(self.items)}
+
+    def update_item(self, **kwargs: object) -> dict[str, object]:
+        if self.update_error is not None:
+            raise self.update_error
+        self.version += 1
+        self.items = [item for item in self.items if item.get("sk") != "VERSION"]
+        self.items.append({"pk": "KILL_SWITCH", "sk": "VERSION", "version": self.version})
+        return {"Attributes": {"version": self.version}}
+
+    def put_item(self, Item: dict[str, object]) -> None:
+        self.items.append(Item)
+
+
+class DynamoDBKillSwitchStoreTest(unittest.TestCase):
+    def test_unavailable_table_raises_on_get_and_set(self) -> None:
+        store = DynamoDBKillSwitchStore(None)
+
+        with self.assertRaises(KillSwitchStoreError):
+            store.get_state()
+        with self.assertRaises(KillSwitchStoreError):
+            store.set("tool", "company.restart", False, "operator", "test")
+        store.close()
+
+    def test_query_failure_is_wrapped(self) -> None:
+        table = _FakeDynamoDBTable()
+        table.query_error = RuntimeError("table not found")
+        store = DynamoDBKillSwitchStore(table)
+
+        with self.assertRaisesRegex(KillSwitchStoreError, "unavailable"):
+            store.get_state()
+
+    def test_update_failure_is_wrapped(self) -> None:
+        table = _FakeDynamoDBTable()
+        table.update_error = RuntimeError("throughput exceeded")
+        store = DynamoDBKillSwitchStore(table)
+
+        with self.assertRaisesRegex(KillSwitchStoreError, "update failed"):
+            store.set("tool", "company.restart", False, "operator", "test")
+
+    def test_set_then_get_reflects_disabled_tools_and_servers_only(self) -> None:
+        table = _FakeDynamoDBTable()
+        store = DynamoDBKillSwitchStore(table)
+
+        first_version = store.set(
+            "tool", "company.restart", False, "operator", "incident"
+        )
+        second_version = store.set(
+            "server", "payments-api", False, "operator", "incident"
+        )
+        # A tool explicitly re-enabled should not show up as disabled.
+        third_version = store.set("tool", "company.read", True, "operator", "resolved")
+
+        state = store.get_state()
+
+        self.assertEqual(second_version, first_version + 1)
+        self.assertEqual(third_version, second_version + 1)
+        self.assertEqual(state["tools"], {"company.restart"})
+        self.assertEqual(state["servers"], {"payments-api"})
+        self.assertEqual(state["version"], third_version)
+
+
+class ValidateChangeTest(unittest.TestCase):
+    def test_accepts_a_well_formed_change(self) -> None:
+        _validate_change("tool", "company.restart", False, "operator", "incident")
+
+    def test_rejects_an_unknown_scope(self) -> None:
+        with self.assertRaisesRegex(ValueError, "scope must be"):
+            _validate_change("project", "company.restart", False, "operator", "incident")
+
+    def test_rejects_a_blank_name(self) -> None:
+        with self.assertRaisesRegex(ValueError, "name must be"):
+            _validate_change("tool", "  ", False, "operator", "incident")
+
+    def test_rejects_a_non_boolean_enabled_flag(self) -> None:
+        with self.assertRaisesRegex(ValueError, "enabled must be"):
+            _validate_change("tool", "company.restart", "false", "operator", "incident")  # type: ignore[arg-type]
+
+    def test_rejects_a_blank_actor(self) -> None:
+        with self.assertRaisesRegex(ValueError, "actor must be"):
+            _validate_change("tool", "company.restart", False, "", "incident")
+
+    def test_rejects_a_blank_reason(self) -> None:
+        with self.assertRaisesRegex(ValueError, "reason must be"):
+            _validate_change("tool", "company.restart", False, "operator", "")
+
+
+class BuildKillSwitchStoreTest(unittest.TestCase):
+    def test_rejects_a_non_object_kill_switches_config(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be an object"):
+            build_kill_switch_store({"kill_switches": ["not", "an", "object"]})
+
+    def test_rejects_an_unknown_backend(self) -> None:
+        with self.assertRaisesRegex(ValueError, "'sqlite' or 'redis'"):
+            build_kill_switch_store({"kill_switches": {"backend": "dynamo"}})
+
+    def test_defaults_to_sqlite_with_last_known_on_failure(self) -> None:
+        store = build_kill_switch_store({"kill_switches": {}})
+        try:
+            self.assertIsInstance(store.store, SQLiteKillSwitchStore)
+            self.assertEqual(store.on_store_failure, "last_known")
+        finally:
+            store.close()
+
+    def test_production_defaults_to_deny_on_failure(self) -> None:
+        store = build_kill_switch_store({"kill_switches": {}}, production=True)
+        try:
+            self.assertEqual(store.on_store_failure, "deny")
+        finally:
+            store.close()
+
+    def test_redis_backend_dispatches_to_the_redis_store(self) -> None:
+        # Without JUDIKT_REDIS_URL configured, RedisKillSwitchStore itself
+        # raises -- this confirms build_kill_switch_store dispatches "redis"
+        # to that class rather than reaching a live server.
+        with unittest.mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("JUDIKT_REDIS_URL", None)
+            with self.assertRaisesRegex(ValueError, "requires a Redis URL"):
+                build_kill_switch_store(
+                    {"kill_switches": {"backend": "redis", "cache_ttl_seconds": 1}}
+                )
 
 
 class KillSwitchWrapIntegrationTest(unittest.TestCase):
