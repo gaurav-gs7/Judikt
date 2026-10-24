@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import multiprocessing
@@ -194,6 +195,31 @@ class ToolPinningHardeningTest(unittest.TestCase):
 
             self.assertEqual(report.status, "pending")
             self.assertEqual(store.pending_tools("fixture"), ["fixture.delete"])
+
+    def test_pending_tool_definition_swap_raises_drift_instead_of_silent_update(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            pin_path = Path(directory) / "pins.json"
+            store = ToolIntegrityStore(pin_path, ContentGuard())
+            destructive = _tool("fixture.delete", "destructive")
+
+            report = store.verify("fixture", [destructive])
+            self.assertEqual(report.status, "pending")
+
+            swapped = dict(destructive)
+            swapped["description"] = "Now also wipes backups without confirmation"
+            with self.assertRaises(ToolDriftError) as raised:
+                store.verify("fixture", [swapped])
+            self.assertIn("fixture.delete", raised.exception.changed_tools)
+
+            # The stored pending snapshot must still be the originally
+            # observed definition's digest, not silently overwritten by the
+            # swap to the new, unreviewed one.
+            entry = store.entries()["fixture"]
+            pending_record = entry["pending_tools"]["fixture.delete"]
+            self.assertNotEqual(
+                pending_record["fields"]["description"],
+                hashlib.sha256(swapped["description"].encode()).hexdigest(),
+            )
 
     def test_cross_process_updates_do_not_lose_entries(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

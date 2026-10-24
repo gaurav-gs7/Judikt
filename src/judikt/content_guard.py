@@ -129,10 +129,12 @@ _AGENT_CUE = re.compile(
 # A destination or recipient for data: a URL, an email address, an external
 # host, a chat channel, or an explicitly external party. Generic words such
 # as "webhook" or "endpoint" are not destinations on their own; operational
-# docs routinely say a webhook carries a secret in a header.
+# docs routinely say a webhook carries a secret in a header. Directing
+# something "to" a webhook or endpoint, though, names it as a recipient the
+# same way "to the external party" does.
 _DESTINATION_CUE = re.compile(
     r"https?://|\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b|\bcollector\b|\battacker\b|\.invalid\b"
-    r"|\bto\s+(?:the\s+)?(?:external|remote|third[- ]party|outside)\b"
+    r"|\bto\s+(?:the\s+|an?\s+)?(?:external|remote|third[- ]party|outside|webhook|endpoint)\b"
     r"|\bto\s+(?:https?://)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|dev|app|xyz|ru|cn|example|invalid|sh|me|co)\b"
     r"|\bto\s+#[a-z0-9_-]+",
     re.IGNORECASE,
@@ -430,14 +432,28 @@ class ContentGuard:
                 if _inside_security_discussion(text, match.start(), match.end()):
                     continue
                 severity = _rule_severity(name, text, match, suffix)
-                in_example = any(
-                    start <= match.start() and match.end() <= end for start, end in examples
+                example_span = next(
+                    (
+                        (start, end)
+                        for start, end in examples
+                        if start <= match.start() and match.end() <= end
+                    ),
+                    None,
                 )
-                if in_example and not has_structural_marker and "__decoded_" not in suffix:
-                    # Explicitly framed and quoted as an example: one level lower,
-                    # and then treated like any other quoted context.
+                if example_span is not None and not has_structural_marker and "__decoded_" not in suffix:
+                    example_text = text[example_span[0] : example_span[1]]
+                    has_attack_target = bool(
+                        _DESTINATION_CUE.search(example_text) or _AGENT_ADDRESS.search(example_text)
+                    )
+                    # Explicitly framed and quoted as an example: one level lower.
+                    # A bare illustrative phrase ("such as 'ignore previous
+                    # instructions'") is then treated like any other quoted
+                    # context and dropped; one that also names a concrete
+                    # destination or directly addresses the agent is a real
+                    # payload wearing an example label, so it stays a finding
+                    # at the downgraded severity instead of being dropped.
                     severity = _SEVERITY_DOWNGRADE[severity]
-                    if severity != "high":
+                    if severity != "high" and not has_attack_target:
                         continue
                 if severity != "high" and _inside_quoted_context(match.start(), match.end(), quoted):
                     continue

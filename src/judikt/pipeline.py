@@ -733,7 +733,7 @@ def _catalog_failure(server: str, exc: Exception) -> tuple[str, str]:
 def _tool_integrity_reason(exc: ToolIntegrityError) -> str:
     if not isinstance(exc, ToolDriftError):
         return str(exc)
-    names = [*exc.added_tools, *exc.removed_tools, *exc.changed_tools]
+    names = [*exc.added_tools, *exc.removed_tools, *exc.changed_tools, *exc.pending_tools]
     if all(MCP_TOOL_NAME_PATTERN.fullmatch(str(name)) for name in names):
         return exc.one_line()
     # Tool names are upstream-controlled; never echo names that fall outside

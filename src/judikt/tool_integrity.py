@@ -240,7 +240,7 @@ class ToolIntegrityStore:
 
             pinned = _pinned_tools(observed)
             pending = _pending_tools(observed)
-            drift = self._drift(server, pinned, tools)
+            drift = self._drift(server, pinned, tools, pending=pending)
             if drift.removed_tools or drift.changed_tools:
                 raise drift
 
@@ -471,14 +471,21 @@ class ToolIntegrityStore:
         pending: dict[str, Any] | None = None,
     ) -> ToolDriftError:
         current = _tool_records(tools)
-        pending_names = sorted(set(pending or {}) & set(current))
+        pending = pending or {}
+        pending_names = sorted(set(pending) & set(current))
         added = sorted(set(current) - set(pinned) - set(pending_names))
         removed = sorted(set(pinned) - set(current))
         changed = {}
-        for name in sorted(set(pinned) & set(current)):
-            if pinned[name].get("digest") == current[name]["digest"]:
+        # A pending tool is compared against its first-observed record too:
+        # an upstream that swaps a tool's definition while it still awaits
+        # first-use approval must surface as drift, not be accepted silently
+        # into the stored pending snapshot.
+        baseline = {**pending, **pinned}
+        for name in sorted((set(pinned) | set(pending_names)) & set(current)):
+            reference = baseline[name]
+            if reference.get("digest") == current[name]["digest"]:
                 continue
-            old_fields = pinned[name].get("fields", {})
+            old_fields = reference.get("fields", {})
             fields = [
                 field
                 for field in PIN_FIELDS
