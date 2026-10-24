@@ -172,7 +172,7 @@ The Terraform ECR repository uses `force_delete = true` by default so demo clean
 
 ## Alternate Path: CloudFormation
 
-Use this if you want the simpler AWS-native path or want to compare both IaC styles in an interview.
+Use this if you want the simpler AWS-native path or want to compare both IaC styles.
 
 ## 1. Build And Push The Image
 

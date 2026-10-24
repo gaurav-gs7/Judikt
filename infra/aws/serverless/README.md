@@ -106,6 +106,6 @@ Open the CloudWatch dashboard named `judikt-serverless-ops`.
 ./scripts/aws/destroy_serverless.sh
 ```
 
-## Interview Framing
+## When To Choose This Path
 
-This path is stronger than the EC2 path for AIOps/LLMOps roles because it demonstrates event-driven architecture, serverless security boundaries, DynamoDB state modeling, custom CloudWatch metrics, alarms, operational audit trails, and Terraform-managed cloud infrastructure.
+Choose the serverless path over EC2 when you want event-driven processing, per-function security boundaries, DynamoDB-backed state, custom CloudWatch metrics and alarms, and Terraform-managed infrastructure without a long-running host.

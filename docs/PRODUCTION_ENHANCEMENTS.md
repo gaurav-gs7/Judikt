@@ -168,7 +168,7 @@ export JUDIKT_AUDIT_SINK_STRICT=true
 
 For Splunk HTTP Event Collector, set `JUDIKT_SIEM_PROTOCOL=splunk_hec` and point `JUDIKT_SIEM_URL` at `/services/collector/event`. Generic JSON uses bearer authentication; Splunk uses HEC authentication. Both contracts include a SHA-256 body digest, and `JUDIKT_SIEM_HMAC_SECRET` or its brokered equivalent adds `X-Judikt-Signature-256`. Non-loopback HTTP, URL credentials, query tokens, malformed protocols, and invalid timeouts fail closed.
 
-Interview angle:
+Design note:
 
 > Judikt separates transport authentication from tool authorization. JWT proves caller identity at the HTTP boundary; policy-as-code still decides which actor can run each tool.
 
@@ -289,6 +289,6 @@ Useful production values:
 --set serviceMonitor.enabled=true
 ```
 
-Interview angle:
+Design note:
 
 > The same real MCP server can run locally, on AWS EC2, or as a Kubernetes workload via Helm, with consistent policy, auth, metrics, tracing, and rate-limit behavior.

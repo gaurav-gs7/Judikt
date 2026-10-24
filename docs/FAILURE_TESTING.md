@@ -33,6 +33,6 @@ How this is used:
 - before enabling any new destructive tool
 - after policy or redaction rule changes
 
-Interview framing:
+Why this exists:
 
-> The project does not only test happy paths. It has an explicit failure-mode harness for operational safety controls: approval gates, kill switches, circuit breakers, redaction, and rate limits.
+> Safety controls are tested in their failure modes, not only on the happy path. The harness exercises approval gates, kill switches, circuit breakers, redaction, and rate limits.

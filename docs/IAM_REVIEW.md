@@ -1,6 +1,6 @@
 # IAM Review
 
-This document explains why each AWS permission exists. It is useful for interviews and for keeping the project honest about least privilege.
+This document explains why each AWS permission exists. It keeps the project honest about least privilege.
 
 ## EC2 Real MCP Deployment
 

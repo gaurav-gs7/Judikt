@@ -91,6 +91,6 @@ Use this shape for the deploy role trust policy, replacing owner/repo:
 }
 ```
 
-## Interview Framing
+## Design Rationale
 
 > CI validates policy, failure modes, Terraform, Lambda packaging, and Docker builds. Deployment is manually gated through GitHub Actions OIDC and environment approvals, so there are no static AWS keys in the repo.

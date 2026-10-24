@@ -1,6 +1,6 @@
 # Judikt Design Notes
 
-These notes capture the main engineering choices behind Judikt and are useful for interview walkthroughs.
+These notes record the main engineering choices behind Judikt and the reasoning for each.
 
 ## Core Boundary
 

@@ -64,6 +64,6 @@ Local/EC2 Prometheus-style metrics:
 curl -H "Authorization: Bearer $JUDIKT_HTTP_BEARER_TOKEN" http://<host>:8080/metrics
 ```
 
-## Interview Framing
+## Design Rationale
 
-> I separated AI-aware tracing from cloud-native tracing. OpenInference spans explain tool-governance decisions, while AWS X-Ray and CloudWatch explain infrastructure latency and failures.
+> AI-aware tracing and cloud-native tracing are kept separate. OpenInference spans explain tool-governance decisions, while AWS X-Ray and CloudWatch explain infrastructure latency and failures.
