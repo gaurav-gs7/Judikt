@@ -74,12 +74,13 @@ CASES = [
         "approval token is required",
     ),
     EvalCase(
-        "dry-run kubernetes restart without execution",
+        "server-side dry-run kubernetes restart without mutation",
         "kubernetes",
         "kubernetes.restart_pod",
         {
             "namespace": "prod",
             "pod": "payment-service-xyz",
+            "idempotency_key": "eval-dry-run-payment-service-xyz",
             "actor": "demo-operator",
             "rollback_plan": ROLLBACK_PLAN,
             "dry_run": True,

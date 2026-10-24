@@ -37,6 +37,26 @@ flowchart LR
 - `kubernetes`: pod status, guarded pod restart, and rollout status. It uses a safe simulator by default and can be pointed at `kubectl` with `JUDIKT_KUBERNETES_MODE=kubectl` for a controlled lab.
 - `incident`: create incidents, attach correlated evidence, and read timelines.
 
+### Kubernetes Restart Safety
+
+`kubernetes.restart_pod` models the same guarded workflow in simulator and `kubectl` modes. It validates DNS-1123 namespace and pod names, requires an explicit `kubernetes.context` for `kubectl`, resolves a ReplicaSet to its Deployment (or accepts a direct StatefulSet/DaemonSet owner), checks the workload availability floor, and refuses a matching PDB with zero allowed disruptions. Bare pods fail with `unowned_pod`; unsafe capacity fails with `would_cause_downtime`; blocked disruption budgets fail with `pdb_blocks`. A single-replica workload requires an explicit `allow_downtime: true`, which remains covered by approval argument hashing.
+
+Production targets require `idempotency_key`. Judikt stores the exact result and returns it for a repeated key without evicting twice. The action uses the Kubernetes Eviction API; delete fallback is disabled unless `kubernetes.allow_delete_fallback` is explicitly enabled. It then waits for a different Ready pod under the same direct owner and for workload availability to recover to its pre-action level. Results use `status: verified`, `already_restarted`, `timed_out`, or `failed` and include `old_pod`, `new_pod`, `owner`, phase durations, and checks. Timeout and failure results are MCP errors and emit findings through the existing durable outbox.
+
+```json
+{
+  "kubernetes": {
+    "context": "production-us-east-1",
+    "allow_delete_fallback": false,
+    "subprocess_timeout_seconds": 20,
+    "verification_timeout_seconds": 180,
+    "poll_interval_seconds": 3
+  }
+}
+```
+
+`dry_run: true` still performs ownership, availability, and PDB preflight, then submits the eviction with `--dry-run=server`; it does not mutate the workload. Every `kubectl` invocation uses the configured `--context`, a fixed argument vector without a shell, and a bounded subprocess timeout.
+
 ### Content Security Pipeline
 
 Judikt treats MCP arguments, tool definitions, and tool results as untrusted content. Each inspected string is checked directly and through normalized variants that remove invisible controls, map common lookalike and leetspeak characters, and collapse spaced-letter obfuscation. Candidate base64, hex, and URL-encoded payloads are decoded and rescanned, while strings from the same object are also joined for a bounded pass that catches instructions split across JSON fields.

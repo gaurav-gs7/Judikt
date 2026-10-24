@@ -14,6 +14,13 @@
   "tool_pinning": {
     "first_use": "auto"
   },
+  "kubernetes": {
+    "context": "",
+    "allow_delete_fallback": false,
+    "subprocess_timeout_seconds": 20,
+    "verification_timeout_seconds": 180,
+    "poll_interval_seconds": 3
+  },
   "risk": {
     "tier_scores": {
       "read": 10,

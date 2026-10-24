@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -92,8 +94,12 @@ class PlatformOpsBackendTest(unittest.TestCase):
 
 class KubernetesBackendTest(unittest.TestCase):
     def test_simulator_supports_all_tools_and_unknown_paths(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
         with patch.dict(os.environ, {"JUDIKT_KUBERNETES_MODE": "simulated"}, clear=False):
-            backend = KubernetesBackend()
+            backend = KubernetesBackend(
+                {"state_db": str(Path(directory.name) / "kubernetes.db")}
+            )
         pod = backend.call(
             "kubernetes.get_pod",
             {"namespace": "prod", "pod": "payment-service-xyz"},
@@ -101,9 +107,14 @@ class KubernetesBackendTest(unittest.TestCase):
         self.assertTrue(pod["ready"])
         restarted = backend.call(
             "kubernetes.restart_pod",
-            {"namespace": "prod", "pod": "payment-service-xyz"},
+            {
+                "namespace": "prod",
+                "pod": "payment-service-xyz",
+                "idempotency_key": "backend-test-restart",
+            },
         )
-        self.assertEqual(restarted["restarts"], 1)
+        self.assertEqual(restarted["status"], "verified")
+        self.assertTrue(restarted["new_pod"].startswith("payment-service-replacement-"))
         self.assertIn("last_restart_at", backend.pods[("prod", "payment-service-xyz")])
         rollout = backend.call(
             "kubernetes.rollout_status",
@@ -131,25 +142,26 @@ class KubernetesBackendTest(unittest.TestCase):
         ), self.assertRaisesRegex(ValueError, "simulated or kubectl"):
             KubernetesBackend()
 
-    def test_kubectl_mode_uses_fixed_argument_vectors_for_all_tools(self) -> None:
+    def test_kubectl_mode_uses_context_and_fixed_argument_vectors_for_read_tools(self) -> None:
         calls: list[list[str]] = []
 
         def run(command: list[str], **kwargs: object) -> SimpleNamespace:
             calls.append(command)
-            if command[1:3] == ["get", "pod"]:
+            if command[3:5] == ["get", "pod"]:
                 return SimpleNamespace(returncode=0, stdout='{"status":{"phase":"Running"}}', stderr="")
             return SimpleNamespace(returncode=0, stdout="successful", stderr="")
 
         with patch.dict(
-            os.environ, {"JUDIKT_KUBERNETES_MODE": "kubectl"}, clear=False
+            os.environ,
+            {
+                "JUDIKT_KUBERNETES_MODE": "kubectl",
+                "JUDIKT_KUBERNETES_CONTEXT": "test-cluster",
+            },
+            clear=False,
         ), patch("judikt.backends.subprocess.run", side_effect=run):
             backend = KubernetesBackend()
             pod = backend.call(
                 "kubernetes.get_pod", {"namespace": "prod", "pod": "payments-abc"}
-            )
-            restart = backend.call(
-                "kubernetes.restart_pod",
-                {"namespace": "prod", "pod": "payments-abc"},
             )
             rollout = backend.call(
                 "kubernetes.rollout_status",
@@ -157,18 +169,45 @@ class KubernetesBackendTest(unittest.TestCase):
             )
 
         self.assertEqual(pod["status"]["phase"], "Running")
-        self.assertEqual(restart["status"], "delete_requested")
         self.assertEqual(rollout["status"], "successful")
         self.assertEqual(
             calls,
             [
-                ["kubectl", "get", "pod", "payments-abc", "-n", "prod", "-o", "json"],
-                ["kubectl", "delete", "pod", "payments-abc", "-n", "prod", "--wait=false"],
-                ["kubectl", "rollout", "status", "deployment/payments", "-n", "prod"],
+                [
+                    "kubectl",
+                    "--context",
+                    "test-cluster",
+                    "get",
+                    "pod",
+                    "payments-abc",
+                    "-n",
+                    "prod",
+                    "-o",
+                    "json",
+                ],
+                [
+                    "kubectl",
+                    "--context",
+                    "test-cluster",
+                    "rollout",
+                    "status",
+                    "deployment/payments",
+                    "-n",
+                    "prod",
+                ],
             ],
         )
 
     def test_kubectl_failures_are_bounded_and_do_not_leak_stderr(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "JUDIKT_KUBERNETES_MODE": "kubectl",
+                "JUDIKT_KUBERNETES_CONTEXT": "test-cluster",
+            },
+            clear=False,
+        ):
+            backend = KubernetesBackend()
         failures = [
             (FileNotFoundError(), "executable was not found"),
             (subprocess.TimeoutExpired(["kubectl"], 20), "timed out"),
@@ -177,7 +216,7 @@ class KubernetesBackendTest(unittest.TestCase):
             with self.subTest(message=message), patch(
                 "judikt.backends.subprocess.run", side_effect=failure
             ), self.assertRaisesRegex(MCPProtocolError, message):
-                KubernetesBackend._kubectl(["get", "pod", "x"])
+                backend._kubectl(["get", "pod", "x"])
 
         with patch(
             "judikt.backends.subprocess.run",
@@ -185,7 +224,7 @@ class KubernetesBackendTest(unittest.TestCase):
                 returncode=7, stdout="", stderr="token=private-cluster-secret"
             ),
         ), self.assertRaisesRegex(MCPProtocolError, "exit code 7") as raised:
-            KubernetesBackend._kubectl(["get", "pod", "x"])
+            backend._kubectl(["get", "pod", "x"])
         self.assertNotIn("private-cluster-secret", str(raised.exception))
 
         invalid_json = ["not-json", "[]"]
@@ -193,7 +232,7 @@ class KubernetesBackendTest(unittest.TestCase):
             with self.subTest(output=output), patch(
                 "judikt.backends.KubernetesBackend._kubectl", return_value=output
             ), self.assertRaisesRegex(MCPProtocolError, "malformed JSON|non-object"):
-                KubernetesBackend()._kubectl_json(["get", "pod", "x"])
+                backend._kubectl_json(["get", "pod", "x"])
 
 
 class IncidentBackendTest(unittest.TestCase):

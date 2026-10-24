@@ -28,6 +28,28 @@ class UpstreamTimeoutError(MCPProtocolError):
     pass
 
 
+class GuardedToolError(MCPProtocolError):
+    def __init__(
+        self,
+        rule: str,
+        message: str,
+        result: dict[str, Any],
+        *,
+        operational_failure: bool = False,
+    ) -> None:
+        super().__init__(message, code=-32042)
+        self.rule = rule
+        self.result = result
+        self.operational_failure = operational_failure
+
+    def as_data(self) -> dict[str, Any]:
+        return {
+            "rule": self.rule,
+            "result": self.result,
+            "operational_failure": self.operational_failure,
+        }
+
+
 class UpstreamExitedError(MCPProtocolError):
     pass
 
@@ -136,14 +158,17 @@ def serve_stdio(
                 raise MCPProtocolError(f"unsupported method: {method}")
             write({"jsonrpc": "2.0", "id": request_id, "result": result})
         except Exception as exc:  # Keep the MCP server alive for the next request.
+            error = {
+                "code": exc.code if isinstance(exc, MCPProtocolError) else -32000,
+                "message": str(exc),
+            }
+            if isinstance(exc, GuardedToolError):
+                error["data"] = exc.as_data()
             write(
                 {
                     "jsonrpc": "2.0",
                     "id": message.get("id") if isinstance(message, dict) else None,
-                    "error": {
-                        "code": exc.code if isinstance(exc, MCPProtocolError) else -32000,
-                        "message": str(exc),
-                    },
+                    "error": error,
                 }
             )
 
@@ -488,6 +513,20 @@ class StdioMCPClient:
         if "error" in response:
             error = response.get("error")
             message = error.get("message") if isinstance(error, dict) else None
+            data = error.get("data") if isinstance(error, dict) else None
+            if (
+                isinstance(error, dict)
+                and error.get("code") == -32042
+                and isinstance(data, dict)
+                and isinstance(data.get("rule"), str)
+                and isinstance(data.get("result"), dict)
+            ):
+                raise GuardedToolError(
+                    data["rule"],
+                    str(message or "guarded upstream operation was refused"),
+                    data["result"],
+                    operational_failure=data.get("operational_failure") is True,
+                )
             raise MCPProtocolError(str(message or "upstream returned a JSON-RPC error"))
         result = response.get("result")
         if not isinstance(result, dict):

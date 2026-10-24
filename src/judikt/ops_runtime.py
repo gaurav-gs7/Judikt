@@ -84,7 +84,14 @@ class JudiktOpsRuntime:
         self.telemetry = Telemetry()
         self.demo_servers_enabled = include_demo_servers
         self.platform = PlatformOpsBackend() if include_demo_servers else None
-        self.kubernetes = KubernetesBackend() if include_demo_servers else None
+        kubernetes_config = self.policy.config.get("kubernetes", {})
+        self.kubernetes = (
+            KubernetesBackend(
+                kubernetes_config if isinstance(kubernetes_config, dict) else {}
+            )
+            if include_demo_servers
+            else None
+        )
         self.incidents = IncidentBackend() if include_demo_servers else None
         self.external_clients: dict[str, Any] = {}
         pin_metadata: dict[str, ToolPinMetadata] = {}

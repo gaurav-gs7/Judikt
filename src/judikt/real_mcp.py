@@ -339,6 +339,8 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
         pod: str,
         actor: str,
         rollback_plan: str,
+        idempotency_key: str = "",
+        allow_downtime: bool = False,
         environment: str = "production",
         approval_token: str = "",
         dry_run: bool = False,
@@ -353,6 +355,8 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
                 {
                 "namespace": namespace,
                 "pod": pod,
+                "idempotency_key": idempotency_key,
+                "allow_downtime": allow_downtime,
                 "actor": actor,
                 "environment": environment,
                 "rollback_plan": rollback_plan,

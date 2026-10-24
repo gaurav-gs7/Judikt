@@ -13,7 +13,12 @@ from .kill_switch import KillSwitchStore, KillSwitchUnavailable
 from .metrics import Metrics
 from .models import PolicyDecision, ToolCallResult
 from .policy import PolicyEngine
-from .protocol import MCPProtocolError, UpstreamTimeoutError, is_mcp_tool_error
+from .protocol import (
+    GuardedToolError,
+    MCPProtocolError,
+    UpstreamTimeoutError,
+    is_mcp_tool_error,
+)
 from .request_context import authenticated_subject
 from .telemetry import Telemetry
 from .tool_integrity import ToolDriftError, ToolIntegrityError, ToolIntegrityStore
@@ -185,7 +190,20 @@ class GuardedCallPipeline:
                 rule = "audit_backpressure"
                 reason = "audit delivery backlog exceeded the configured safety threshold"
             if allowed:
-                if decision.action in {"DRY_RUN_ONLY", "SHADOW_MODE"}:
+                if decision.action == "DRY_RUN_ONLY" and _executes_server_dry_run(
+                    server,
+                    tool,
+                    arguments,
+                ):
+                    allowed, rule, reason, result, mcp_result = self._execute_guarded(
+                        server=server,
+                        tool=tool,
+                        arguments=arguments,
+                        safe_arguments=safe_arguments,
+                        correlation_id=correlation_id,
+                        evidence=evidence,
+                    )
+                elif decision.action in {"DRY_RUN_ONLY", "SHADOW_MODE"}:
                     result = _evaluation_only_result(
                         decision.action, server, tool, safe_arguments
                     )
@@ -461,6 +479,16 @@ class GuardedCallPipeline:
             reason = str(exc)
             self.circuits.record_failure(server, tool, reason)
             return False, "upstream_timeout", reason, None, None
+        except GuardedToolError as exc:
+            if exc.operational_failure:
+                self.circuits.record_failure(server, tool, str(exc))
+            mcp_result = {
+                "content": [{"type": "text", "text": str(exc)}],
+                "structuredContent": exc.result,
+                "isError": True,
+                "_meta": {"io.judikt/backend-rule": exc.rule},
+            }
+            return False, exc.rule, str(exc), exc.result, mcp_result
         except MCPProtocolError as exc:
             reason = str(exc)
             self.circuits.record_failure(server, tool, reason)
@@ -575,6 +603,18 @@ def _evaluation_only_result(
         "arguments": safe_arguments,
         "message": "Judikt evaluated policy and intentionally skipped execution.",
     }
+
+
+def _executes_server_dry_run(
+    server: str,
+    tool: str,
+    arguments: dict[str, Any],
+) -> bool:
+    return (
+        server == "kubernetes"
+        and tool == "kubernetes.restart_pod"
+        and arguments.get("dry_run") is True
+    )
 
 
 def _is_mcp_result(value: Any) -> bool:

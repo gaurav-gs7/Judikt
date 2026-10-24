@@ -30,6 +30,8 @@ DEFAULT_FINDING_RULES = {
     "inbound_prompt_injection",
     "kill_switch",
     "rate_limit",
+    "restart_failed",
+    "restart_verification_timeout",
     "token_passthrough",
     "tool_integrity",
 }

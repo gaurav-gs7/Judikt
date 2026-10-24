@@ -136,6 +136,7 @@ class JudiktOpsRuntimeTest(unittest.TestCase):
                 {
                     "namespace": "prod",
                     "pod": "payment-service-xyz",
+                    "idempotency_key": "ops-runtime-dry-run",
                     "actor": "demo-operator",
                     "rollback_plan": ROLLBACK_PLAN,
                     "dry_run": True,
@@ -146,7 +147,8 @@ class JudiktOpsRuntimeTest(unittest.TestCase):
             self.assertEqual(missing_actor.rule, "authz")
             self.assertTrue(dry_run.allowed)
             self.assertEqual(dry_run.action, "DRY_RUN_ONLY")
-            self.assertFalse(dry_run.result["executed"])
+            self.assertTrue(dry_run.result["dry_run"])
+            self.assertEqual(dry_run.result["status"], "verified")
         finally:
             runtime.close()
 

@@ -28,6 +28,7 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
             "JUDIKT_TELEMETRY": "disabled",
             "JUDIKT_TOOL_PIN_PATH": str(root / "pins.json"),
             "JUDIKT_CONTROL_DB": str(root / "control.db"),
+            "XDG_STATE_HOME": str(root / "state"),
             "JUDIKT_UPSTREAM_CONFIG": "",
             "JUDIKT_DEMO_MODE": "true",
             "GROQ_API_KEY": "",
@@ -150,6 +151,7 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
         restart_pod_arguments = {
             "namespace": "prod",
             "pod": "payment-service-xyz",
+            "idempotency_key": "stdio-e2e-pod-restart",
             "actor": "sre-oncall",
             "environment": "production",
             "rollback_plan": "wait for replacement and restore workload if readiness fails",
@@ -165,7 +167,8 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
             "kubernetes.restart_pod",
             {**restart_pod_arguments, "approval_token": pod_token},
         )
-        self.assertEqual(restarted_pod["structuredContent"]["status"], "completed")
+        self.assertEqual(restarted_pod["structuredContent"]["status"], "verified")
+        self.assertTrue(restarted_pod["structuredContent"]["new_pod"])
         rollout = self.client.call_tool(
             "kubernetes.rollout_status",
             {"namespace": "prod", "deployment": "payment-service"},

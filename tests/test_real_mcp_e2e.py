@@ -273,6 +273,7 @@ class RealMCPStreamableHTTPEndToEndTest(unittest.TestCase):
                         {
                             "namespace": "prod",
                             "pod": "payment-service-xyz",
+                            "idempotency_key": "real-mcp-e2e-dry-run",
                             "actor": "sre-oncall",
                             "rollback_plan": "wait for replacement and restore workload if readiness fails",
                             "dry_run": True,

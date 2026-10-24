@@ -100,3 +100,32 @@ Actions:
 - search audit table or SQLite audit DB for leaked patterns
 - add a redaction pattern and regression test
 - rerun `./scripts/run_evals.sh`
+
+## Runbook: Kubernetes Pod Restart Refused Or Unverified
+
+Signals:
+
+- MCP error rule `unowned_pod`, `would_cause_downtime`, or `pdb_blocks`
+- MCP error rule `restart_verification_timeout` or `restart_failed`
+- a restart result with `status: timed_out` or `failed`
+- a correlated finding in the Judikt finding outbox or Argus
+
+Triage:
+
+```bash
+kubectl --context <configured-context> get pod <pod> -n <namespace> -o json
+kubectl --context <configured-context> get pdb -n <namespace> -o json
+kubectl --context <configured-context> get deployment,statefulset,daemonset -n <namespace>
+judikt audit status
+judikt audit verify --full
+```
+
+Actions:
+
+- confirm the pod is controlled by a Deployment, StatefulSet, or DaemonSet; do not bypass `unowned_pod` for a bare pod
+- restore workload availability or adjust a reviewed rollout strategy before retrying `would_cause_downtime`
+- investigate the matching PDB and workload health instead of deleting around `pdb_blocks`
+- use a new `idempotency_key` only for a genuinely new operation; retries of the same operation must reuse the original key
+- inspect `old_pod`, `new_pod`, `owner`, `durations`, and `checks` in the structured error result
+- if the old pod is gone, verify that the recorded replacement is Ready and availability recovered before closing the incident
+- keep `kubernetes.allow_delete_fallback` disabled unless an explicit operational review accepts bypassing Eviction API enforcement

@@ -96,6 +96,7 @@ def _run_demo(runtime: JudiktRuntime) -> None:
         {
             "namespace": "prod",
             "pod": "payment-service-xyz",
+            "idempotency_key": "demo-dry-run-payment-service-xyz",
             "actor": "demo-operator",
             "environment": "production",
             "rollback_plan": ROLLBACK_PLAN,
@@ -203,7 +204,15 @@ def _call(
 
 
 def _processing(result: ToolCallResult) -> None:
-    executed = result.allowed and result.action not in {"DRY_RUN_ONLY", "SHADOW_MODE"}
+    server_dry_run = (
+        result.allowed
+        and result.action == "DRY_RUN_ONLY"
+        and isinstance(result.result, dict)
+        and result.result.get("dry_run") is True
+    )
+    executed = result.allowed and (
+        result.action not in {"DRY_RUN_ONLY", "SHADOW_MODE"} or server_dry_run
+    )
     if result.rule in {"inbound_prompt_injection", "upstream_error", "tool_integrity"}:
         executed = result.rule != "tool_integrity"
 
@@ -214,7 +223,10 @@ def _processing(result: ToolCallResult) -> None:
     )
     if executed:
         print("  tool_integrity.verify -> PASS, pinned definition unchanged")
-        print("  protocol.tools/call   -> EXECUTED in MCP child process")
+        if server_dry_run:
+            print("  protocol.tools/call   -> EXECUTED server-side dry run after preflight")
+        else:
+            print("  protocol.tools/call   -> EXECUTED in MCP child process")
         if result.rule == "inbound_prompt_injection":
             print("  content_guard.inspect -> QUARANTINE, unsafe text withheld")
         else:
