@@ -290,6 +290,23 @@ class AuthenticatorTest(unittest.TestCase):
         finally:
             reset_authenticated_subject(admin)
 
+    def test_bound_claims_are_isolated_from_caller_mutation(self) -> None:
+        claims = {"scope": "mcp:admin"}
+        context = bind_authenticated_subject("platform-admin", claims)
+        claims["scope"] = "mcp:read"
+        try:
+            self.assertTrue(is_control_plane_admin())
+        finally:
+            reset_authenticated_subject(context)
+
+        nested_claims = {"groups": ["mcp-read"]}
+        context = bind_authenticated_subject("reader", nested_claims)
+        nested_claims["groups"].append("mcp-admin")
+        try:
+            self.assertFalse(is_control_plane_admin())
+        finally:
+            reset_authenticated_subject(context)
+
     def test_explicit_roles_deny_unauthenticated_admin_and_map_scopes_and_groups(self) -> None:
         self.assertFalse(is_control_plane_admin())
         self.assertFalse(has_control_plane_role("approve"))

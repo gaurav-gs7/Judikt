@@ -17,7 +17,7 @@ from judikt.approval import ApprovalAuthority
 from judikt.paths import DEFAULT_POLICY_PATH
 from judikt.metrics import Metrics
 from judikt.protocol import StdioMCPClient, UpstreamTimeoutError
-from judikt.remote_protocol import StreamableHTTPMCPClient
+from judikt.remote_protocol import StreamableHTTPMCPClient, _http_timeout
 from judikt.runtime import JudiktRuntime
 from judikt.upstreams import (
     UpstreamConfigError,
@@ -355,6 +355,19 @@ class RemoteUpstreamEndToEndTest(unittest.TestCase):
 
 
 class RemoteUpstreamSecurityTest(unittest.TestCase):
+    def test_transport_bounds_connect_write_and_pool_but_not_stream_reads(self) -> None:
+        import httpx
+
+        timeout = _http_timeout(
+            httpx,
+            {"initialize": 2.0, "list": 3.0, "call": 4.0},
+        )
+
+        self.assertEqual(timeout.connect, 2.0)
+        self.assertIsNone(timeout.read)
+        self.assertEqual(timeout.write, 4.0)
+        self.assertEqual(timeout.pool, 2.0)
+
     def test_ssrf_and_transport_rules(self) -> None:
         refused = (
             "https://169.254.169.254/mcp",

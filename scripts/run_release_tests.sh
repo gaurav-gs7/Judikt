@@ -33,6 +33,9 @@ export PYTHONPATH=src
 
 ./scripts/python.sh -m coverage erase
 ./scripts/python.sh -m coverage run --branch --source=judikt -m unittest discover -s tests -v
+./scripts/python.sh -m coverage run -m judikt.cli eval
+./scripts/python.sh -m coverage run -m judikt.failure_tests
+./scripts/python.sh -m coverage combine
 ./scripts/python.sh -m coverage report --show-missing --fail-under=85
 ./scripts/python.sh -m coverage json -o build/release-coverage.json
 
@@ -40,8 +43,6 @@ CRITICAL_MODULES="src/judikt/audit_sink.py,src/judikt/performance.py,src/judikt/
 ./scripts/python.sh -m coverage report --include="${CRITICAL_MODULES}" --show-missing --fail-under=100
 ./scripts/python.sh -m coverage json --include="${CRITICAL_MODULES}" -o build/critical-coverage.json
 
-./scripts/run_evals.sh
-./scripts/run_failure_tests.sh
 ./scripts/run_attackbench.sh \
   tests/fixtures/attackbench_smoke.jsonl \
   build/attackbench-smoke.json \

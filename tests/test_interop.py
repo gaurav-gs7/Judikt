@@ -86,3 +86,49 @@ class CommunityInteropTest(unittest.TestCase):
         self.assertFalse(report["passed"])
         self.assertIn("error_hash", report["results"][0])
         self.assertNotIn("secret-upstream-tool-name", json.dumps(report))
+
+    def test_pending_write_tools_do_not_fail_safe_read_interoperability(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            sandbox = Path(directory)
+            profile_path = sandbox / "profiles.json"
+            profile_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "profiles": {
+                            "mixed-fixture": {
+                                "implementation": "independent/test-fixture",
+                                "version": "1.0.0",
+                                "source_url": "https://example.test/mixed-fixture",
+                                "command": [
+                                    sys.executable,
+                                    str(FIXTURE),
+                                    "policy-profiles",
+                                    str(sandbox / "calls.jsonl"),
+                                ],
+                                "expected_tools": ["read_file", "update_issue"],
+                                "safe_call": {
+                                    "tool": "read_file",
+                                    "arguments": {"target": "fixture.txt"},
+                                },
+                                "ci": True,
+                            }
+                        },
+                    }
+                )
+            )
+            policy = json.loads((PROJECT_ROOT / "config" / "policies.yaml").read_text())
+            policy["tool_pinning"]["first_use"] = {
+                "read": "auto",
+                "write": "require_approval",
+                "destructive": "require_approval",
+            }
+            policy_path = sandbox / "policy.json"
+            policy_path.write_text(json.dumps(policy))
+
+            report = run_interop_profiles(profile_path, policy_path)
+
+        self.assertTrue(report["passed"])
+        self.assertEqual(report["results"][0]["metadata_first_check"], "pending")
+        self.assertEqual(report["results"][0]["metadata_reconnect_check"], "pending")
+        self.assertGreater(report["results"][0]["metadata_pending_count"], 0)

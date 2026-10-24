@@ -180,7 +180,7 @@ class StreamableHTTPMCPClient:
 
         async with httpx.AsyncClient(
             headers=self._headers,
-            timeout=None,
+            timeout=_http_timeout(httpx, self._timeouts),
             follow_redirects=False,
             transport=transport,
             event_hooks={"response": [reject_redirects_and_large_responses]},
@@ -456,6 +456,15 @@ def _bounded_transport(httpx: Any, limit: int) -> Any:
             await self._transport.aclose()
 
     return BoundedTransport()
+
+
+def _http_timeout(httpx: Any, timeouts: dict[str, float]) -> Any:
+    return httpx.Timeout(
+        None,
+        connect=timeouts["initialize"],
+        write=max(timeouts.values()),
+        pool=timeouts["initialize"],
+    )
 
 
 def _run_handler(handler: NotificationHandler, message: dict[str, Any]) -> None:

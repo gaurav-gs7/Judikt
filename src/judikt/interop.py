@@ -132,7 +132,8 @@ def _run_profile(profile: InteropProfile, policy_path: Path) -> dict[str, Any]:
         environment = resolve_operator_environment(profile.name, raw_environment)
         safe_call = _replace_value(profile.safe_call, replacements)
         pin_path = sandbox / "tool-pins.json"
-        content_guard = ContentGuard.from_policy(json.loads(policy_path.read_text()))
+        policy_document = json.loads(policy_path.read_text())
+        content_guard = ContentGuard.from_policy(policy_document)
 
         client = StdioMCPClient(
             profile.name,
@@ -143,9 +144,14 @@ def _run_profile(profile: InteropProfile, policy_path: Path) -> dict[str, Any]:
         try:
             tools = client.list_tools()
             verify_unique_tool_names({profile.name: tools})
-            first_pin = ToolIntegrityStore(pin_path, content_guard).verify(profile.name, tools)
+            pin_store = ToolIntegrityStore(
+                pin_path,
+                content_guard,
+                policy=policy_document,
+            )
+            first_pin = pin_store.verify(profile.name, tools)
             second_tools = client.list_tools()
-            second_pin = ToolIntegrityStore(pin_path, content_guard).verify(profile.name, second_tools)
+            second_pin = pin_store.verify(profile.name, second_tools)
         finally:
             client.close()
 
@@ -167,7 +173,6 @@ def _run_profile(profile: InteropProfile, policy_path: Path) -> dict[str, Any]:
                 }
             )
         )
-        policy_document = json.loads(policy_path.read_text())
         call_tool = str(safe_call["tool"])
         policy_document["allowed_tools"][profile.name] = [call_tool]
         policy_document["actor_permissions"]["anonymous"].append(call_tool)
@@ -198,11 +203,18 @@ def _run_profile(profile: InteropProfile, policy_path: Path) -> dict[str, Any]:
         response_hash = hashlib.sha256(
             json.dumps(call.result, sort_keys=True, default=str, separators=(",", ":")).encode()
         ).hexdigest()
+        stable_pin_states = bool(
+            first_pin.status in {"pinned", "pending"}
+            and second_pin.status in {"verified", "pending"}
+            and pin_report["status"] in {"verified", "pending"}
+            and first_pin.digest == second_pin.digest == pin_report["digest"]
+            and first_pin.pending_count
+            == second_pin.pending_count
+            == pin_report["pending_count"]
+        )
         passed = bool(
             not missing
-            and first_pin.status == "pinned"
-            and second_pin.status == "verified"
-            and pin_report["status"] == "verified"
+            and stable_pin_states
             and call.allowed
             and audit_integrity["valid"]
         )
@@ -217,6 +229,7 @@ def _run_profile(profile: InteropProfile, policy_path: Path) -> dict[str, Any]:
             "expected_tools": list(profile.expected_tools),
             "metadata_first_check": first_pin.status,
             "metadata_reconnect_check": pin_report["status"],
+            "metadata_pending_count": pin_report["pending_count"],
             "safe_call": call_tool,
             "safe_call_allowed": call.allowed,
             "safe_call_rule": call.rule,

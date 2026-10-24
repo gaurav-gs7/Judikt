@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import copy
 from contextvars import ContextVar, Token
 import os
 from typing import Any
 
 
 _AUTHENTICATED_SUBJECT: ContextVar[str] = ContextVar("judikt_authenticated_subject", default="")
-_AUTHENTICATED_CLAIMS: ContextVar[dict[str, Any]] = ContextVar(
-    "judikt_authenticated_claims", default={}
+_AUTHENTICATED_CLAIMS: ContextVar[dict[str, Any] | None] = ContextVar(
+    "judikt_authenticated_claims", default=None
 )
 
 
@@ -18,11 +19,15 @@ def authenticated_subject() -> str:
 def bind_authenticated_subject(
     subject: str,
     claims: dict[str, Any] | None = None,
-) -> tuple[Token[str], Token[dict[str, Any]]]:
-    return _AUTHENTICATED_SUBJECT.set(subject), _AUTHENTICATED_CLAIMS.set(claims or {})
+) -> tuple[Token[str], Token[dict[str, Any] | None]]:
+    return _AUTHENTICATED_SUBJECT.set(subject), _AUTHENTICATED_CLAIMS.set(
+        copy.deepcopy(claims or {})
+    )
 
 
-def reset_authenticated_subject(tokens: tuple[Token[str], Token[dict[str, Any]]]) -> None:
+def reset_authenticated_subject(
+    tokens: tuple[Token[str], Token[dict[str, Any] | None]],
+) -> None:
     subject_token, claims_token = tokens
     _AUTHENTICATED_CLAIMS.reset(claims_token)
     _AUTHENTICATED_SUBJECT.reset(subject_token)

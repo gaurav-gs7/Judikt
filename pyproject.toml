@@ -41,9 +41,9 @@ mcp = [
 ]
 observability = [
   "openinference-semantic-conventions>=0.1.30,<0.2",
-  "opentelemetry-api>=1.39,<2",
-  "opentelemetry-sdk>=1.39,<2",
-  "opentelemetry-exporter-otlp-proto-http>=1.39,<2",
+  "opentelemetry-api>=1.45.1,<2",
+  "opentelemetry-sdk>=1.45.1,<2",
+  "opentelemetry-exporter-otlp-proto-http>=1.45.1,<2",
 ]
 auth = [
   "cryptography>=50.0.0,<51",
@@ -60,7 +60,7 @@ aws = [
   "urllib3>=2.8.0,<3",
 ]
 test = [
-  "coverage[toml]>=7.6,<8",
+  "coverage[toml]>=7.10,<8",
 ]
 quality = [
   "pip-audit>=2.10,<3",
@@ -78,3 +78,9 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "judikt.resources" = ["*.json"]
+
+[tool.coverage.run]
+branch = true
+source = ["judikt"]
+parallel = true
+patch = ["subprocess"]
