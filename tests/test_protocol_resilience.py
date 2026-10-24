@@ -112,7 +112,8 @@ class StdioMCPResilienceTest(unittest.TestCase):
             with self.assertRaises(UpstreamTimeoutError):
                 client.call_tool("resilient.echo", {"value": "slow"})
 
-            self.assertTrue(_wait_for(cancel_log.exists))
+            # The fixture creates the file before writing it; wait for content.
+            self.assertTrue(_wait_for(lambda: cancel_log.exists() and cancel_log.read_text()))
             cancellation = json.loads(cancel_log.read_text())
             self.assertEqual(cancellation["method"], "notifications/cancelled")
             self.assertEqual(cancellation["params"]["reason"], "timeout")

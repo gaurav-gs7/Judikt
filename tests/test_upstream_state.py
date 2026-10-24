@@ -149,6 +149,8 @@ class UpstreamStateEndToEndTest(unittest.TestCase):
             ],
             cwd=PROJECT_ROOT,
             env=cls._environment(root),
+            # The gateway serves stdio until EOF; never inherit the runner's stdin.
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             check=False,
