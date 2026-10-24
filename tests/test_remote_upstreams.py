@@ -15,7 +15,8 @@ from unittest import mock
 
 from judikt.approval import ApprovalAuthority
 from judikt.paths import DEFAULT_POLICY_PATH
-from judikt.protocol import StdioMCPClient
+from judikt.metrics import Metrics
+from judikt.protocol import StdioMCPClient, UpstreamTimeoutError
 from judikt.remote_protocol import StreamableHTTPMCPClient
 from judikt.runtime import JudiktRuntime
 from judikt.upstreams import (
@@ -207,6 +208,68 @@ class RemoteUpstreamEndToEndTest(unittest.TestCase):
         self.assertFalse(outcome.allowed)
         self.assertEqual(outcome.rule, "upstream_timeout")
 
+    def test_remote_liveness_probe_keeps_healthy_session(self) -> None:
+        metrics = Metrics()
+        client = StreamableHTTPMCPClient(
+            "remote",
+            url=self.url,
+            allow_private_network=True,
+            timeouts={"initialize": 2, "list": 2, "call": 0.1},
+            liveness_timeout_seconds=1.0,
+            metrics=metrics,
+        )
+        try:
+            original = client._connection
+            with self.assertRaises(UpstreamTimeoutError):
+                client.call_tool("remote.slow_read", {"delay": 0.5})
+            self.assertTrue(
+                _wait_until(
+                    lambda: 'judikt_upstream_liveness_probes_total{server="remote"} 1'
+                    in metrics.render()
+                )
+            )
+            time.sleep(0.3)
+            result = client.call_tool("remote.lookup_user", {"user": "after"})
+        finally:
+            client.close()
+
+        self.assertIs(client._connection, original)
+        self.assertEqual(client.reconnect_count, 0)
+        self.assertFalse(result["isError"])
+
+    def test_remote_session_is_recreated_when_ping_does_not_answer(self) -> None:
+        metrics = Metrics()
+        restarted: list[object] = []
+        client = StreamableHTTPMCPClient(
+            "remote",
+            url=self.url,
+            allow_private_network=True,
+            timeouts={"initialize": 2, "list": 2, "call": 0.1},
+            liveness_timeout_seconds=0.2,
+            metrics=metrics,
+        )
+        client.add_restart_handler(restarted.append)
+        try:
+            original = client._connection
+
+            async def never_answers() -> None:
+                await asyncio.sleep(3600)
+
+            original.session.send_ping = never_answers  # type: ignore[union-attr]
+            with self.assertRaises(UpstreamTimeoutError):
+                client.call_tool("remote.slow_read", {"delay": 0.5})
+            self.assertTrue(_wait_until(lambda: client.reconnect_count == 1, 5.0))
+            result = client.call_tool("remote.lookup_user", {"user": "reconnected"})
+        finally:
+            client.close()
+
+        self.assertIsNot(client._connection, original)
+        self.assertEqual(restarted, [client])
+        self.assertFalse(result["isError"])
+        rendered = metrics.render()
+        self.assertIn('judikt_upstream_liveness_failures_total{server="remote"} 1', rendered)
+        self.assertIn('judikt_upstream_restarts_total{server="remote"} 1', rendered)
+
     def test_authenticated_http_caller_token_is_not_forwarded(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -392,6 +455,15 @@ def _free_port() -> int:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         return int(listener.getsockname()[1])
+
+
+def _wait_until(predicate: object, timeout: float = 3.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():  # type: ignore[operator]
+            return True
+        time.sleep(0.02)
+    return bool(predicate())  # type: ignore[operator]
 
 
 def _wait_for_port(process: subprocess.Popen[str], port: int) -> None:

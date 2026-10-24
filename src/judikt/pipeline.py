@@ -175,14 +175,15 @@ class GuardedCallPipeline:
         started = time.perf_counter()
         safe_arguments = self.policy.redact(arguments)
         actor = self.identity_provider.resolve(trusted_actor)
-        decision = self._pre_execution_decision(server, tool, arguments, actor)
+        decision, definitions, diagnostic = self._pre_execution_decision(
+            server, tool, arguments, actor
+        )
         allowed = decision.allowed
         reason = decision.reason
         rule = decision.rule
         evidence = list(decision.evidence)
         result: Any = None
         mcp_result: dict[str, Any] | None = None
-        diagnostic = ""
 
         with self.telemetry.span(
             "judikt.call_tool",
@@ -223,6 +224,7 @@ class GuardedCallPipeline:
                         safe_arguments=safe_arguments,
                         correlation_id=correlation_id,
                         evidence=evidence,
+                        definitions=definitions,
                     )
                 elif decision.action in {"DRY_RUN_ONLY", "SHADOW_MODE"}:
                     result = _evaluation_only_result(
@@ -243,6 +245,7 @@ class GuardedCallPipeline:
                         safe_arguments=safe_arguments,
                         correlation_id=correlation_id,
                         evidence=evidence,
+                        definitions=definitions,
                     )
             if allowed and result is not None:
                 result = self._maybe_annotate_incident(
@@ -308,7 +311,9 @@ class GuardedCallPipeline:
         started = time.perf_counter()
         safe_arguments = self.policy.redact(arguments)
         actor = self.identity_provider.resolve(trusted_actor)
-        decision = self._pre_execution_decision(server, tool, arguments, actor)
+        decision, _, diagnostic = self._pre_execution_decision(
+            server, tool, arguments, actor
+        )
         action = "PROPOSE_ONLY" if decision.allowed else (
             "REQUIRE_APPROVAL" if decision.rule == "approval_required" else "DENY"
         )
@@ -333,6 +338,7 @@ class GuardedCallPipeline:
             duration_ms=duration_ms,
             decision=decision,
             evidence=list(decision.evidence),
+            diagnostic=diagnostic,
         )
         return ToolCallResult(
             correlation_id=correlation_id,
@@ -363,12 +369,37 @@ class GuardedCallPipeline:
         tool: str,
         arguments: dict[str, Any],
         actor: str,
-    ) -> PolicyDecision:
-        definitions = self.upstreams.definitions()
+    ) -> tuple[PolicyDecision, dict[str, list[dict[str, Any]]] | None, str]:
+        """Return the pre-execution decision, the catalog used for it, and an
+        operator diagnostic when the upstream catalog could not be refreshed.
+
+        Refreshing the catalog is an upstream interaction, so its failures are
+        turned into audited denials here instead of escaping the pipeline.
+        """
+
+        definitions: dict[str, list[dict[str, Any]]] | None = None
+        catalog_failure: Exception | None = None
+        try:
+            switches: dict[str, Any] | None = self.kill_switches.get_state()
+        except KillSwitchUnavailable:
+            switches = None
+        stopped = (
+            switches is None
+            or server in switches["servers"]
+            or tool in switches["tools"]
+            or self.circuits.is_open(server, tool)
+        )
+        # A kill switch or open circuit must deny immediately, without waiting
+        # on a possibly hung upstream for a catalog refresh.
+        if not stopped:
+            try:
+                definitions = self.upstreams.definitions(require=server)
+            except Exception as exc:
+                catalog_failure = exc
         tool_definition = next(
             (
                 definition
-                for definition in definitions.get(server, [])
+                for definition in (definitions or {}).get(server, [])
                 if definition.get("name") == tool
             ),
             None,
@@ -376,46 +407,36 @@ class GuardedCallPipeline:
         risk = self.policy.risk.assess(
             server, tool, arguments, tool_definition
         )
+
+        def deny(reason: str, rule: str, action: str = "DENY") -> tuple[
+            PolicyDecision, dict[str, list[dict[str, Any]]] | None, str
+        ]:
+            return self.policy._decision(False, reason, rule, risk, action=action), None, ""
+
         collisions = declared_control_arguments(tool_definition)
         if collisions:
-            return self.policy._decision(
-                False,
+            return deny(
                 f"tool {tool!r} declares Judikt control argument(s) "
                 f"{', '.join(collisions)} and cannot be proxied",
                 "control_argument_collision",
-                risk,
-                action="DENY",
             )
-        try:
-            switches = self.kill_switches.get_state()
-        except KillSwitchUnavailable:
-            return self.policy._decision(
-                False,
-                "kill-switch state is unavailable",
-                "kill_switch_unavailable",
-                risk,
-            )
+        if switches is None:
+            return deny("kill-switch state is unavailable", "kill_switch_unavailable")
         if server in switches["servers"]:
-            return self.policy._decision(
-                False,
-                f"server {server!r} is disabled by kill switch",
-                "kill_switch",
-                risk,
-            )
+            return deny(f"server {server!r} is disabled by kill switch", "kill_switch")
         if tool in switches["tools"]:
-            return self.policy._decision(
-                False,
-                f"tool {tool!r} is disabled by kill switch",
-                "kill_switch",
-                risk,
-            )
+            return deny(f"tool {tool!r} is disabled by kill switch", "kill_switch")
         if self.circuits.is_open(server, tool):
-            return self.policy._decision(
-                False,
+            return deny(
                 "circuit breaker is open after repeated upstream failures",
                 "circuit_breaker",
-                risk,
             )
+        if catalog_failure is not None:
+            rule, reason = _catalog_failure(server, catalog_failure)
+            if rule != "tool_integrity":
+                self.circuits.record_failure(server, tool, reason)
+            decision = self.policy._decision(False, reason, rule, risk, action="DENY")
+            return decision, None, self._diagnostic(catalog_failure)
         with self.telemetry.span(
             "judikt.policy.evaluate",
             "GUARDRAIL",
@@ -437,7 +458,7 @@ class GuardedCallPipeline:
             policy_span.set_attribute("judikt.risk.score", decision.risk_score)
             policy_span.set_attribute("judikt.risk.level", decision.risk_level)
             policy_span.set_attribute("judikt.policy.action", decision.action)
-            return decision
+            return decision, definitions, ""
 
     def _execute_guarded(
         self,
@@ -448,9 +469,9 @@ class GuardedCallPipeline:
         safe_arguments: dict[str, Any],
         correlation_id: str,
         evidence: list[str],
+        definitions: dict[str, list[dict[str, Any]]] | None,
     ) -> tuple[bool, str, str, Any, dict[str, Any] | None, str]:
-        definitions = self.upstreams.definitions()
-        if server not in definitions:
+        if definitions is None or server not in definitions:
             return False, "unknown_server", f"unknown MCP server: {server}", None, None, ""
         try:
             self.tool_integrity_reports[server] = self.tool_integrity.verify(
@@ -697,6 +718,16 @@ class GuardedCallPipeline:
             )
             self.metrics.observe_finding(outcome)
         self.metrics.observe(server, tool, allowed, duration_ms)
+
+
+def _catalog_failure(server: str, exc: Exception) -> tuple[str, str]:
+    if isinstance(exc, ToolIntegrityError):
+        return "tool_integrity", _tool_integrity_reason(exc)
+    if isinstance(exc, UpstreamTimeoutError):
+        return "upstream_timeout", exc.public_reason
+    if isinstance(exc, MCPProtocolError):
+        return "upstream_error", exc.public_reason
+    return "upstream_error", f"MCP upstream {server!r} tool catalog is unavailable"
 
 
 def _tool_integrity_reason(exc: ToolIntegrityError) -> str:

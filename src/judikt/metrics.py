@@ -36,6 +36,12 @@ class Metrics:
     def observe_upstream_protocol_violation(self, server: str) -> None:
         self._observe_upstream("protocol_violations", server)
 
+    def observe_upstream_liveness_probe(self, server: str) -> None:
+        self._observe_upstream("liveness_probes", server)
+
+    def observe_upstream_liveness_failure(self, server: str) -> None:
+        self._observe_upstream("liveness_failures", server)
+
     def observe_audit_delivery_failure(self) -> None:
         with self._lock:
             self._audit_delivery_failures += 1
@@ -116,8 +122,13 @@ class Metrics:
                 )
             for kind, description in (
                 ("timeouts", "Upstream MCP request deadlines exceeded."),
-                ("restarts", "Upstream MCP subprocess restart attempts."),
+                ("restarts", "Upstream MCP subprocess restarts and remote session recreations."),
                 ("protocol_violations", "Upstream MCP protocol violations."),
+                ("liveness_probes", "Liveness pings sent after an upstream request timed out."),
+                (
+                    "liveness_failures",
+                    "Liveness pings that timed out; the upstream was terminated or reconnected.",
+                ),
             ):
                 name = f"judikt_upstream_{kind}_total"
                 lines.extend([f"# HELP {name} {description}", f"# TYPE {name} counter"])

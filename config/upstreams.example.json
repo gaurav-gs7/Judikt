@@ -9,7 +9,10 @@
       ]
     },
     "authenticated-example": {
-      "command": ["python3", "/opt/company-mcp/server.py"],
+      "command": [
+        "python3",
+        "/opt/company-mcp/server.py"
+      ],
       "tool_name_prefix": "company.",
       "timeouts": {
         "initialize": 30,
@@ -21,10 +24,15 @@
           "from_aws_secret": "judikt/upstreams/company",
           "json_key": "api_token"
         }
-      }
+      },
+      "liveness_timeout_seconds": 5,
+      "catalog_ttl_seconds": 30
     },
     "vault-authenticated-example": {
-      "command": ["python3", "/opt/company-mcp/server.py"],
+      "command": [
+        "python3",
+        "/opt/company-mcp/server.py"
+      ],
       "env": {
         "UPSTREAM_API_TOKEN": {
           "from_vault": "secret/data/judikt/company",
@@ -44,7 +52,9 @@
         "list": 15,
         "call": 60
       },
-      "allow_private_network": false
+      "allow_private_network": false,
+      "catalog_ttl_seconds": 0,
+      "expose_error_messages": false
     }
   }
 }

@@ -96,6 +96,7 @@ class JudiktOpsRuntime:
         self.external_clients: dict[str, Any] = {}
         pin_metadata: dict[str, ToolPinMetadata] = {}
         tool_name_prefixes: dict[str, str] = {}
+        catalog_ttls: dict[str, float] = {}
         for upstream in load_upstream_servers():
             if include_demo_servers and upstream.name in {
                 "platform-ops",
@@ -124,6 +125,8 @@ class JudiktOpsRuntime:
                 ),
             )
             tool_name_prefixes[upstream.name] = upstream.tool_name_prefix
+            if upstream.catalog_ttl_seconds is not None:
+                catalog_ttls[upstream.name] = upstream.catalog_ttl_seconds
 
         self.upstreams = OperationsUpstreamRegistry(
             platform=self.platform,
@@ -131,6 +134,7 @@ class JudiktOpsRuntime:
             incidents=self.incidents,
             external_clients=self.external_clients,
             tool_name_prefixes=tool_name_prefixes,
+            catalog_ttl_seconds=catalog_ttls,
         )
         self._circuit_store = InMemoryCircuitBreakerStore(
             circuit_failure_threshold,
@@ -320,7 +324,8 @@ class JudiktOpsRuntime:
         client: Any,
     ) -> None:
         del client
-        tools = self.upstreams.definitions()[server]
+        self.upstreams.invalidate(server)
+        tools = self.upstreams.definitions(require=server)[server]
         self.tool_integrity_reports[server] = self.tool_integrity.verify(
             server, tools
         ).as_dict()

@@ -5,6 +5,7 @@ import hashlib
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -445,7 +446,13 @@ class ToolIntegrityTest(unittest.TestCase):
 
 
 class ExternalMCPIntegrationTest(unittest.TestCase):
-    def _runtime(self, directory: str, mode: str) -> JudiktRuntime:
+    def _runtime(
+        self,
+        directory: str,
+        mode: str,
+        *,
+        catalog_ttl_seconds: float | None = None,
+    ) -> JudiktRuntime:
         source_policy = json.loads((PROJECT_ROOT / "config" / "policies.yaml").read_text())
         source_policy["allowed_tools"]["independent"] = ["external.fetch_issue"]
         source_policy["actor_permissions"]["anonymous"].append("external.fetch_issue")
@@ -460,6 +467,8 @@ class ExternalMCPIntegrationTest(unittest.TestCase):
                 }
             }
         }
+        if catalog_ttl_seconds is not None:
+            config["servers"]["independent"]["catalog_ttl_seconds"] = catalog_ttl_seconds
         upstream_path = Path(directory) / "upstreams.json"
         upstream_path.write_text(json.dumps(config))
         self.environment = patch.dict(
@@ -498,7 +507,8 @@ class ExternalMCPIntegrationTest(unittest.TestCase):
 
     def test_blocks_tool_rug_pull_before_call_execution(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            runtime = self._runtime(directory, "rug-pull")
+            # A catalog TTL of 0 re-lists tools on every call, as before caching.
+            runtime = self._runtime(directory, "rug-pull", catalog_ttl_seconds=0)
             self.addCleanup(runtime.close)
 
             result = runtime.call_tool("independent", "external.fetch_issue", {"issue_id": "INC-44"})
@@ -507,6 +517,26 @@ class ExternalMCPIntegrationTest(unittest.TestCase):
             self.assertEqual(result.rule, "tool_integrity")
             self.assertIn("definition drift", result.reason)
             self.assertIn("judikt pins accept independent --yes", result.reason)
+
+    def test_rug_pull_without_list_changed_is_caught_once_the_ttl_expires(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = self._runtime(directory, "rug-pull", catalog_ttl_seconds=0.4)
+            self.addCleanup(runtime.close)
+
+            cached = runtime.call_tool(
+                "independent", "external.fetch_issue", {"issue_id": "INC-45"}
+            )
+            time.sleep(0.5)
+            refreshed = runtime.call_tool(
+                "independent", "external.fetch_issue", {"issue_id": "INC-46"}
+            )
+
+            # Within the TTL the pinned catalog is served from cache; the first
+            # refresh after it expires detects the changed definition.
+            self.assertTrue(cached.allowed)
+            self.assertFalse(refreshed.allowed)
+            self.assertEqual(refreshed.rule, "tool_integrity")
+            self.assertIn("definition drift", refreshed.reason)
 
     def test_denies_and_audits_mcp_tool_error_response(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

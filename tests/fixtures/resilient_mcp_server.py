@@ -66,8 +66,38 @@ def tool_definition() -> dict[str, Any]:
     }
 
 
+MULTI_TOOL_MODES = {
+    "probe-dead",
+    "probe-alive",
+    "list-hang-after-first",
+    "list-error-after-first",
+    "notify-on-call",
+}
+LIST_COUNT = 0
+
+
+def tool_definitions() -> list[dict[str, Any]]:
+    definitions = [tool_definition()]
+    if MODE in MULTI_TOOL_MODES:
+        for name in ("resilient.hang", "resilient.notify"):
+            extra = tool_definition()
+            extra["name"] = name
+            extra["description"] = f"Transport test tool {name}."
+            definitions.append(extra)
+    return definitions
+
+
+def hang_forever() -> None:
+    while True:
+        time.sleep(3600)
+
+
 def tool_result(arguments: dict[str, Any]) -> dict[str, Any]:
-    payload = {"value": arguments.get("value", "ok"), "start_count": START_COUNT}
+    payload = {
+        "value": arguments.get("value", "ok"),
+        "start_count": START_COUNT,
+        "pid": os.getpid(),
+    }
     return {
         "content": [{"type": "text", "text": json.dumps(payload)}],
         "structuredContent": payload,
@@ -108,6 +138,25 @@ for raw_line in sys.stdin:
                 "serverInfo": {"name": "resilient-fixture", "version": "1.0.0"},
             },
         )
+    elif method == "ping" and MODE in MULTI_TOOL_MODES:
+        result(request_id, {})
+    elif method == "tools/list" and MODE in MULTI_TOOL_MODES:
+        LIST_COUNT += 1
+        if LIST_LOG is not None:
+            with LIST_LOG.open("a") as stream:
+                stream.write(f"{START_COUNT}\n")
+        if MODE == "list-hang-after-first" and LIST_COUNT > 1:
+            continue
+        if MODE == "list-error-after-first" and LIST_COUNT > 1:
+            write(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32603, "message": "catalog backend unavailable"},
+                }
+            )
+            continue
+        result(request_id, {"tools": tool_definitions()})
     elif method == "tools/list":
         if LIST_LOG is not None:
             with LIST_LOG.open("a") as stream:
@@ -123,8 +172,24 @@ for raw_line in sys.stdin:
         result(request_id, {"tools": [tool_definition()]})
     elif method == "tools/call":
         arguments = message.get("params", {}).get("arguments", {})
+        tool_name = message.get("params", {}).get("name")
         if MODE == "hang-call":
             continue
+        if tool_name == "resilient.hang" and MODE == "probe-dead":
+            # Single-threaded and stuck: it cannot answer ping either.
+            hang_forever()
+        if tool_name == "resilient.hang":
+            # Slow but healthy: the read loop keeps answering ping.
+            threading.Thread(target=hang_forever, daemon=True).start()
+            continue
+        if tool_name == "resilient.notify":
+            write(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/tools/list_changed",
+                    "params": {},
+                }
+            )
         if MODE in {"crash-once", "oversized-once"} and START_COUNT == 1:
             if MODE == "crash-once":
                 os._exit(7)

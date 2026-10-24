@@ -6,6 +6,7 @@ import math
 import os
 import threading
 from concurrent.futures import TimeoutError as FutureTimeoutError
+from collections.abc import Callable
 from typing import Any, Coroutine
 
 from .diagnostics import strip_control_characters
@@ -18,8 +19,21 @@ from .protocol import (
     RestartHandler,
     UpstreamErrorResponse,
     UpstreamTimeoutError,
+    resolve_liveness_timeout,
 )
 from .upstreams import UpstreamConfigError, validate_remote_url
+
+
+class _Connection:
+    """State for one Streamable HTTP session running on its own event loop."""
+
+    def __init__(self) -> None:
+        self.ready = threading.Event()
+        self.startup_error: BaseException | None = None
+        self.loop: asyncio.AbstractEventLoop | None = None
+        self.stop: asyncio.Event | None = None
+        self.session: Any | None = None
+        self.thread: threading.Thread | None = None
 
 
 class StreamableHTTPMCPClient:
@@ -36,6 +50,7 @@ class StreamableHTTPMCPClient:
         max_message_bytes: int | None = None,
         metrics: Metrics | None = None,
         expose_error_messages: bool = False,
+        liveness_timeout_seconds: float | None = None,
     ) -> None:
         self.backend = backend
         self.expose_error_messages = bool(expose_error_messages)
@@ -43,6 +58,7 @@ class StreamableHTTPMCPClient:
         self._headers = dict(headers or {})
         self._allow_private_network = allow_private_network
         self._timeouts = _resolve_timeouts(timeouts)
+        self._liveness_timeout = resolve_liveness_timeout(liveness_timeout_seconds)
         self._max_message_bytes = _positive_int(
             max_message_bytes
             if max_message_bytes is not None
@@ -53,34 +69,14 @@ class StreamableHTTPMCPClient:
         self._handlers: dict[str, list[NotificationHandler]] = {}
         self._restart_handlers: list[RestartHandler] = []
         self._handler_lock = threading.Lock()
-        self._ready = threading.Event()
+        self._lifecycle_lock = threading.RLock()
+        self._probe_lock = threading.Lock()
+        self._probing: _Connection | None = None
         self._closed = threading.Event()
-        self._startup_error: BaseException | None = None
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._stop: asyncio.Event | None = None
-        self._session: Any | None = None
+        self._connection = _Connection()
+        self.reconnect_count = 0
         validate_remote_url(url, allow_private_network)
-        self._thread = threading.Thread(
-            target=self._thread_main,
-            name=f"judikt-{backend}-streamable-http",
-            daemon=True,
-        )
-        self._thread.start()
-        if not self._ready.wait(self._timeouts["initialize"] + 1.0):
-            self.close()
-            self._observe_timeout()
-            raise UpstreamTimeoutError(
-                f"remote MCP upstream {backend!r} timed out during 'initialize' "
-                f"after {self._timeouts['initialize']:g}s"
-            )
-        if self._startup_error is not None:
-            self.close()
-            raise _protocol_error(
-                backend,
-                "initialize",
-                self._startup_error,
-                exposable=self.expose_error_messages,
-            )
+        self._connection = self._connect()
 
     def add_notification_handler(self, method: str, handler: NotificationHandler) -> None:
         with self._handler_lock:
@@ -92,12 +88,16 @@ class StreamableHTTPMCPClient:
 
     def list_tools(self) -> list[dict[str, Any]]:
         self._validate_destination()
-        return self._submit(self._list_tools(), "tools/list", self._timeouts["list"])
+        return self._submit(
+            lambda session: self._list_tools(session),
+            "tools/list",
+            self._timeouts["list"],
+        )
 
     def call_tool(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         self._validate_destination()
         return self._submit(
-            self._call_tool(tool, arguments),
+            lambda session: self._call_tool(session, tool, arguments),
             "tools/call",
             self._timeouts["call"],
         )
@@ -106,21 +106,55 @@ class StreamableHTTPMCPClient:
         if self._closed.is_set():
             return
         self._closed.set()
-        loop = self._loop
-        stop = self._stop
+        self._disconnect(self._connection)
+
+    def _connect(self) -> _Connection:
+        connection = _Connection()
+        connection.thread = threading.Thread(
+            target=self._thread_main,
+            args=(connection,),
+            name=f"judikt-{self.backend}-streamable-http",
+            daemon=True,
+        )
+        connection.thread.start()
+        if not connection.ready.wait(self._timeouts["initialize"] + 1.0):
+            self._disconnect(connection)
+            self._observe_timeout()
+            raise UpstreamTimeoutError(
+                f"remote MCP upstream {self.backend!r} timed out during 'initialize' "
+                f"after {self._timeouts['initialize']:g}s"
+            )
+        if connection.startup_error is not None:
+            self._disconnect(connection)
+            raise _protocol_error(
+                self.backend,
+                "initialize",
+                connection.startup_error,
+                exposable=self.expose_error_messages,
+            )
+        return connection
+
+    @staticmethod
+    def _disconnect(connection: _Connection) -> None:
+        loop = connection.loop
+        stop = connection.stop
         if loop is not None and stop is not None and not loop.is_closed():
-            loop.call_soon_threadsafe(stop.set)
-        if self._thread is not threading.current_thread():
-            self._thread.join(timeout=5.0)
+            try:
+                loop.call_soon_threadsafe(stop.set)
+            except RuntimeError:
+                pass
+        thread = connection.thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=5.0)
 
-    def _thread_main(self) -> None:
+    def _thread_main(self, connection: _Connection) -> None:
         try:
-            asyncio.run(self._run())
+            asyncio.run(self._run(connection))
         except BaseException as exc:
-            self._startup_error = exc
-            self._ready.set()
+            connection.startup_error = exc
+            connection.ready.set()
 
-    async def _run(self) -> None:
+    async def _run(self, connection: _Connection) -> None:
         try:
             import httpx
             from mcp import ClientSession
@@ -130,8 +164,8 @@ class StreamableHTTPMCPClient:
                 "remote upstreams require the optional mcp dependencies"
             ) from exc
 
-        self._loop = asyncio.get_running_loop()
-        self._stop = asyncio.Event()
+        connection.loop = asyncio.get_running_loop()
+        connection.stop = asyncio.Event()
         transport = _bounded_transport(httpx, self._max_message_bytes)
 
         async def reject_redirects_and_large_responses(response: Any) -> None:
@@ -162,17 +196,16 @@ class StreamableHTTPMCPClient:
                     read_timeout_seconds=None,
                     message_handler=self._handle_message,
                 ) as session:
-                    self._session = session
+                    connection.session = session
                     await asyncio.wait_for(
                         session.initialize(),
                         timeout=self._timeouts["initialize"],
                     )
-                    self._ready.set()
-                    await self._stop.wait()
-        self._session = None
+                    connection.ready.set()
+                    await connection.stop.wait()
+        connection.session = None
 
-    async def _list_tools(self) -> list[dict[str, Any]]:
-        session = self._require_session()
+    async def _list_tools(self, session: Any) -> list[dict[str, Any]]:
         tools: list[dict[str, Any]] = []
         cursor: str | None = None
         observed: set[str] = set()
@@ -200,8 +233,12 @@ class StreamableHTTPMCPClient:
             f"remote MCP upstream {self.backend!r} exceeded the tool pagination limit"
         )
 
-    async def _call_tool(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        session = self._require_session()
+    async def _call_tool(
+        self,
+        session: Any,
+        tool: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
         response = await self._cancellable_request(
             session,
             session.call_tool(tool, arguments),
@@ -255,16 +292,33 @@ class StreamableHTTPMCPClient:
                 daemon=True,
             ).start()
 
-    def _submit(self, request: Coroutine[Any, Any, Any], method: str, timeout: float) -> Any:
-        if self._closed.is_set() or self._loop is None:
-            request.close()
+    def _submit(
+        self,
+        build: Callable[[Any], Coroutine[Any, Any, Any]],
+        method: str,
+        timeout: float,
+    ) -> Any:
+        if self._closed.is_set():
             raise MCPProtocolError(f"remote MCP upstream {self.backend!r} was closed")
-        future = asyncio.run_coroutine_threadsafe(request, self._loop)
+        with self._lifecycle_lock:
+            connection = self._connection
+        if connection.loop is None or connection.session is None:
+            self._reconnect(connection)
+            with self._lifecycle_lock:
+                connection = self._connection
+            if connection.loop is None or connection.session is None:
+                raise MCPProtocolError(
+                    f"remote MCP upstream {self.backend!r} is not connected"
+                )
+        future = asyncio.run_coroutine_threadsafe(
+            build(connection.session), connection.loop
+        )
         try:
             return future.result(timeout=timeout)
         except FutureTimeoutError:
             future.cancel()
             self._observe_timeout()
+            self._start_liveness_probe(connection)
             raise UpstreamTimeoutError(
                 f"remote MCP upstream {self.backend!r} timed out during {method!r} "
                 f"after {timeout:g}s"
@@ -290,10 +344,71 @@ class StreamableHTTPMCPClient:
                 diagnostic=f"{public_reason}: {exc}",
             ) from None
 
-    def _require_session(self) -> Any:
-        if self._session is None:
-            raise MCPProtocolError(f"remote MCP upstream {self.backend!r} is not connected")
-        return self._session
+    def _start_liveness_probe(self, connection: _Connection) -> None:
+        """Ping a timed-out remote session off the request thread.
+
+        There is no process to kill: a session that does not answer ``ping``
+        within the liveness deadline is closed and recreated, and restart
+        handlers re-verify tool pins.
+        """
+
+        with self._probe_lock:
+            if self._closed.is_set() or self._probing is connection:
+                return
+            self._probing = connection
+        threading.Thread(
+            target=self._liveness_probe,
+            args=(connection,),
+            name=f"judikt-{self.backend}-liveness",
+            daemon=True,
+        ).start()
+
+    def _liveness_probe(self, connection: _Connection) -> None:
+        try:
+            if self._metrics is not None:
+                self._metrics.observe_upstream_liveness_probe(self.backend)
+            session = connection.session
+            loop = connection.loop
+            if session is None or loop is None or self._closed.is_set():
+                return
+            future = asyncio.run_coroutine_threadsafe(session.send_ping(), loop)
+            try:
+                future.result(timeout=self._liveness_timeout)
+                return
+            except FutureTimeoutError:
+                future.cancel()
+            except Exception:
+                pass
+            if self._metrics is not None:
+                self._metrics.observe_upstream_liveness_failure(self.backend)
+            self._reconnect(connection)
+        finally:
+            with self._probe_lock:
+                if self._probing is connection:
+                    self._probing = None
+
+    def _reconnect(self, failed: _Connection) -> None:
+        with self._lifecycle_lock:
+            if self._closed.is_set() or self._connection is not failed:
+                return
+            self._disconnect(failed)
+            try:
+                self._connection = self._connect()
+            except MCPProtocolError:
+                # Keep failing closed: requests see "not connected" until a
+                # later probe or restart succeeds.
+                self._connection = _Connection()
+                return
+            self.reconnect_count += 1
+            if self._metrics is not None:
+                self._metrics.observe_upstream_restart(self.backend)
+        with self._handler_lock:
+            handlers = list(self._restart_handlers)
+        for handler in handlers:
+            try:
+                handler(self)  # type: ignore[arg-type]
+            except Exception:
+                continue
 
     def _check_size(self, value: Any, label: str) -> None:
         size = len(json.dumps(value, separators=(",", ":")).encode())

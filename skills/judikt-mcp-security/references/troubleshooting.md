@@ -31,3 +31,9 @@ sqlite3 <audit-db> "SELECT seq, rule, diagnostic FROM audit_events WHERE correla
 
 The same diagnostic is written to the gateway's stderr (the MCP client's server log) as a `Judikt upstream diagnostic` line. Do not set `expose_error_messages` merely to debug; it shows inspected upstream error messages to agents and should be enabled only for upstreams whose error text is useful to the agent.
 
+## Hung Upstreams and the Catalog Cache
+
+A timed-out request triggers a liveness `ping` (default deadline 5 seconds, `liveness_timeout_seconds` per upstream). A stdio upstream that does not answer is terminated and restarted on the next request within its restart budget; a remote session is recreated. Pins are re-verified after either. If `judikt_upstream_liveness_failures_total` keeps rising, the upstream is hanging repeatedly: inspect its diagnostics rather than raising timeouts. Once the restart budget is exhausted, calls fail with `upstream_error` until Judikt restarts.
+
+Tool catalogs are cached for `catalog_ttl_seconds` (default 30). A definition change without `notifications/tools/list_changed` is detected only after the TTL expires; set `catalog_ttl_seconds` to `0` for upstreams that must be re-checked on every call. Repeated `upstream_timeout` denials that mention `tools/list` mean the catalog refresh itself is failing; the circuit breaker opens after the configured threshold.
+

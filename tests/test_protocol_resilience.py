@@ -395,8 +395,10 @@ class RuntimeRecoveryTest(unittest.TestCase):
 
         self.assertFalse(failed.allowed)
         self.assertTrue(recovered.allowed)
-        self.assertIn("2", list_generations)
-        self.assertGreaterEqual(list_generations.count("2"), 2)
+        # Generation 1 is listed once at startup and then served from the
+        # catalog cache; the restart hook must re-list (and re-verify pins on)
+        # generation 2 before the recovered call succeeds.
+        self.assertEqual(list_generations, ["1", "2"])
 
 
 class UpstreamTimeoutConfigurationTest(unittest.TestCase):

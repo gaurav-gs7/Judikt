@@ -106,7 +106,10 @@ class ToolCatalog:
     def _server_definitions(self, server: str) -> list[dict[str, Any]]:
         upstreams = getattr(self.runtime, "upstreams", None)
         if upstreams is not None:
-            return upstreams.definitions()[server]
+            invalidate = getattr(upstreams, "invalidate", None)
+            if callable(invalidate):
+                invalidate(server)
+            return upstreams.definitions(require=server)[server]
         clients = getattr(
             self.runtime,
             "clients",

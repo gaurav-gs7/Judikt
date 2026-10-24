@@ -41,6 +41,8 @@ class UpstreamServer:
     headers: dict[str, str] = field(default_factory=dict)
     allow_private_network: bool = False
     expose_error_messages: bool = False
+    liveness_timeout_seconds: float | None = None
+    catalog_ttl_seconds: float | None = None
 
 
 def load_upstream_servers(path: str | Path | None = None) -> list[UpstreamServer]:
@@ -94,6 +96,10 @@ def load_upstream_servers(path: str | Path | None = None) -> list[UpstreamServer
             raise UpstreamConfigError(
                 f"upstream {name!r} expose_error_messages must be a boolean"
             )
+        liveness_timeout = _optional_number(
+            name, raw, "liveness_timeout_seconds", allow_zero=False
+        )
+        catalog_ttl = _optional_number(name, raw, "catalog_ttl_seconds", allow_zero=True)
         cwd = raw.get("cwd")
         if cwd is not None and not isinstance(cwd, str):
             raise UpstreamConfigError(f"upstream {name!r} cwd must be a string")
@@ -126,9 +132,33 @@ def load_upstream_servers(path: str | Path | None = None) -> list[UpstreamServer
                 ),
                 allow_private_network=allow_private_network,
                 expose_error_messages=expose_error_messages,
+                liveness_timeout_seconds=liveness_timeout,
+                catalog_ttl_seconds=catalog_ttl,
             )
         )
     return result
+
+
+def _optional_number(
+    server: str,
+    raw: dict[str, Any],
+    key: str,
+    *,
+    allow_zero: bool,
+) -> float | None:
+    if key not in raw:
+        return None
+    value = raw[key]
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+        or (value == 0 and not allow_zero)
+    ):
+        requirement = "a number >= 0" if allow_zero else "a positive number"
+        raise UpstreamConfigError(f"upstream {server!r} {key} must be {requirement}")
+    return float(value)
 
 
 def _parse_timeouts(server: str, configured: Any) -> dict[str, float]:
@@ -368,6 +398,7 @@ def create_upstream_client(upstream: UpstreamServer, metrics: Any = None) -> Any
             timeouts=upstream.timeouts,
             metrics=metrics,
             expose_error_messages=upstream.expose_error_messages,
+            liveness_timeout_seconds=upstream.liveness_timeout_seconds,
         )
     from .protocol import StdioMCPClient
 
@@ -380,4 +411,5 @@ def create_upstream_client(upstream: UpstreamServer, metrics: Any = None) -> Any
         timeouts=upstream.timeouts,
         metrics=metrics,
         expose_error_messages=upstream.expose_error_messages,
+        liveness_timeout_seconds=upstream.liveness_timeout_seconds,
     )

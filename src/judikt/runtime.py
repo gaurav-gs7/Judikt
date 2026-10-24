@@ -101,6 +101,7 @@ class JudiktRuntime:
         )
         pin_metadata: dict[str, ToolPinMetadata] = {}
         tool_name_prefixes: dict[str, str] = {}
+        catalog_ttls: dict[str, float] = {}
         for upstream in configured_upstreams:
             if upstream.name in self.clients:
                 raise ValueError(
@@ -125,8 +126,12 @@ class JudiktRuntime:
                 ),
             )
             tool_name_prefixes[upstream.name] = upstream.tool_name_prefix
+            if upstream.catalog_ttl_seconds is not None:
+                catalog_ttls[upstream.name] = upstream.catalog_ttl_seconds
 
-        self.upstreams = StdioUpstreamRegistry(self.clients, tool_name_prefixes)
+        self.upstreams = StdioUpstreamRegistry(
+            self.clients, tool_name_prefixes, catalog_ttls
+        )
         self._circuit_store = InMemoryCircuitBreakerStore(
             circuit_failure_threshold,
             circuit_cooldown_seconds,
@@ -310,7 +315,8 @@ class JudiktRuntime:
         client: Any,
     ) -> None:
         del client
-        tools = self.upstreams.definitions()[server]
+        self.upstreams.invalidate(server)
+        tools = self.upstreams.definitions(require=server)[server]
         self.tool_integrity_reports[server] = self.tool_integrity.verify(
             server, tools
         ).as_dict()

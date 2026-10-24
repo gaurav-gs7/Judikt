@@ -123,6 +123,8 @@ SUPPORTED_PROTOCOL_VERSIONS = {
 }
 MCP_ERROR_MARKER = "_judikt_mcp_tool_error"
 DEFAULT_TIMEOUTS = {"initialize": 30.0, "list": 30.0, "call": 120.0}
+DEFAULT_LIVENESS_TIMEOUT_SECONDS = 5.0
+TERMINATION_GRACE_SECONDS = 2.0
 DEFAULT_STDERR_BUFFER_BYTES = 65_536
 DEFAULT_MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 SAFE_ENVIRONMENT_KEYS = (
@@ -292,8 +294,13 @@ class StdioMCPClient:
         restart_backoff_seconds: float = 1.0,
         metrics: Metrics | None = None,
         expose_error_messages: bool = False,
+        liveness_timeout_seconds: float | None = None,
     ) -> None:
         self.backend = backend
+        self._liveness_timeout = resolve_liveness_timeout(liveness_timeout_seconds)
+        self._probe_lock = threading.Lock()
+        self._probing_generation: int | None = None
+        self._probe_threads: list[threading.Thread] = []
         # Built-in Judikt backends (no explicit command) author their own error
         # text. Every other upstream is untrusted: its error text is diagnostic
         # only unless the operator opts in to inspected exposure.
@@ -453,7 +460,9 @@ class StdioMCPClient:
             _terminate_process(process, terminate_timeout=2.0, kill_timeout=2.0)
             _close_process_streams(process)
         deadline = started + 5.0
-        for thread in (self._reader_thread, self._stderr_thread):
+        with self._probe_lock:
+            probe_threads = list(self._probe_threads)
+        for thread in (self._reader_thread, self._stderr_thread, *probe_threads):
             if thread is not None and thread is not threading.current_thread():
                 thread.join(timeout=max(0.0, deadline - time.monotonic()))
 
@@ -537,6 +546,7 @@ class StdioMCPClient:
         params: dict[str, Any],
         *,
         timeout: float | None = None,
+        probe: bool = False,
     ) -> dict[str, Any]:
         configured_timeout = self._timeout_for(method) if timeout is None else timeout
         deadline = _positive_float(configured_timeout, f"timeout for {method}")
@@ -544,7 +554,8 @@ class StdioMCPClient:
             request_id = self._next_id
             self._next_id += 1
             future: Future[dict[str, Any]] = Future()
-            self._pending[request_id] = _PendingRequest(self._generation, future)
+            generation = self._generation
+            self._pending[request_id] = _PendingRequest(generation, future)
         try:
             self._send(
                 {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
@@ -571,8 +582,11 @@ class StdioMCPClient:
                     )
                 except MCPProtocolError:
                     pass
-                if self._metrics is not None:
-                    self._metrics.observe_upstream_timeout(self.backend)
+                if not probe:
+                    if self._metrics is not None:
+                        self._metrics.observe_upstream_timeout(self.backend)
+                    if method != "initialize":
+                        self._start_liveness_probe(generation)
                 public_reason = (
                     f"{upstream_label(self.backend)} timed out during {method!r} "
                     f"after {deadline:g}s"
@@ -645,6 +659,81 @@ class StdioMCPClient:
             ),
             exposable=self.expose_error_messages,
         )
+
+    def _start_liveness_probe(self, generation: int) -> None:
+        """Probe a timed-out upstream off the request thread.
+
+        A slow but healthy upstream answers ``ping`` and keeps running. One
+        that does not answer within the liveness deadline is hung: it is
+        terminated (SIGTERM, then SIGKILL after a grace period) and the next
+        request restarts it through the normal backoff and restart budget,
+        which re-verifies tool pins.
+        """
+
+        with self._probe_lock:
+            if self._closed.is_set() or self._probing_generation == generation:
+                return
+            self._probing_generation = generation
+            thread = threading.Thread(
+                target=self._liveness_probe,
+                args=(generation,),
+                name=f"judikt-{self.backend}-liveness-{generation}",
+                daemon=True,
+            )
+            self._probe_threads = [
+                existing for existing in self._probe_threads if existing.is_alive()
+            ]
+            self._probe_threads.append(thread)
+        thread.start()
+
+    def _liveness_probe(self, generation: int) -> None:
+        try:
+            if self._closed.is_set() or generation != self._generation:
+                return
+            if self._metrics is not None:
+                self._metrics.observe_upstream_liveness_probe(self.backend)
+            try:
+                self._request_current(
+                    "ping",
+                    {},
+                    timeout=self._liveness_timeout,
+                    probe=True,
+                )
+                return
+            except UpstreamTimeoutError:
+                pass
+            except MCPProtocolError:
+                # An error response is still a response; an exit is handled by
+                # the reader thread.
+                return
+            if self._closed.is_set() or generation != self._generation:
+                return
+            if self._metrics is not None:
+                self._metrics.observe_upstream_liveness_failure(self.backend)
+            self._stderr.append(
+                f"[judikt] liveness ping timed out after {self._liveness_timeout:g}s; "
+                "terminating the upstream"
+            )
+            public_reason = (
+                f"{upstream_label(self.backend)} stopped responding and was terminated"
+            )
+            failure = UpstreamExitedError(
+                public_reason,
+                diagnostic=f"{public_reason}{self._diagnostic_suffix()}",
+            )
+            with self._lifecycle_lock:
+                process = self._process if generation == self._generation else None
+            self._mark_process_failed(generation, failure, terminate=True)
+            if process is not None:
+                _terminate_process(
+                    process,
+                    terminate_timeout=TERMINATION_GRACE_SECONDS,
+                    kill_timeout=TERMINATION_GRACE_SECONDS,
+                )
+        finally:
+            with self._probe_lock:
+                if self._probing_generation == generation:
+                    self._probing_generation = None
 
     def _ensure_process(self) -> None:
         with self._lifecycle_lock:
@@ -853,6 +942,15 @@ class StdioMCPClient:
     def _diagnostic_suffix(self) -> str:
         lines = [line for line in self._stderr.tail() if line]
         return f"; recent stderr: {' | '.join(lines)}" if lines else ""
+
+
+def resolve_liveness_timeout(configured: float | None = None) -> float:
+    if configured is not None:
+        return _positive_float(configured, "liveness_timeout_seconds")
+    raw = os.getenv("JUDIKT_UPSTREAM_LIVENESS_TIMEOUT_SECONDS", "").strip()
+    if raw:
+        return _positive_float(raw, "JUDIKT_UPSTREAM_LIVENESS_TIMEOUT_SECONDS")
+    return DEFAULT_LIVENESS_TIMEOUT_SECONDS
 
 
 def _resolve_timeouts(configured: dict[str, float] | None) -> dict[str, float]:
