@@ -19,6 +19,7 @@ class AuthError(ValueError):
 
 
 OAUTH_SCOPE_PATTERN = re.compile(r"^[A-Za-z0-9!#$%&'*+.^_`|~:/-]+$")
+BEARER_SUBJECT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@:-]{0,127}$")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -37,6 +38,7 @@ class AuthConfig:
     approve_scope: str = "mcp:approve"
     admin_scope: str = "mcp:admin"
     bearer_role: str = "execute"
+    bearer_subject: str = ""
     allowed_origins: tuple[str, ...] = ()
 
     @classmethod
@@ -70,6 +72,7 @@ class AuthConfig:
             approve_scope=os.getenv("JUDIKT_APPROVE_SCOPE", "mcp:approve"),
             admin_scope=os.getenv("JUDIKT_ADMIN_SCOPE", "mcp:admin"),
             bearer_role=os.getenv("JUDIKT_HTTP_BEARER_ROLE", "execute").lower(),
+            bearer_subject=os.getenv("JUDIKT_HTTP_BEARER_SUBJECT", "").strip(),
             allowed_origins=tuple(
                 origin.strip().rstrip("/")
                 for origin in os.getenv("JUDIKT_ALLOWED_ORIGINS", "").split(",")
@@ -119,6 +122,14 @@ class AuthConfig:
                 raise AuthError(f"{name} must use HTTPS except on localhost")
         if self.bearer_role not in {"read", "execute", "approve", "admin"}:
             raise AuthError("JUDIKT_HTTP_BEARER_ROLE must be read, execute, approve, or admin")
+        if self.bearer_subject:
+            if not self.bearer_token:
+                raise AuthError("JUDIKT_HTTP_BEARER_SUBJECT requires JUDIKT_HTTP_BEARER_TOKEN")
+            if not BEARER_SUBJECT_PATTERN.fullmatch(self.bearer_subject) or self.bearer_subject == "anonymous":
+                raise AuthError(
+                    "JUDIKT_HTTP_BEARER_SUBJECT must be 1-128 letters, digits, '.', '_', '@', ':' "
+                    "or '-', start with a letter or digit, and must not be 'anonymous'"
+                )
         for scope in (
             *self.required_scopes,
             self.read_scope,
@@ -196,8 +207,12 @@ class Authenticator:
         token = authorization.removeprefix("Bearer ").strip()
         if self.config.bearer_token and hmac.compare_digest(token, self.config.bearer_token):
             return AuthResult(
-                "bearer-token",
-                {"auth_type": "static_bearer", "role": self.config.bearer_role},
+                self.config.bearer_subject or "bearer-token",
+                {
+                    "auth_type": "static_bearer",
+                    "role": self.config.bearer_role,
+                    "subject_bound": bool(self.config.bearer_subject),
+                },
             )
         if self.config.jwt_hs256_secret or self.config.jwt_jwks_url:
             return self._authenticate_jwt(token)

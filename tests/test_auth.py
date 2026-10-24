@@ -13,6 +13,7 @@ from judikt.auth import AuthConfig, AuthError, Authenticator, create_hs256_jwt
 from judikt.real_mcp import _AuthMiddleware
 from judikt.real_mcp import _warn_for_static_admin
 from judikt.request_context import (
+    authenticated_subject,
     bind_authenticated_subject,
     can_execute_control_plane_tool,
     has_control_plane_role,
@@ -140,6 +141,25 @@ class AuthenticatorTest(unittest.TestCase):
 
         self.assertEqual(result.subject, "bearer-token")
         self.assertEqual(result.claims["role"], "execute")
+
+    def test_static_bearer_subject_binds_a_policy_identity(self) -> None:
+        authenticator = Authenticator(
+            AuthConfig(bearer_token="local-token", bearer_subject="local-operator")
+        )
+
+        result = authenticator.authenticate("Bearer local-token")
+
+        self.assertEqual(result.subject, "local-operator")
+        self.assertIs(result.claims["subject_bound"], True)
+        self.assertEqual(result.claims["role"], "execute")
+
+    def test_static_bearer_subject_is_validated(self) -> None:
+        for subject in ("anonymous", "has space", "-leading", "x" * 129, "semi;colon"):
+            with self.subTest(subject=subject), self.assertRaises(AuthError):
+                AuthConfig(bearer_token="token", bearer_subject=subject).validate_for_remote_server()
+        with self.assertRaisesRegex(AuthError, "requires JUDIKT_HTTP_BEARER_TOKEN"):
+            AuthConfig(bearer_subject="local-operator").validate_for_remote_server()
+        AuthConfig(bearer_token="token", bearer_subject="ops@example.com").validate_for_remote_server()
 
     def test_jwt_rejects_missing_required_scope(self) -> None:
         secret = "unit-test-jwt-secret"
@@ -399,6 +419,22 @@ class AuthenticatorTest(unittest.TestCase):
         self.assertEqual(messages[0]["status"], 401)
         self.assertIn(b'resource_metadata="https://judikt.example.test/', headers[b"www-authenticate"])
         self.assertIn(b'scope="mcp:tools"', headers[b"www-authenticate"])
+
+    def test_http_middleware_binds_static_bearer_subject_only_when_configured(self) -> None:
+        observed: list[str] = []
+
+        async def app(scope: object, receive: object, send: object) -> None:
+            observed.append(authenticated_subject())
+
+        for config, expected in (
+            (AuthConfig(bearer_token="test-token"), ""),
+            (AuthConfig(bearer_token="test-token", bearer_subject="local-operator"), "local-operator"),
+        ):
+            with self.subTest(expected=expected):
+                observed.clear()
+                middleware = _AuthMiddleware(app, Authenticator(config), set())
+                self._run_middleware(middleware, [(b"authorization", b"Bearer test-token")])
+                self.assertEqual(observed, [expected])
 
     @staticmethod
     async def _unused_asgi_app(scope: object, receive: object, send: object) -> None:

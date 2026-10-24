@@ -185,7 +185,15 @@ class _AuthMiddleware:
             await response(scope, receive, send)
             return
         scope["judikt.auth"] = {"subject": auth_result.subject, "claims": auth_result.claims}
-        subject = "" if auth_result.claims.get("auth_type") == "static_bearer" else auth_result.subject
+        static_bearer = auth_result.claims.get("auth_type") == "static_bearer"
+        # A shared static bearer token is not a user identity. It maps to a policy
+        # identity only when the operator binds one with JUDIKT_HTTP_BEARER_SUBJECT;
+        # otherwise the caller is evaluated as "anonymous".
+        subject = (
+            auth_result.subject
+            if not static_bearer or auth_result.claims.get("subject_bound") is True
+            else ""
+        )
         context_token = bind_authenticated_subject(subject, auth_result.claims)
         try:
             await self.app(scope, receive, send)

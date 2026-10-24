@@ -60,7 +60,7 @@ Do not embed secrets in MCP client JSON. For persistent multi-upstream operation
 
 For a remote Judikt resource server, configure the MCP client with the operator-provided HTTPS `/mcp` URL and its supported OAuth/JWT flow. Do not put bearer tokens in versioned files or command arguments. Judikt validates access tokens; the external authorization server owns login, consent, client registration, authorization code flow, and PKCE.
 
-Use static bearer authentication only for a constrained single-operator environment. It authenticates possession of one shared secret and does not provide distinct user identity.
+Use static bearer authentication only for a constrained single-operator environment. It authenticates possession of one shared secret and does not provide distinct user identity. Its callers are evaluated as `anonymous` unless the operator sets `JUDIKT_HTTP_BEARER_SUBJECT`; with a starter policy from `judikt init`, set it to the policy's `local_stdio_identity` (default `local-operator`) or the HTTP caller will see no upstream tools.
 
 ## Safe Merge Procedure
 
