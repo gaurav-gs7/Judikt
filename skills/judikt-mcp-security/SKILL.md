@@ -55,6 +55,7 @@ Return a compact table with these columns:
 | Identity boundary | status | Local identity or authenticated subject mode | Action |
 | Approval boundary | status | Gate observed without revealing a token | Action |
 | Response inspection | status | Test or configuration evidence | Action |
+| Tool pinning | status | First-use mode, pending count, and integrity status | Action |
 | Audit evidence | status | Sanitized event/correlation evidence | Action |
 
 Conclude with the tested boundary, untested integrations, and whether any files were changed.

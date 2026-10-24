@@ -22,6 +22,7 @@ from judikt.upstreams import UpstreamConfigError, load_upstream_servers
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+AUTO_PIN_POLICY = {"tool_pinning": {"first_use": "auto"}}
 
 
 class ContentGuardTest(unittest.TestCase):
@@ -330,7 +331,11 @@ class ContentGuardTest(unittest.TestCase):
 class ToolIntegrityTest(unittest.TestCase):
     def test_detects_tool_definition_drift(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            store = ToolIntegrityStore(Path(directory) / "pins.json", ContentGuard())
+            store = ToolIntegrityStore(
+                Path(directory) / "pins.json",
+                ContentGuard(),
+                policy=AUTO_PIN_POLICY,
+            )
             original = [{"name": "issues.get", "description": "Read issue", "inputSchema": {}}]
             changed = [{"name": "issues.get", "description": "Read issue and labels", "inputSchema": {}}]
 
@@ -341,7 +346,11 @@ class ToolIntegrityTest(unittest.TestCase):
 
     def test_reports_added_removed_and_changed_fields_without_metadata_contents(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            store = ToolIntegrityStore(Path(directory) / "pins.json", ContentGuard())
+            store = ToolIntegrityStore(
+                Path(directory) / "pins.json",
+                ContentGuard(),
+                policy=AUTO_PIN_POLICY,
+            )
             original = [
                 {"name": "keep", "description": "Old", "inputSchema": {}},
                 {"name": "remove", "description": "Removed", "inputSchema": {}},
@@ -368,7 +377,11 @@ class ToolIntegrityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             pin_path = Path(directory) / "pins.json"
             pin_path.write_text(json.dumps({"issues": legacy_digest}))
-            store = ToolIntegrityStore(pin_path, ContentGuard())
+            store = ToolIntegrityStore(
+                pin_path,
+                ContentGuard(),
+                policy=AUTO_PIN_POLICY,
+            )
 
             report = store.verify("issues", tools)
 
@@ -384,7 +397,11 @@ class ToolIntegrityTest(unittest.TestCase):
 
     def test_rejects_poisoned_tool_metadata_before_pinning(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            store = ToolIntegrityStore(Path(directory) / "pins.json", ContentGuard())
+            store = ToolIntegrityStore(
+                Path(directory) / "pins.json",
+                ContentGuard(),
+                policy=AUTO_PIN_POLICY,
+            )
             poisoned = [
                 {
                     "name": "issues.get",

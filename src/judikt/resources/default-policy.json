@@ -6,6 +6,13 @@
     "backend": "sqlite",
     "cache_ttl_seconds": 1.0
   },
+  "tool_pinning": {
+    "first_use": {
+      "read": "auto",
+      "write": "require_approval",
+      "destructive": "require_approval"
+    }
+  },
   "blocked_argument_patterns": [
     "(^|/)\\.ssh(/|$)",
     "(^|/)\\.aws(/|$)",

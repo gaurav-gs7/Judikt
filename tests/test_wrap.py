@@ -243,6 +243,9 @@ class WrapProfileEndToEndTest(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(initialized.returncode, 0, initialized.stderr)
+            policy = json.loads(policy_path.read_text())
+            policy["tool_pinning"]["first_use"] = "auto"
+            policy_path.write_text(json.dumps(policy))
             self.assertEqual(approval.returncode, 0, approval.stderr)
 
             client = self._explicit_policy_client(root, call_log, policy_path)
@@ -266,7 +269,7 @@ class WrapProfileEndToEndTest(unittest.TestCase):
             self.assertEqual(calls[0]["tool"], "update_issue")
             self.assertIn("Approval-gated tools: update_issue, delete_repo, list_things, delete_cache", initialized.stderr)
 
-    def test_permissive_warns_and_all_tools_execute(self) -> None:
+    def test_permissive_still_requires_first_use_approval_for_write_tools(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             call_log = root / "calls.jsonl"
@@ -287,14 +290,15 @@ class WrapProfileEndToEndTest(unittest.TestCase):
 
             self.assertEqual(
                 [tool["name"] for tool in tools],
-                ["read_file", "update_issue", "delete_repo", "list_things", "delete_cache"],
+                ["read_file"],
             )
             self.assertTrue(all(not result["isError"] for result in results))
-            self.assertEqual(len(call_log.read_text().splitlines()), 5)
+            self.assertEqual(len(call_log.read_text().splitlines()), 1)
             self.assertIn(
                 "WARNING: permissive profile allows every discovered tool without generated approval gates.",
                 stderr,
             )
+            self.assertIn("Judikt pin pending: update_issue", stderr)
 
     def test_explicit_policy_bypasses_profile_classification(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -306,6 +310,7 @@ class WrapProfileEndToEndTest(unittest.TestCase):
                 "local-operator": ["delete_repo"],
                 "anonymous": [],
             }
+            policy["tool_pinning"]["first_use"] = "auto"
             policy_path = root / "explicit-policy.json"
             policy_path.write_text(json.dumps(policy))
 

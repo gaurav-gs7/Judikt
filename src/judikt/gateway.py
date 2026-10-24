@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import threading
 from typing import Any, Callable
 
@@ -18,7 +19,9 @@ class _GatewayCatalog:
         self._definitions = runtime.list_tools()
         self._tools: list[Tool] = []
         self._call_servers: dict[str, str] = {}
+        self._warned_pending: set[tuple[str, str]] = set()
         self._rebuild()
+        self._warn_pending()
 
     def tools(self) -> list[Tool]:
         with self._lock:
@@ -46,6 +49,7 @@ class _GatewayCatalog:
             report = self.runtime.tool_integrity.verify(server, definitions)
             trusted = definitions
             self.runtime.tool_integrity_reports[server] = report.as_dict()
+            self._warn_pending(server)
         except ToolDriftError as exc:
             excluded = set(exc.added_tools) | set(exc.changed_tools)
             trusted = [tool for tool in definitions if tool.get("name") not in excluded]
@@ -65,15 +69,41 @@ class _GatewayCatalog:
             self._rebuild()
         emit()
 
+    def _warn_pending(self, only_server: str = "") -> None:
+        servers = [only_server] if only_server else list(self._definitions)
+        for server in servers:
+            integrity = getattr(self.runtime, "tool_integrity", None)
+            metadata_map = getattr(integrity, "metadata", {})
+            metadata = metadata_map.get(server)
+            state_key = metadata.state_key if metadata is not None else server
+            for tool in self._pending_tools(server):
+                key = (server, tool)
+                if key in self._warned_pending:
+                    continue
+                print(
+                    f"Judikt pin pending: {tool}; accept with: judikt pins accept "
+                    f"{state_key} --tool {tool} --yes",
+                    file=sys.stderr,
+                )
+                self._warned_pending.add(key)
+
+    def _pending_tools(self, server: str) -> list[str]:
+        integrity = getattr(self.runtime, "tool_integrity", None)
+        pending = getattr(integrity, "pending_tools", None)
+        return list(pending(server)) if callable(pending) else []
+
     def _rebuild(self) -> None:
         tools: list[Tool] = []
         call_servers: dict[str, str] = {}
         for server, definitions in self._definitions.items():
+            pending = set(self._pending_tools(server))
             for upstream in definitions:
                 name = str(upstream.get("name", ""))
                 if not name or name in call_servers:
                     continue
                 call_servers[name] = server
+                if name in pending:
+                    continue
                 if not self._is_allowed(server, name):
                     continue
                 tools.append(_proxy_tool(self.runtime, server, upstream))

@@ -67,7 +67,7 @@ def _show_pin(state_key: str) -> None:
 
 def _accept_pin(state_key: str, tool_names: list[str] | None, yes: bool) -> None:
     _, pin_path = _state_paths(state_key)
-    entries = _load_entries(pin_path)
+    entries = _load_entries(pin_path, allow_invalid_mac=True)
     if len(entries) != 1:
         raise ToolIntegrityError("pins accept requires exactly one server entry in the state pin file")
     server, entry = next(iter(entries.items()))
@@ -130,11 +130,11 @@ def _state_paths(state_key: str) -> tuple[Path, Path]:
     return directory, pin_path
 
 
-def _load_entries(path: Path) -> dict[str, Any]:
-    try:
-        document = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ToolIntegrityError(f"cannot read pin file {path}: {exc}") from exc
-    if not isinstance(document, dict):
-        raise ToolIntegrityError(f"pin file {path} must contain a JSON object")
-    return document
+def _load_entries(
+    path: Path,
+    *,
+    allow_invalid_mac: bool = False,
+) -> dict[str, Any]:
+    return ToolIntegrityStore(path, ContentGuard()).entries(
+        allow_invalid_mac=allow_invalid_mac
+    )

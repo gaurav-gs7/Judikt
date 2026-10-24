@@ -144,6 +144,7 @@ class MCPResultSemanticsTest(unittest.TestCase):
         policy["actor_permissions"] = {"local-operator": allowed, "anonymous": []}
         policy["approval_required"] = approval_required or []
         policy["tool_classification"] = classification or {}
+        policy["tool_pinning"]["first_use"] = "auto"
         path = root / "policy.json"
         path.write_text(json.dumps(policy))
         return path

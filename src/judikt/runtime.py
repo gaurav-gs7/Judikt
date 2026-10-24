@@ -138,6 +138,7 @@ class JudiktRuntime:
             pin_path,
             self.content_guard,
             metadata=pin_metadata,
+            policy=self.policy.config,
         )
         self.tool_integrity_reports = {
             server: self.tool_integrity.verify(server, tools).as_dict()

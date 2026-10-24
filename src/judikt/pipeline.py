@@ -377,6 +377,14 @@ class GuardedCallPipeline:
             self.tool_integrity_reports[server] = self.tool_integrity.verify(
                 server, definitions[server]
             ).as_dict()
+            if self.tool_integrity.is_pending(server, tool):
+                return (
+                    False,
+                    "pin_pending",
+                    str(self.tool_integrity.pending_error(server, tool)),
+                    None,
+                    None,
+                )
             claims = self.policy.approval_claims(server, tool, arguments)
             if claims is not None:
                 evidence.append(f"approval_jti_sha256:{approval_jti_digest(claims.jti)}")

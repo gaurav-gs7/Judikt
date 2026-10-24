@@ -8,6 +8,9 @@
     "backend": "sqlite",
     "cache_ttl_seconds": 1.0
   },
+  "tool_pinning": {
+    "first_use": "auto"
+  },
   "blocked_argument_patterns": [
     "(^|/)\\.ssh(/|$)",
     "(^|/)\\.aws(/|$)",
