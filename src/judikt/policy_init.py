@@ -11,10 +11,30 @@ from .protocol import StdioMCPClient
 
 
 STARTER_PROFILES = ("read-only", "approve-writes", "permissive")
-MUTATION_NAME_PATTERN = re.compile(
-    r"(?:^|[^a-z0-9])(?:delete|remove|drop|destroy|purge|write|update|create|put|post|patch|set|move|rename|exec|execute|run|kill|restart|rollback|deploy|push|merge|send|upload)(?:$|[^a-z0-9])",
+WRITE_NAME_PATTERN = re.compile(
+    r"(?:^|[^a-z0-9])(?:create|update|put|post|patch|set|move|rename|write|send|upload|push|merge)(?:$|[^a-z0-9])",
     re.IGNORECASE,
 )
+DESTRUCTIVE_NAME_PATTERN = re.compile(
+    r"(?:^|[^a-z0-9])(?:delete|remove|drop|destroy|purge|kill|restart|rollback|exec|execute|run|deploy)(?:$|[^a-z0-9])",
+    re.IGNORECASE,
+)
+# Union of both verb sets, kept for callers that only need "does this name
+# mutate anything".
+MUTATION_NAME_PATTERN = re.compile(
+    rf"{WRITE_NAME_PATTERN.pattern}|{DESTRUCTIVE_NAME_PATTERN.pattern}",
+    re.IGNORECASE,
+)
+
+
+def name_implied_tier(name: str) -> str:
+    """Return the minimum tier a tool name implies."""
+
+    if DESTRUCTIVE_NAME_PATTERN.search(name) is not None:
+        return "destructive"
+    if WRITE_NAME_PATTERN.search(name) is not None:
+        return "write"
+    return "read"
 
 
 class PolicyInitializationError(ValueError):

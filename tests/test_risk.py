@@ -19,7 +19,7 @@ DEMO_CASES = [
         {"service": "checkout-worker"},
         20,
         "low",
-        ["base MCP tool invocation risk", "production operations server"],
+        ["tier read (name)", "production operations server"],
     ),
     (
         "platform-ops",
@@ -28,7 +28,7 @@ DEMO_CASES = [
         50,
         "medium",
         [
-            "base MCP tool invocation risk",
+            "tier read (name)",
             "production operations server",
             "configuration may contain secrets",
             "payments-api is business critical",
@@ -41,7 +41,7 @@ DEMO_CASES = [
         45,
         "medium",
         [
-            "base MCP tool invocation risk",
+            "tier read (name)",
             "production operations server",
             "logs may include sensitive operational context",
             "payments-api is business critical",
@@ -54,7 +54,7 @@ DEMO_CASES = [
         55,
         "medium",
         [
-            "base MCP tool invocation risk",
+            "tier destructive (name)",
             "production operations server",
             "diagnostic commands can expose infrastructure details",
             "payments-api is business critical",
@@ -67,7 +67,7 @@ DEMO_CASES = [
         75,
         "high",
         [
-            "base MCP tool invocation risk",
+            "tier destructive (name)",
             "production operations server",
             "deployment restart can affect availability",
             "payments-api is business critical",
@@ -80,7 +80,7 @@ DEMO_CASES = [
         90,
         "critical",
         [
-            "base MCP tool invocation risk",
+            "tier destructive (name)",
             "production operations server",
             "deployment rollback can change live production traffic",
             "payments-api is business critical",
@@ -94,7 +94,7 @@ DEMO_CASES = [
         100,
         "critical",
         [
-            "base MCP tool invocation risk",
+            "tier destructive (name)",
             "kubernetes operations server",
             "pod restart can affect production availability",
             "request targets a production namespace",
@@ -107,7 +107,7 @@ DEMO_CASES = [
         {},
         10,
         "low",
-        ["base MCP tool invocation risk"],
+        ["tier read (name)"],
     ),
 ]
 
@@ -191,12 +191,60 @@ class RiskEngineTest(unittest.TestCase):
         self.assertEqual(
             assessment.evidence,
             [
-                "base MCP tool invocation risk",
+                "tier read (name)",
                 "production namespace",
                 "critical release",
                 "security ticket",
             ],
         )
+
+    def test_write_verbs_score_at_write_tier_and_destructive_verbs_at_destructive(self) -> None:
+        engine = RiskEngine(json.loads(DEFAULT_POLICY_PATH.read_text()))
+
+        update = engine.assess(
+            "generic",
+            "update_issue",
+            {},
+            {
+                "name": "update_issue",
+                "annotations": {"readOnlyHint": False, "destructiveHint": False},
+            },
+        )
+        delete = engine.assess(
+            "generic",
+            "delete_repo",
+            {},
+            {"name": "delete_repo", "annotations": {"destructiveHint": True}},
+        )
+        by_name_only = engine.assess("generic", "create_ticket", {})
+
+        self.assertEqual(update.score, 40)
+        self.assertEqual(update.level, "medium")
+        self.assertEqual(update.evidence[0], "tier write (annotations+name)")
+        self.assertEqual(delete.score, 70)
+        self.assertEqual(delete.evidence[0], "tier destructive (annotations+name)")
+        self.assertEqual(by_name_only.score, 40)
+        self.assertEqual(by_name_only.evidence[0], "tier write (name)")
+
+    def test_read_only_annotation_on_write_name_is_at_least_write(self) -> None:
+        engine = RiskEngine(json.loads(DEFAULT_POLICY_PATH.read_text()))
+
+        assessment = engine.assess(
+            "generic",
+            "create_x",
+            {},
+            {"name": "create_x", "annotations": {"readOnlyHint": True}},
+        )
+
+        self.assertGreaterEqual(assessment.score, 40)
+        self.assertNotIn(assessment.evidence[0], {"tier read (annotations)", "tier read (name)"})
+
+    def test_evidence_names_policy_source(self) -> None:
+        policy = json.loads(DEFAULT_POLICY_PATH.read_text())
+        policy["tool_classification"] = {"records.change": {"tier": "write"}}
+        assessment = RiskEngine(policy).assess("generic", "records.change", {})
+
+        self.assertEqual(assessment.evidence[0], "tier write (policy)")
 
     def test_untrusted_read_only_annotation_cannot_lower_delete_tool(self) -> None:
         engine = RiskEngine(json.loads(DEFAULT_POLICY_PATH.read_text()))

@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from .policy_init import MUTATION_NAME_PATTERN, classify_tool
+from .policy_init import classify_tool, name_implied_tier
 
 
 TIERS = ("read", "write", "destructive")
@@ -60,9 +60,9 @@ class RiskEngine:
         tool_definition: dict[str, Any] | None = None,
     ) -> RiskAssessment:
         del server
-        tier, annotations = self._classification(tool, tool_definition)
+        tier, annotations, source = self._classification(tool, tool_definition)
         score = self.config["tier_scores"][tier]
-        evidence = ["base MCP tool invocation risk"]
+        evidence = [f"tier {tier} ({source})"]
 
         for modifier in self.config["annotation_modifiers"]:
             if annotations.get(modifier["annotation"]) == modifier["equals"]:
@@ -109,7 +109,13 @@ class RiskEngine:
         self,
         tool: str,
         tool_definition: dict[str, Any] | None,
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> tuple[str, dict[str, Any], str]:
+        """Return the effective tier, the annotations used, and the tier's source.
+
+        The tier is the strictest of the name-implied floor, the policy's
+        ``tool_classification`` and the runtime annotations; ``source`` names
+        every input that produced that tier.
+        """
         configured = self.classifications.get(tool, {})
         if not isinstance(configured, dict):
             configured = {}
@@ -126,16 +132,15 @@ class RiskEngine:
             if isinstance(runtime_annotations, dict):
                 annotations = runtime_annotations
 
-        implied_tier = (
-            "destructive" if MUTATION_NAME_PATTERN.search(tool) is not None else "read"
-        )
-        tiers = [implied_tier]
+        candidates: list[tuple[str, str]] = []
         if configured_tier in TIERS:
-            tiers.append(configured_tier)
+            candidates.append(("policy", configured_tier))
         if runtime_tier in TIERS:
-            tiers.append(runtime_tier)
-        tier = max(tiers, key=TIERS.index)
-        return tier, annotations
+            candidates.append(("annotations", runtime_tier))
+        candidates.append(("name", name_implied_tier(tool)))
+        tier = max((value for _, value in candidates), key=TIERS.index)
+        source = "+".join(name for name, value in candidates if value == tier)
+        return tier, annotations, source
 
     def _level(self, score: int) -> str:
         levels = self.config["levels"]
