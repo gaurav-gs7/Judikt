@@ -42,4 +42,14 @@ In local stdio mode, approvals and roles protect against prompt-injected calls a
 
 `inbound_content_inspection.thresholds` configures the minimum blocking severity for `tool_description`, `tool_argument`, and `tool_result`. Defaults are medium, medium, and high respectively. Medium tool-result findings redact the matched span; more than `max_medium_findings` (default `3`) quarantines the full result. Low findings are recorded. Oversized results scan the first and last halves of the byte budget and record a finding without blocking by default, while oversized metadata fails closed.
 
-The project-authored 178-sample held-out test split measured 100% precision, 98.57% recall, and 0% false-positive rate overall after the redesign. Tool-result recall was 100% with 0% false-positive rate. Treat these as regression-corpus measurements, not proof of general semantic detection. The repository publishes [baseline evidence](https://github.com/gaurav-gs7/Judikt/blob/main/docs/evidence/content-guard-baseline-2026-10-23-test.json) and [redesign evidence](https://github.com/gaurav-gs7/Judikt/blob/main/docs/evidence/content-guard-redesign-2026-10-23-test.json). Novel paraphrases remain a known gap; do not describe this deterministic guard as complete prompt-injection prevention.
+Report detection accuracy only with this breakdown, measured on 2026-10-24:
+
+| Measurement | What it is | Samples | Recall | Precision | False-positive rate |
+| --- | --- | --- | --- | --- | --- |
+| Project-authored regression split (test) | Written alongside the rules; a regression check, not a generalisation measure | 178 (70 attack) | 98.57% | 100% | 0% (tool results 0%) |
+| External holdout: BIPIA | Independent attack strings in README, issue, web, email, and log wrappers plus tool descriptions; never used for tuning | 300 (250 attack) | 0.8% | 100% | 0% |
+| External holdout: InjecAgent | Independent injections inside agent tool outputs; never used for tuning | 335 (250 attack) | 0% | n/a (no detections) | 0% |
+| External holdout, by surface | Same holdout | tool_result 510 / tool_description 125 | 0.53% / 0% | 100% / n/a | 0% / n/a |
+| Real package documentation | Installed Python and npm READMEs, 4 KB chunks, benign only | 1,526 chunks from 653 packages | n/a | n/a | 0.59% (0.92% before the 2026-10-24 rule changes) |
+
+Deterministic rules miss novel paraphrases; Judikt relies on policy, approvals and least-privilege tool exposure as the primary controls. Never quote the regression-split numbers alone as the guard's accuracy. Evidence is published under [docs/evidence](https://github.com/gaurav-gs7/Judikt/tree/main/docs/evidence) (`content-guard-recall-2026-10-24-test.json`, `content-guard-external-after-2026-10-24.json`, and `real-docs-fpr-2026-10-24-after.json`). Do not describe this deterministic guard as complete prompt-injection prevention.

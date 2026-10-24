@@ -18,6 +18,8 @@ Upstream annotations are self-reported and are not trusted security facts. Judik
 
 Judikt itself is installed separately. The runtime sits between an MCP client and an operator-selected tool server, applying deterministic policy, local or authenticated identity, argument and response inspection, tool-definition pinning, approval controls, rate limits, kill switches, redaction, and tamper-evident audit evidence. The skill does not bundle the runtime, silently install dependencies, edit client configuration without consent, or invent privileged approval tokens.
 
+Response inspection is deterministic and narrow. On an external prompt-injection holdout (BIPIA and InjecAgent) it detected 0.4% of attacks with no false positives, against 98.57% on the project's own regression split; on 1,526 chunks of real package documentation its false-positive rate was 0.59%. Deterministic rules miss novel paraphrases; Judikt relies on policy, approvals and least-privilege tool exposure as the primary controls.
+
 ## Use Cases
 
 - Wrap a local stdio MCP server with `judikt wrap -- <upstream command>`.
