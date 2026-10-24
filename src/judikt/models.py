@@ -3,6 +3,36 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+# Arguments owned by Judikt itself. They carry approval evidence for Judikt's
+# policy engine and are never forwarded to an upstream MCP server.
+APPROVAL_TOKEN_ARGUMENT = "approval_token"
+DEMO_APPROVAL_ARGUMENT = "approved"
+JUDIKT_CONTROL_ARGUMENTS = frozenset({APPROVAL_TOKEN_ARGUMENT, DEMO_APPROVAL_ARGUMENT})
+
+
+def strip_control_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Return the arguments an upstream may receive."""
+
+    return {
+        key: value
+        for key, value in arguments.items()
+        if key not in JUDIKT_CONTROL_ARGUMENTS
+    }
+
+
+def declared_control_arguments(definition: dict[str, Any] | None) -> list[str]:
+    """Return Judikt control argument names an upstream schema declares itself."""
+
+    if not isinstance(definition, dict):
+        return []
+    schema = definition.get("inputSchema")
+    properties = schema.get("properties") if isinstance(schema, dict) else None
+    required = schema.get("required") if isinstance(schema, dict) else None
+    declared = set(properties) if isinstance(properties, dict) else set()
+    if isinstance(required, list):
+        declared |= {name for name in required if isinstance(name, str)}
+    return sorted(declared & JUDIKT_CONTROL_ARGUMENTS)
+
 
 @dataclass(frozen=True)
 class Tool:

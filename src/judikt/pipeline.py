@@ -16,7 +16,13 @@ from .diagnostics import (
 from .findings import FindingDispatcher, build_finding_event, should_emit_finding
 from .kill_switch import KillSwitchStore, KillSwitchUnavailable
 from .metrics import Metrics
-from .models import PolicyDecision, ToolCallResult
+from .models import (
+    JUDIKT_CONTROL_ARGUMENTS,
+    PolicyDecision,
+    ToolCallResult,
+    declared_control_arguments,
+    strip_control_arguments,
+)
 from .policy import PolicyEngine
 from .protocol import (
     GuardedToolError,
@@ -265,6 +271,7 @@ class GuardedCallPipeline:
             decision=decision,
             evidence=evidence,
             diagnostic=diagnostic,
+            control_arguments_stripped=bool(JUDIKT_CONTROL_ARGUMENTS & set(arguments)),
         )
         if diagnostic:
             emit_operator_diagnostic(
@@ -369,6 +376,16 @@ class GuardedCallPipeline:
         risk = self.policy.risk.assess(
             server, tool, arguments, tool_definition
         )
+        collisions = declared_control_arguments(tool_definition)
+        if collisions:
+            return self.policy._decision(
+                False,
+                f"tool {tool!r} declares Judikt control argument(s) "
+                f"{', '.join(collisions)} and cannot be proxied",
+                "control_argument_collision",
+                risk,
+                action="DENY",
+            )
         try:
             switches = self.kill_switches.get_state()
         except KillSwitchUnavailable:
@@ -477,7 +494,10 @@ class GuardedCallPipeline:
                 )
                 evidence.append(f"intent_seq:{intent_seq}")
                 tool_span.set_json_input(safe_arguments)
-                raw_result = self.upstreams.execute(server, tool, arguments)
+                # Judikt control arguments (approval tokens) are consumed above
+                # and never reach an upstream, whatever its transport.
+                upstream_arguments = strip_control_arguments(arguments)
+                raw_result = self.upstreams.execute(server, tool, upstream_arguments)
                 inspection = self.content_guard.inspect(raw_result, surface="tool_result")
                 tool_span.set_attribute("judikt.content.allowed", inspection.allowed)
                 tool_span.set_attribute(
@@ -642,6 +662,7 @@ class GuardedCallPipeline:
         decision: PolicyDecision,
         evidence: list[str],
         diagnostic: str = "",
+        control_arguments_stripped: bool | None = None,
     ) -> None:
         self.audit.record(
             correlation_id=correlation_id,
@@ -656,6 +677,7 @@ class GuardedCallPipeline:
             duration_ms=duration_ms,
             evidence=evidence,
             diagnostic=diagnostic or None,
+            control_arguments_stripped=control_arguments_stripped,
         )
         if should_emit_finding(rule, decision.risk_level, allowed):
             outcome = self.findings.dispatch(

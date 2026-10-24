@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import copy
 import json
 import sys
 import threading
 from typing import Any, Callable
 
 from .diagnostics import emit_operator_diagnostic, exception_diagnostic, redact_diagnostic
-from .models import Tool, ToolCallResult
+from .models import (
+    APPROVAL_TOKEN_ARGUMENT,
+    DEMO_APPROVAL_ARGUMENT,
+    Tool,
+    ToolCallResult,
+    declared_control_arguments,
+)
 from .tool_integrity import ToolDriftError, ToolIntegrityError
 
 
@@ -21,6 +28,7 @@ class ToolCatalog:
         self._tools: list[Tool] = []
         self._call_servers: dict[str, str] = {}
         self._warned_pending: set[tuple[str, str]] = set()
+        self._warned_collisions: set[tuple[str, str]] = set()
         self._rebuild()
         self._warn_pending()
 
@@ -141,9 +149,26 @@ class ToolCatalog:
                 call_servers[name] = server
                 if name in pending or not self._is_allowed(server, name):
                     continue
+                collisions = declared_control_arguments(upstream)
+                if collisions:
+                    self._warn_collision(server, name, collisions)
+                    continue
                 tools.append(proxy_tool(self.runtime, server, upstream))
         self._tools = tools
         self._call_servers = call_servers
+
+    def _warn_collision(self, server: str, tool: str, fields: list[str]) -> None:
+        key = (server, tool)
+        if key in self._warned_collisions:
+            return
+        self._warned_collisions.add(key)
+        print(
+            f"Judikt refused to proxy {tool!r} from {server!r}: its input schema declares "
+            f"Judikt control argument(s) {', '.join(fields)}. Judikt never forwards these "
+            "arguments, so the tool is excluded and calls are denied with rule "
+            "control_argument_collision.",
+            file=sys.stderr,
+        )
 
     def _is_allowed(self, server: str, tool: str) -> bool:
         return tool in self.runtime.policy.config["allowed_tools"].get(server, [])
@@ -168,7 +193,7 @@ def proxy_tool(runtime: Any, server: str, upstream: dict[str, Any]) -> Tool:
             f"[proxied via Judikt from {server}] "
             f"{str(upstream.get('description', ''))}"
         ),
-        input_schema=dict(upstream.get("inputSchema") or {}),
+        input_schema=advertised_input_schema(runtime, name, upstream),
         title=(
             upstream.get("title")
             if isinstance(upstream.get("title"), str)
@@ -186,6 +211,46 @@ def proxy_tool(runtime: Any, server: str, upstream: dict[str, Any]) -> Tool:
             else None
         ),
     )
+
+
+def advertised_input_schema(
+    runtime: Any,
+    name: str,
+    upstream: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the schema Judikt advertises for a proxied tool.
+
+    The upstream definition is deep-copied first: pin digests are computed from
+    the upstream's own definition, never from what Judikt advertises.
+    """
+
+    schema = copy.deepcopy(upstream.get("inputSchema") or {})
+    if not isinstance(schema, dict) or schema.get("type", "object") != "object":
+        return schema if isinstance(schema, dict) else {}
+    policy = runtime.policy
+    may_require_approval = getattr(policy, "may_require_approval", None)
+    if not callable(may_require_approval) or not may_require_approval(name, upstream):
+        return schema
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        properties = {}
+        schema["properties"] = properties
+    properties[APPROVAL_TOKEN_ARGUMENT] = {
+        "type": "string",
+        "description": (
+            "Judikt approval token issued by a human approver. Judikt removes it "
+            "before the call reaches the upstream."
+        ),
+    }
+    if getattr(policy, "demo_boolean_approval_enabled", False):
+        properties[DEMO_APPROVAL_ARGUMENT] = {
+            "type": "boolean",
+            "description": (
+                "Demo-only Judikt approval flag. Judikt removes it before the call "
+                "reaches the upstream."
+            ),
+        }
+    return schema
 
 
 def gateway_result(guarded: ToolCallResult) -> dict[str, Any]:

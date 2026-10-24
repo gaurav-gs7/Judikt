@@ -281,6 +281,21 @@ class ServerlessGatewayTests(unittest.TestCase):
                     self.assertEqual(result["ok"], expected)
                     self.assertNotIn("private", json.dumps(result))
 
+    def test_tool_lambda_never_receives_judikt_control_arguments(self) -> None:
+        client = mock.Mock()
+        client.invoke.return_value = {"Payload": io.BytesIO(b'{"ok":true,"result":{}}')}
+        with mock.patch.dict(os.environ, {"TOOL_FUNCTION_NAME": "tool-function"}), mock.patch(
+            "judikt.serverless._lambda_client", return_value=client
+        ):
+            serverless._invoke_tool_lambda(
+                "platform-ops",
+                "platform.rollback_deployment",
+                {"service": "payments-api", "approval_token": "signed", "approved": True},
+                "corr",
+            )
+        sent = json.loads(client.invoke.call_args.kwargs["Payload"])
+        self.assertEqual(sent["arguments"], {"service": "payments-api"})
+
     def test_kill_switch_requires_boolean_and_nonempty_target(self) -> None:
         with mock.patch("judikt.serverless._put_state") as put:
             result = serverless._set_kill_switch({"server": "incident", "enabled": False})

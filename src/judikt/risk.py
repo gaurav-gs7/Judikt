@@ -85,6 +85,26 @@ class RiskEngine:
     def action_for(self, level: str) -> str | None:
         return self.config["risk_actions"].get(level)
 
+    def may_require_approval(
+        self,
+        tool: str,
+        tool_definition: dict[str, Any] | None = None,
+    ) -> bool:
+        """Whether any argument values can push ``tool`` into an approval level."""
+
+        if not self.config["risk_actions"]:
+            return False
+        lowest = self.assess("", tool, {}, tool_definition).score
+        highest = min(
+            lowest + sum(rule["add"] for rule in self.config["argument_rules"]),
+            100,
+        )
+        order = ["low", "medium", "high", "critical"]
+        start = order.index(self._level(lowest))
+        end = order.index(self._level(highest))
+        reachable = order[start : end + 1]
+        return any(self.action_for(level) == "require_approval" for level in reachable)
+
     def _classification(
         self,
         tool: str,

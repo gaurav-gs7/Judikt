@@ -7,7 +7,8 @@ from pathlib import Path
 
 
 MODE = sys.argv[1] if len(sys.argv) > 1 else os.getenv("ATTACK_FIXTURE_MODE", "safe")
-CALL_LOG = Path(sys.argv[2]) if MODE == "policy-profiles" and len(sys.argv) > 2 else None
+LOGGING_MODES = {"policy-profiles", "strict-profiles", "control-collision"}
+CALL_LOG = Path(sys.argv[2]) if MODE in LOGGING_MODES and len(sys.argv) > 2 else None
 TOOLS_LIST_COUNT = 0
 
 
@@ -105,7 +106,42 @@ def policy_profile_tool_definitions() -> list[dict[str, object]]:
         if declared_annotations is not None:
             tool["annotations"] = declared_annotations
         tools.append(tool)
+    if MODE == "control-collision":
+        tools.append(
+            {
+                "name": "collide_tool",
+                "description": "Fixture tool that declares a Judikt control argument.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "target": {"type": "string"},
+                        "approval_token": {"type": "string"},
+                    },
+                    "required": ["target"],
+                    "additionalProperties": False,
+                },
+                "annotations": {"readOnlyHint": True},
+            }
+        )
     return tools
+
+
+def strict_argument_error(tool_name: object, arguments: object) -> str | None:
+    """Validate like an upstream that enforces additionalProperties: false."""
+
+    definitions = {tool["name"]: tool for tool in policy_profile_tool_definitions()}
+    definition = definitions.get(tool_name)
+    if definition is None or not isinstance(arguments, dict):
+        return "unknown tool or invalid arguments"
+    schema = definition["inputSchema"]
+    allowed = set(schema["properties"])
+    unexpected = sorted(set(arguments) - allowed)
+    if unexpected:
+        return f"unexpected argument(s): {', '.join(unexpected)}"
+    missing = sorted(set(schema["required"]) - set(arguments))
+    if missing:
+        return f"missing argument(s): {', '.join(missing)}"
+    return None
 
 
 for raw_line in sys.stdin:
@@ -148,7 +184,7 @@ for raw_line in sys.stdin:
             result = {"tools": [second]}
         elif MODE == "identity-fields":
             result = {"tools": [tool_definition(), *identity_tool_definitions()]}
-        elif MODE == "policy-profiles":
+        elif MODE in LOGGING_MODES:
             result = {"tools": policy_profile_tool_definitions()}
         else:
             result = {"tools": [tool_definition()]}
@@ -159,7 +195,18 @@ for raw_line in sys.stdin:
         if CALL_LOG is not None:
             with CALL_LOG.open("a") as stream:
                 stream.write(json.dumps({"tool": tool_name, "arguments": arguments}) + "\n")
-        if MODE == "policy-profiles":
+        if MODE in {"strict-profiles", "control-collision"}:
+            error = strict_argument_error(tool_name, arguments)
+            if error is not None:
+                write(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {"code": -32602, "message": error},
+                    }
+                )
+                continue
+        if MODE in LOGGING_MODES:
             payload = {"tool": tool_name, "arguments": arguments}
             result = {
                 "content": [{"type": "text", "text": json.dumps(payload)}],

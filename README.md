@@ -272,10 +272,11 @@ Judikt includes:
 - Policy-as-code allowlists and blocked argument patterns
 - JWT/OIDC resource-server authentication with issuer, audience, group, and scope validation
 - Authenticated-subject binding that rejects caller actor spoofing
-- Trusted-context identity from `local_stdio_identity` or an authenticated subject, with tool arguments forwarded unchanged
+- Trusted-context identity from `local_stdio_identity` or an authenticated subject, with tool arguments forwarded unchanged except for Judikt's own control arguments
 - OAuth protected-resource metadata and caller-token passthrough denial
 - Scoped OAuth challenges and exact HTTP Origin validation
 - HMAC-signed, single-use approval tokens for restart and rollback operations
+- Approval tokens (`approval_token`, and demo-only `approved`) are consumed by Judikt and stripped before any upstream call; approval-gated tools advertise an optional `approval_token` property, and an upstream tool that declares either name itself is refused with rule `control_argument_collision`
 - Slack button approvals with signed callbacks, approver allowlists, deduplication, and replay protection
 - Rollback-plan enforcement before production-impacting actions execute
 - Dry-run-only and shadow-mode outcomes for safe agent evaluation

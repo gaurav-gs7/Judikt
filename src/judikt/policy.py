@@ -10,7 +10,11 @@ from .approval import ApprovalAuthority, ApprovalClaims, ApprovalTokenError
 from .content_guard import ContentGuard
 from .diagnostics import redact_diagnostic
 from .metrics import Metrics
-from .models import PolicyDecision
+from .models import (
+    APPROVAL_TOKEN_ARGUMENT,
+    DEMO_APPROVAL_ARGUMENT,
+    PolicyDecision,
+)
 from .rate_limiter import RateLimit, RateLimitResult, build_rate_limiter
 from .risk import RiskEngine
 
@@ -311,7 +315,7 @@ class PolicyEngine:
         tool: str,
         arguments: dict[str, Any],
     ) -> ApprovalClaims | None:
-        token = arguments.get("approval_token")
+        token = arguments.get(APPROVAL_TOKEN_ARGUMENT)
         if not isinstance(token, str) or not token:
             return None
         try:
@@ -362,7 +366,29 @@ class PolicyEngine:
     def _has_approval(self, server: str, tool: str, arguments: dict[str, Any]) -> bool:
         if self.approval_claims(server, tool, arguments) is not None:
             return True
-        return bool(self.config.get("allow_demo_boolean_approval", False) and arguments.get("approved") is True)
+        return bool(
+            self.demo_boolean_approval_enabled
+            and arguments.get(DEMO_APPROVAL_ARGUMENT) is True
+        )
+
+    @property
+    def demo_boolean_approval_enabled(self) -> bool:
+        return self.config.get("allow_demo_boolean_approval", False) is True
+
+    def may_require_approval(
+        self,
+        tool: str,
+        tool_definition: dict[str, Any] | None = None,
+    ) -> bool:
+        """Whether some call to ``tool`` can need an approval under this policy.
+
+        Used to advertise Judikt's optional ``approval_token`` argument. Risk
+        rules that depend on argument values are considered at their worst case.
+        """
+
+        if tool in self.config.get("approval_required", []):
+            return True
+        return self.risk.may_require_approval(tool, tool_definition)
 
     def _actor(self, arguments: dict[str, Any]) -> str:
         for field in self.config.get("identity_argument_fields", []):

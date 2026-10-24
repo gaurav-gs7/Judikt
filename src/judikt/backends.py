@@ -19,8 +19,6 @@ from .protocol import GuardedToolError, MCPProtocolError, serve_stdio
 
 def _schema(**properties: dict[str, str]) -> dict[str, Any]:
     optional = {
-        "approved",
-        "approval_token",
         "allow_downtime",
         "actor",
         "auto_create_incident",
@@ -74,8 +72,6 @@ PLATFORM_TOOLS = [
             actor={"type": "string"},
             environment={"type": "string"},
             rollback_plan={"type": "string"},
-            approval_token={"type": "string"},
-            approved={"type": "boolean"},
             dry_run={"type": "boolean"},
             shadow_mode={"type": "boolean"},
             incident_id={"type": "string"},
@@ -91,8 +87,6 @@ PLATFORM_TOOLS = [
             actor={"type": "string"},
             environment={"type": "string"},
             rollback_plan={"type": "string"},
-            approval_token={"type": "string"},
-            approved={"type": "boolean"},
             dry_run={"type": "boolean"},
             shadow_mode={"type": "boolean"},
             incident_id={"type": "string"},
@@ -118,8 +112,6 @@ KUBERNETES_TOOLS = [
             actor={"type": "string"},
             environment={"type": "string"},
             rollback_plan={"type": "string"},
-            approval_token={"type": "string"},
-            approved={"type": "boolean"},
             dry_run={"type": "boolean"},
             shadow_mode={"type": "boolean"},
             incident_id={"type": "string"},

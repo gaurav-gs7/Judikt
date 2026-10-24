@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .models import strip_control_arguments
 from .paths import ensure_private_directory, state_root
 from .secrets import resolve_configured_secret
 
@@ -148,11 +149,7 @@ class ApprovalAuthority:
 
 
 def arguments_hash(arguments: dict[str, Any]) -> str:
-    canonical = {
-        key: value
-        for key, value in arguments.items()
-        if key not in {"approved", "approval_token"}
-    }
+    canonical = strip_control_arguments(arguments)
     encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
 

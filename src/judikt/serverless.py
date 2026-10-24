@@ -18,7 +18,7 @@ from .approval_replay import DynamoDBApprovalReplayStore, approval_jti_digest
 from .backends import INCIDENT_TOOLS, KUBERNETES_TOOLS, PLATFORM_TOOLS, IncidentBackend, KubernetesBackend, PlatformOpsBackend
 from .content_guard import ContentGuard, quarantine_result
 from .findings import build_finding_event, should_emit_finding
-from .models import PolicyDecision
+from .models import PolicyDecision, strip_control_arguments
 from .kill_switch import DynamoDBKillSwitchStore
 from .paths import DEFAULT_POLICY_PATH, DEMO_POLICY_PATH
 from .policy import PolicyEngine
@@ -562,7 +562,9 @@ def _invoke_tool_lambda(server: str, tool: str, arguments: dict[str, Any], corre
         "action": "call",
         "server": server,
         "tool": tool,
-        "arguments": arguments,
+        # Approval tokens are verified and consumed by the gateway; the tool
+        # Lambda never receives Judikt control arguments.
+        "arguments": strip_control_arguments(arguments),
         "correlation_id": correlation_id,
     }
     response = _lambda_client().invoke(

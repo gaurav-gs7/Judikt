@@ -140,6 +140,7 @@ class AuditStore:
             self._ensure_column("chain_id", "TEXT")
             self._ensure_column("hash_version", "INTEGER")
             self._ensure_column("diagnostic", "TEXT")
+            self._ensure_column("control_arguments_stripped", "INTEGER")
             self._connection.execute(
                 "CREATE TABLE IF NOT EXISTS audit_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
             )
@@ -227,11 +228,14 @@ class AuditStore:
         action: str = "ALLOW",
         evidence: list[str] | None = None,
         diagnostic: str | None = None,
+        control_arguments_stripped: bool | None = None,
     ) -> int:
         """Append one hash-chained, signed audit event.
 
         ``diagnostic`` is operator-only detail about an upstream failure. Callers
         must redact it first; it is never returned to agents.
+        ``control_arguments_stripped`` records that Judikt-owned arguments such
+        as ``approval_token`` were withheld from the upstream.
         """
         with self._lock:
             created_at = dt.datetime.now(dt.UTC).isoformat()
@@ -266,6 +270,8 @@ class AuditStore:
                 }
                 if diagnostic is not None:
                     event["diagnostic"] = diagnostic
+                if control_arguments_stripped is not None:
+                    event["control_arguments_stripped"] = bool(control_arguments_stripped)
                 event_hash = self._hash_event(event)
                 signature = self._sign(event_hash)
                 self._connection.execute(
@@ -275,8 +281,8 @@ class AuditStore:
                         reason, arguments_json, result_json, duration_ms, action,
                         previous_hash, event_hash, signature, instance_id,
                         event_version, evidence_json, seq, chain_id, hash_version,
-                        diagnostic
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        diagnostic, control_arguments_stripped
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         created_at,
@@ -300,6 +306,11 @@ class AuditStore:
                         self._chain_id,
                         2,
                         diagnostic,
+                        (
+                            int(bool(control_arguments_stripped))
+                            if control_arguments_stripped is not None
+                            else None
+                        ),
                     ),
                 )
                 envelope = {**event, "event_hash": event_hash, "signature": signature}
@@ -349,6 +360,8 @@ class AuditStore:
         for row in rows:
             event = dict(row)
             event["allowed"] = bool(event["allowed"])
+            if event.get("control_arguments_stripped") is not None:
+                event["control_arguments_stripped"] = bool(event["control_arguments_stripped"])
             event["arguments"] = json.loads(event.pop("arguments_json"))
             raw_result = event.pop("result_json")
             event["result"] = json.loads(raw_result) if raw_result is not None else None
@@ -812,6 +825,8 @@ class AuditStore:
             event["seq"] = int(row["seq"])
         if row["diagnostic"] is not None:
             event["diagnostic"] = row["diagnostic"]
+        if row["control_arguments_stripped"] is not None:
+            event["control_arguments_stripped"] = bool(row["control_arguments_stripped"])
         return event
 
     @staticmethod
