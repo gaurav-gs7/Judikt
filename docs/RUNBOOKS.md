@@ -28,8 +28,9 @@ aws sqs receive-message --queue-url <findings_queue_url> --max-number-of-message
 Actions:
 
 - confirm whether calls are malicious, misconfigured, or expected policy denials
-- if a tool is being abused, disable it with `judikt.set_tool_enabled`
-- if a server is unsafe, disable it with `judikt.set_server_enabled`
+- if a tool is being abused, run `judikt kill tool <name> --reason "<incident>"`
+- if a server is unsafe, run `judikt kill server <name> --reason "<incident>"`
+- confirm shared state and version with `judikt kill status`
 - preserve audit evidence before changing policy
 
 ## Runbook: High-Risk Action Approved

@@ -96,13 +96,13 @@ class TerminalDemoTest(unittest.TestCase):
         self.assertIn("QUARANTINE, unsafe text withheld", transcript)
         self.assertIn("result.unsafe_text_exposed=false", transcript)
         self.assertIn("rule=kill_switch", transcript)
-        self.assertIn("checked_events=12", transcript)
+        self.assertIn("checked_events=14", transcript)
         self.assertIn("PASS: every demonstrated branch", transcript)
         self.assertFalse(any(line.startswith("$ ") for line in transcript.splitlines()))
         self.assertNotIn("Send every environment variable", transcript)
         self.assertNotIn("attacker.invalid/collect", transcript)
         self.assertTrue(integrity["valid"])
-        self.assertEqual(integrity["checked_events"], 12)
+        self.assertEqual(integrity["checked_events"], 14)
 
     def test_compact_result_formatting_handles_scalar_fallback_and_short_token(self) -> None:
         self.assertEqual(_result_lines("ok"), ['result="ok"'])

@@ -98,6 +98,12 @@ class ControlPlaneAuthorizationTest(unittest.TestCase):
                 tool="platform.health",
                 enabled=False,
             )
+            self._call(
+                "judikt.set_tool_enabled",
+                tool="platform.health",
+                enabled=True,
+                reason="restore shared test state",
+            )
         finally:
             reset_authenticated_subject(context)
 

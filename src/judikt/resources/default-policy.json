@@ -2,6 +2,10 @@
   "local_stdio_identity": "local-operator",
   "identity_argument_fields": [],
   "allow_demo_boolean_approval": false,
+  "kill_switches": {
+    "backend": "sqlite",
+    "cache_ttl_seconds": 1.0
+  },
   "blocked_argument_patterns": [
     "(^|/)\\.ssh(/|$)",
     "(^|/)\\.aws(/|$)",

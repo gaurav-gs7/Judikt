@@ -19,6 +19,7 @@ from .backends import INCIDENT_TOOLS, KUBERNETES_TOOLS, PLATFORM_TOOLS, Incident
 from .content_guard import ContentGuard, quarantine_result
 from .findings import build_finding_event, should_emit_finding
 from .models import PolicyDecision
+from .kill_switch import DynamoDBKillSwitchStore
 from .paths import DEFAULT_POLICY_PATH, DEMO_POLICY_PATH
 from .policy import PolicyEngine
 from .risk import RiskEngine
@@ -464,8 +465,63 @@ def _set_kill_switch(body: dict[str, Any]) -> dict[str, Any]:
         raise KeyError("tool_or_server")
     if not isinstance(target, str) or not target.strip():
         raise ValueError("kill-switch target must be a non-empty string")
-    _put_state(pk, sk, {"enabled": enabled, "target": target, "target_type": target_type, "updated_at": _utc_now()})
-    return {"target_type": target_type, "target": target, "enabled": enabled}
+    actor = body.get("actor", "serverless-admin")
+    reason = body.get("reason", "serverless API request")
+    if not isinstance(actor, str) or not actor.strip():
+        raise ValueError("kill-switch actor must be a non-empty string")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("kill-switch reason must be a non-empty string")
+    table = _state_table()
+    if table is None:
+        _put_state(
+            pk,
+            sk,
+            {
+                "enabled": enabled,
+                "target": target,
+                "target_type": target_type,
+                "actor": actor,
+                "reason": reason,
+                "updated_at": _utc_now(),
+            },
+        )
+        version = 0
+    else:
+        version = DynamoDBKillSwitchStore(table).set(
+            target_type,
+            target,
+            enabled,
+            actor,
+            reason,
+        )
+    _write_audit_event(
+        {
+            "correlation_id": str(uuid.uuid4()),
+            "server": "judikt",
+            "tool": "kill_switch",
+            "allowed": True,
+            "rule": "kill_switch_change",
+            "action": "ENABLE" if enabled else "DISABLE",
+            "reason": reason,
+            "arguments": {
+                "scope": target_type,
+                "name": target,
+                "enabled": enabled,
+                "actor": actor,
+            },
+            "result": {"version": version},
+            "risk_score": 100,
+            "risk_level": "critical",
+            "evidence": [f"kill_switch_version:{version}"],
+            "at": _utc_now(),
+        }
+    )
+    return {
+        "target_type": target_type,
+        "target": target,
+        "enabled": enabled,
+        "version": version,
+    }
 
 
 def _runtime_state() -> dict[str, Any]:

@@ -50,7 +50,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/events":
             self._json(self.server.runtime.audit.recent())
         elif path == "/api/kill-switches":
-            self._json(self.server.runtime.policy.kill_switches())
+            self._json(self.server.runtime.kill_switches())
         elif path == "/api/telemetry":
             self._json(self.server.runtime.telemetry.status())
         elif path == "/api/audit-integrity":
@@ -79,12 +79,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
             elif path == "/api/kill-switch":
                 scope = body["scope"]
                 if scope == "tool":
-                    self.server.runtime.policy.set_tool_enabled(body["name"], body["enabled"])
+                    self.server.runtime.set_tool_enabled(
+                        body["name"],
+                        body["enabled"],
+                        body.get("reason", "dashboard admin request"),
+                    )
                 elif scope == "server":
-                    self.server.runtime.policy.set_server_enabled(body["name"], body["enabled"])
+                    self.server.runtime.set_server_enabled(
+                        body["name"],
+                        body["enabled"],
+                        body.get("reason", "dashboard admin request"),
+                    )
                 else:
                     raise ValueError("scope must be 'tool' or 'server'")
-                self._json(self.server.runtime.policy.kill_switches())
+                self._json(self.server.runtime.kill_switches())
             elif path == "/api/approval":
                 token = self.server.runtime.policy.issue_approval(
                     actor=body["actor"],

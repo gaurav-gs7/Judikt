@@ -11,12 +11,12 @@ from .audit import AuditStore
 from .content_guard import ContentGuard
 from .findings import FindingDispatcher, build_finding_event
 from .groq import IncidentAnalyst
+from .kill_switch import build_kill_switch_store
 from .metrics import Metrics
 from .models import ToolCallResult
 from .pipeline import (
     GuardedCallPipeline,
     InMemoryCircuitBreakerStore,
-    PolicyKillSwitchStore,
     TrustedLocalIdentityProvider,
 )
 from .policy import PolicyEngine
@@ -59,6 +59,13 @@ class JudiktRuntime:
             backpressure=backpressure,
             metrics=self.metrics,
         )
+        self.kill_switch_store = build_kill_switch_store(
+            self.policy.config,
+            metrics=self.metrics,
+            audit=self.audit,
+            production=_enabled("JUDIKT_PRODUCTION"),
+        )
+        self.policy.bind_kill_switch_store(self.kill_switch_store)
         self.findings = FindingDispatcher(audit_path.with_suffix(".findings.db"))
         self._dispatch_startup_integrity_finding()
         self.telemetry = Telemetry()
@@ -141,7 +148,7 @@ class JudiktRuntime:
             policy=self.policy,
             identity_provider=TrustedLocalIdentityProvider(),
             upstreams=self.upstreams,
-            kill_switches=PolicyKillSwitchStore(self.policy),
+            kill_switches=self.kill_switch_store,
             circuits=self._circuit_store,
             content_guard=self.content_guard,
             tool_integrity=self.tool_integrity,
@@ -215,14 +222,34 @@ class JudiktRuntime:
     def slack_approval_status(self, request_id: str, actor: str) -> dict[str, Any]:
         return self.slack_approvals.status(request_id, actor)
 
-    def kill_switches(self) -> dict[str, list[str]]:
+    def kill_switches(self) -> dict[str, Any]:
         return self.policy.kill_switches()
 
-    def set_tool_enabled(self, tool: str, enabled: bool) -> None:
-        self.policy.set_tool_enabled(tool, enabled)
+    def set_tool_enabled(
+        self,
+        tool: str,
+        enabled: bool,
+        reason: str = "local operator request",
+    ) -> None:
+        self.policy.set_tool_enabled(
+            tool,
+            enabled,
+            actor=str(self.policy.config.get("local_stdio_identity", "local-operator")),
+            reason=reason,
+        )
 
-    def set_server_enabled(self, server: str, enabled: bool) -> None:
-        self.policy.set_server_enabled(server, enabled)
+    def set_server_enabled(
+        self,
+        server: str,
+        enabled: bool,
+        reason: str = "local operator request",
+    ) -> None:
+        self.policy.set_server_enabled(
+            server,
+            enabled,
+            actor=str(self.policy.config.get("local_stdio_identity", "local-operator")),
+            reason=reason,
+        )
 
     def circuit_breakers(self) -> dict[str, dict[str, Any]]:
         return self._circuit_store.snapshot()
@@ -275,3 +302,7 @@ class JudiktRuntime:
         self.tool_integrity_reports[server] = self.tool_integrity.verify(
             server, tools
         ).as_dict()
+
+
+def _enabled(name: str) -> bool:
+    return os.getenv(name, "").lower() in {"1", "true", "yes"}

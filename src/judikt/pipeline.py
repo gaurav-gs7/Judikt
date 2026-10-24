@@ -9,6 +9,7 @@ from .approval_replay import ApprovalReplayStore, approval_jti_digest
 from .audit import AuditStore
 from .content_guard import ContentGuard, quarantine_result
 from .findings import FindingDispatcher, build_finding_event, should_emit_finding
+from .kill_switch import KillSwitchStore, KillSwitchUnavailable
 from .metrics import Metrics
 from .models import PolicyDecision, ToolCallResult
 from .policy import PolicyEngine
@@ -36,25 +37,6 @@ class RequestContextIdentityProvider:
 
 class ApprovalWorkflow(Protocol):
     def close(self) -> None: ...
-
-
-class KillSwitchStore(Protocol):
-    def get_state(self) -> dict[str, Any]: ...
-
-
-class PolicyKillSwitchStore:
-    """Compatibility adapter for the policy engine's in-memory switches."""
-
-    def __init__(self, policy: PolicyEngine) -> None:
-        self._policy = policy
-
-    def get_state(self) -> dict[str, Any]:
-        state = self._policy.kill_switches()
-        return {
-            "tools": set(state["disabled_tools"]),
-            "servers": set(state["disabled_servers"]),
-            "version": 0,
-        }
 
 
 @dataclass
@@ -313,6 +295,7 @@ class GuardedCallPipeline:
         self.upstreams.close()
         if self.approval_workflow is not None:
             self.approval_workflow.close()
+        self.kill_switches.close()
         self.findings.close()
         self.approval_replays.close()
         self.audit.close()
@@ -325,7 +308,15 @@ class GuardedCallPipeline:
         actor: str,
     ) -> PolicyDecision:
         risk = self.policy.risk.assess(server, tool, arguments)
-        switches = self.kill_switches.get_state()
+        try:
+            switches = self.kill_switches.get_state()
+        except KillSwitchUnavailable:
+            return self.policy._decision(
+                False,
+                "kill-switch state is unavailable",
+                "kill_switch_unavailable",
+                risk,
+            )
         if server in switches["servers"]:
             return self.policy._decision(
                 False,

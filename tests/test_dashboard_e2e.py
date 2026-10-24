@@ -31,6 +31,7 @@ class DashboardEndToEndTest(unittest.TestCase):
                 "JUDIKT_AUDIT_HMAC_SECRET": "dashboard-audit-secret-at-least-32-bytes",
                 "JUDIKT_AUDIT_SIGNATURE_REQUIRED": "true",
                 "JUDIKT_TOOL_PIN_PATH": str(root / "pins.json"),
+                "JUDIKT_CONTROL_DB": str(root / "control.db"),
                 "JUDIKT_UPSTREAM_CONFIG": "",
                 "GROQ_API_KEY": "",
             },

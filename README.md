@@ -260,6 +260,19 @@ Sink delivery uses a durable SQLite outbox committed in the same transaction as 
 
 Immediately before an authorized upstream execution, Judikt appends an `execution_started` intent containing a correlation ID and a hash of already-redacted arguments. The outcome event references that intent sequence. Verification reports an unmatched intent as `status: "incomplete"`, separately from cryptographic errors (`status: "tampered"`). Startup verification is enabled by default and resumes after the last fully verified signed checkpoint; production refuses to start on failure, while local mode writes a warning to stderr and dispatches an `audit_integrity` finding when a finding sink is configured.
 
+### Shared Kill Switches
+
+Local processes share durable kill-switch state through `$XDG_STATE_HOME/judikt/control.db` (or `~/.local/state/judikt/control.db`) using SQLite WAL transactions and a monotonic version. Configure `kill_switches.backend` as `sqlite` or `redis`, `kill_switches.cache_ttl_seconds` from `0` through `1`, and `kill_switches.on_store_failure` as `last_known` or `deny`. The failure default is `last_known` locally and `deny` in production. Redis uses `JUDIKT_REDIS_URL`; the AWS serverless path uses the existing DynamoDB `KILL_SWITCH` records. Every mutation records a signed `kill_switch_change` audit event with actor, reason, and state version.
+
+```bash
+judikt kill tool platform.restart_deployment --reason "contain active incident"
+judikt kill server platform-ops --reason "upstream integrity investigation"
+judikt kill status
+judikt unkill tool platform.restart_deployment --reason "incident resolved"
+```
+
+The CLI, local dashboard, stdio gateway, and authenticated HTTP admin tools all read the same configured store. Remote mutations still require the control-plane `admin` role.
+
 ## Optional Groq Integration
 
 The demo produces a deterministic local incident summary by default. To add a hosted LLM summary:

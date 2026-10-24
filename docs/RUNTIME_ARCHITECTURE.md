@@ -36,7 +36,7 @@ therefore drift even when they use the same lower-level classes.
 | --- | --- | --- | --- |
 | Canonical guarded-call pipeline | Shared `GuardedCallPipeline` | Shared `GuardedCallPipeline` | Separate Lambda handler |
 | Trusted identity provider | Local stdio identity | Authenticated request subject | API-authenticated request actor |
-| Kill-switch adapter | Shared component contract | Shared component contract | DynamoDB state |
+| Kill-switch adapter | Shared SQLite/Redis store with <=1s cache | Shared SQLite/Redis store with <=1s cache | DynamoDB state using the same store contract |
 | Circuit breaker | Shared in-memory store | Shared in-memory store | DynamoDB state |
 | Policy, integrity, approval replay, intent audit, inspection, redaction, findings, metrics | Shared ordering and implementation | Shared ordering and implementation | Shared policy primitives with Lambda-specific orchestration |
 | Upstream registry | Managed stdio subprocesses | In-process adapters and configured stdio subprocesses | Tool Lambda invocation |

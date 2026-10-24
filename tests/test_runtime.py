@@ -160,6 +160,7 @@ class RuntimeTest(unittest.TestCase):
         )
         self.runtime.policy.set_tool_enabled("platform.health", False)
         health = self.runtime.call_tool("platform-ops", "platform.health", {"service": "payments-api"})
+        self.runtime.policy.set_tool_enabled("platform.health", True)
 
         self.assertTrue(rollback.allowed)
         self.assertEqual(rollback.result["to_release"], "payments-api@2026.05.2")
@@ -243,6 +244,7 @@ class RuntimeTest(unittest.TestCase):
         self.runtime.policy.set_server_enabled("platform-ops", False)
 
         config = self.runtime.call_tool("platform-ops", "platform.read_config", {"service": "payments-api"})
+        self.runtime.policy.set_server_enabled("platform-ops", True)
 
         self.assertFalse(config.allowed)
         self.assertIn("server 'platform-ops' is disabled by kill switch", config.reason)

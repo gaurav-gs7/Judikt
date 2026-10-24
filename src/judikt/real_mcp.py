@@ -465,25 +465,33 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
             return {"status": "ERROR", "reason": str(exc)}
 
     @mcp.tool(name="judikt.set_tool_enabled", description="Enable or disable a tool kill switch.")
-    def guard_set_tool_enabled(tool: str, enabled: bool) -> dict[str, Any]:
+    def guard_set_tool_enabled(
+        tool: str,
+        enabled: bool,
+        reason: str = "MCP admin request",
+    ) -> dict[str, Any]:
         if not is_control_plane_admin():
             return {
                 "allowed": False,
                 "rule": "admin_authorization",
                 "reason": "control-plane administrator scope or group is required",
             }
-        runtime.set_tool_enabled(tool, enabled)
+        runtime.set_tool_enabled(tool, enabled, reason)
         return runtime.kill_switches()
 
     @mcp.tool(name="judikt.set_server_enabled", description="Enable or disable a server kill switch.")
-    def guard_set_server_enabled(server: str, enabled: bool) -> dict[str, Any]:
+    def guard_set_server_enabled(
+        server: str,
+        enabled: bool,
+        reason: str = "MCP admin request",
+    ) -> dict[str, Any]:
         if not is_control_plane_admin():
             return {
                 "allowed": False,
                 "rule": "admin_authorization",
                 "reason": "control-plane administrator scope or group is required",
             }
-        runtime.set_server_enabled(server, enabled)
+        runtime.set_server_enabled(server, enabled, reason)
         return runtime.kill_switches()
 
     @mcp.tool(name="judikt.runtime_state", description="Inspect kill switches, circuit breakers, and recent audit events.")

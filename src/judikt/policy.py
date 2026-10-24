@@ -34,6 +34,7 @@ class PolicyEngine:
         self._rate_limiter = build_rate_limiter()
         self._disabled_tools: set[str] = set()
         self._disabled_servers: set[str] = set()
+        self._kill_switch_store: Any = None
         self._lock = threading.Lock()
 
     @property
@@ -49,6 +50,10 @@ class PolicyEngine:
     ) -> PolicyDecision:
         with self._lock:
             risk = self.risk.assess(server, tool, arguments)
+            if self._kill_switch_store is not None:
+                state = self._kill_switch_store.get_state()
+                self._disabled_tools = set(state["tools"])
+                self._disabled_servers = set(state["servers"])
             if server in self._disabled_servers:
                 return self._decision(False, f"server {server!r} is disabled by kill switch", "kill_switch", risk)
             if tool in self._disabled_tools:
@@ -212,21 +217,49 @@ class PolicyEngine:
             return result
         return self.redact(block)
 
-    def set_tool_enabled(self, tool: str, enabled: bool) -> None:
+    def bind_kill_switch_store(self, store: Any) -> None:
+        self._kill_switch_store = store
+
+    def set_tool_enabled(
+        self,
+        tool: str,
+        enabled: bool,
+        *,
+        actor: str = "local-operator",
+        reason: str = "policy API request",
+    ) -> None:
+        if self._kill_switch_store is not None:
+            self._kill_switch_store.set("tool", tool, enabled, actor, reason)
         with self._lock:
             if enabled:
                 self._disabled_tools.discard(tool)
             else:
                 self._disabled_tools.add(tool)
 
-    def set_server_enabled(self, server: str, enabled: bool) -> None:
+    def set_server_enabled(
+        self,
+        server: str,
+        enabled: bool,
+        *,
+        actor: str = "local-operator",
+        reason: str = "policy API request",
+    ) -> None:
+        if self._kill_switch_store is not None:
+            self._kill_switch_store.set("server", server, enabled, actor, reason)
         with self._lock:
             if enabled:
                 self._disabled_servers.discard(server)
             else:
                 self._disabled_servers.add(server)
 
-    def kill_switches(self) -> dict[str, list[str]]:
+    def kill_switches(self) -> dict[str, Any]:
+        if self._kill_switch_store is not None:
+            state = self._kill_switch_store.get_state()
+            return {
+                "disabled_tools": sorted(state["tools"]),
+                "disabled_servers": sorted(state["servers"]),
+                "version": state["version"],
+            }
         with self._lock:
             return {
                 "disabled_tools": sorted(self._disabled_tools),

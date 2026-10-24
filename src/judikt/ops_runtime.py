@@ -11,13 +11,13 @@ from .audit import AuditStore
 from .backends import IncidentBackend, KubernetesBackend, PlatformOpsBackend
 from .content_guard import ContentGuard
 from .findings import FindingDispatcher, build_finding_event
+from .kill_switch import build_kill_switch_store
 from .metrics import Metrics
 from .models import ToolCallResult
 from .pipeline import (
     CircuitState,
     GuardedCallPipeline,
     InMemoryCircuitBreakerStore,
-    PolicyKillSwitchStore,
     RequestContextIdentityProvider,
 )
 from .policy import PolicyEngine
@@ -63,6 +63,13 @@ class JudiktOpsRuntime:
             backpressure=backpressure,
             metrics=self.metrics,
         )
+        self.kill_switch_store = build_kill_switch_store(
+            self.policy.config,
+            metrics=self.metrics,
+            audit=self.audit,
+            production=remote_mode or _enabled("JUDIKT_PRODUCTION"),
+        )
+        self.policy.bind_kill_switch_store(self.kill_switch_store)
         self.findings = FindingDispatcher(audit_path.with_suffix(".findings.db"))
         self._dispatch_startup_integrity_finding()
         self.slack_approvals = SlackApprovalWorkflow(
@@ -141,7 +148,7 @@ class JudiktOpsRuntime:
             policy=self.policy,
             identity_provider=RequestContextIdentityProvider(),
             upstreams=self.upstreams,
-            kill_switches=PolicyKillSwitchStore(self.policy),
+            kill_switches=self.kill_switch_store,
             circuits=self._circuit_store,
             content_guard=self.content_guard,
             tool_integrity=self.tool_integrity,
@@ -221,14 +228,34 @@ class JudiktOpsRuntime:
             raise PermissionError("approval requester does not match authenticated subject")
         return self.slack_approvals.status(request_id, subject or actor)
 
-    def kill_switches(self) -> dict[str, list[str]]:
+    def kill_switches(self) -> dict[str, Any]:
         return self.policy.kill_switches()
 
-    def set_tool_enabled(self, tool: str, enabled: bool) -> None:
-        self.policy.set_tool_enabled(tool, enabled)
+    def set_tool_enabled(
+        self,
+        tool: str,
+        enabled: bool,
+        reason: str = "MCP admin request",
+    ) -> None:
+        self.policy.set_tool_enabled(
+            tool,
+            enabled,
+            actor=authenticated_subject() or "remote-admin",
+            reason=reason,
+        )
 
-    def set_server_enabled(self, server: str, enabled: bool) -> None:
-        self.policy.set_server_enabled(server, enabled)
+    def set_server_enabled(
+        self,
+        server: str,
+        enabled: bool,
+        reason: str = "MCP admin request",
+    ) -> None:
+        self.policy.set_server_enabled(
+            server,
+            enabled,
+            actor=authenticated_subject() or "remote-admin",
+            reason=reason,
+        )
 
     def circuit_breakers(self) -> dict[str, dict[str, Any]]:
         return self._circuit_store.snapshot()
@@ -290,3 +317,7 @@ class JudiktOpsRuntime:
 
 
 __all__ = ["CircuitState", "JudiktOpsRuntime"]
+
+
+def _enabled(name: str) -> bool:
+    return os.getenv(name, "").lower() in {"1", "true", "yes"}

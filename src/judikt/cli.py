@@ -23,6 +23,8 @@ from .evals import print_evals
 from .gateway import serve_gateway
 from .http_app import serve_dashboard
 from .interop import print_interop_profiles
+from .kill_switch import KillSwitchStoreError, build_kill_switch_store
+from .metrics import Metrics
 from .performance import (
     PerformanceBenchmarkError,
     report_passes as performance_report_passes,
@@ -209,6 +211,20 @@ def parser() -> argparse.ArgumentParser:
     )
     audit_reconcile.add_argument("--audit-db", type=Path, action=_AuditPathAction, default=argparse.SUPPRESS)
     audit_reconcile.add_argument("--limit", type=int, default=1000)
+    for command_name, enabled in (("kill", False), ("unkill", True)):
+        command = subparsers.add_parser(
+            command_name,
+            help=f"{'disable' if not enabled else 're-enable'} a shared tool or server",
+        )
+        command.set_defaults(kill_enabled=enabled)
+        targets = command.add_subparsers(dest="kill_scope", required=True)
+        for scope in ("tool", "server"):
+            target = targets.add_parser(scope)
+            target.add_argument("name")
+            target.add_argument("--reason", required=True)
+            target.add_argument("--actor", default="")
+        if command_name == "kill":
+            targets.add_parser("status", help="show shared kill-switch state")
     return result
 
 
@@ -279,6 +295,44 @@ def main() -> None:
         print(json.dumps(report, indent=2))
         if args.audit_command == "verify":
             raise SystemExit(0 if report["valid"] else 1)
+        return
+    if args.command in {"kill", "unkill"}:
+        try:
+            policy_config = json.loads(args.policy.read_text())
+            if not isinstance(policy_config, dict):
+                raise ValueError("policy must contain a JSON object")
+            metrics = Metrics()
+            audit_store = AuditStore(args.audit_db, metrics=metrics)
+            store = build_kill_switch_store(
+                policy_config,
+                metrics=metrics,
+                audit=audit_store,
+                production=_enabled("JUDIKT_PRODUCTION"),
+            )
+            try:
+                if args.kill_scope != "status":
+                    actor = args.actor or str(
+                        policy_config.get("local_stdio_identity", "local-operator")
+                    )
+                    store.set(
+                        args.kill_scope,
+                        args.name,
+                        args.kill_enabled,
+                        actor,
+                        args.reason,
+                    )
+                state = store.get_state()
+                report = {
+                    "disabled_tools": sorted(state["tools"]),
+                    "disabled_servers": sorted(state["servers"]),
+                    "version": state["version"],
+                }
+            finally:
+                store.close()
+                audit_store.close()
+        except (KillSwitchStoreError, OSError, ValueError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"{args.command}: {exc}") from None
+        print(json.dumps(report, indent=2))
         return
     demo_mode = args.command == "demo" or _enabled("JUDIKT_DEMO_MODE")
     if demo_mode and args.policy == DEFAULT_POLICY_PATH:

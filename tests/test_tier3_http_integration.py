@@ -118,6 +118,7 @@ class Tier3HTTPIntegrationTest(unittest.TestCase):
                 "JUDIKT_SIEM_TOKEN": "siem-token",
                 "JUDIKT_SIEM_HMAC_SECRET": "siem-body-secret",
                 "JUDIKT_SIEM_TIMEOUT_SECONDS": "1",
+                "JUDIKT_CONTROL_DB": str(Path(directory) / "control.db"),
             },
             clear=True,
         ):

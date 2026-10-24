@@ -13,6 +13,7 @@ class Metrics:
         self._audit_delivery_failures = 0
         self._audit_outbox_pending = 0
         self._audit_outbox_oldest_age_seconds = 0.0
+        self._kill_switch_store_failures: Counter[str] = Counter()
         self._lock = threading.Lock()
 
     def observe(self, server: str, tool: str, allowed: bool, duration_ms: float) -> None:
@@ -42,6 +43,10 @@ class Metrics:
         with self._lock:
             self._audit_outbox_pending = pending
             self._audit_outbox_oldest_age_seconds = oldest_age_seconds
+
+    def observe_kill_switch_store_failure(self, mode: str) -> None:
+        with self._lock:
+            self._kill_switch_store_failures[mode] += 1
 
     def _observe_upstream(self, kind: str, server: str) -> None:
         with self._lock:
@@ -86,8 +91,14 @@ class Metrics:
                     "# HELP judikt_audit_delivery_failures_total Audit sink delivery failures.",
                     "# TYPE judikt_audit_delivery_failures_total counter",
                     f"judikt_audit_delivery_failures_total {self._audit_delivery_failures}",
+                    "# HELP judikt_kill_switch_store_failures_total Kill-switch store read failures.",
+                    "# TYPE judikt_kill_switch_store_failures_total counter",
                 ]
             )
+            for mode, count in sorted(self._kill_switch_store_failures.items()):
+                lines.append(
+                    f'judikt_kill_switch_store_failures_total{{mode="{mode}"}} {count}'
+                )
             for kind, description in (
                 ("timeouts", "Upstream MCP request deadlines exceeded."),
                 ("restarts", "Upstream MCP subprocess restart attempts."),

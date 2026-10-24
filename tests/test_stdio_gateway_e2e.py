@@ -27,6 +27,7 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
             "JUDIKT_AUDIT_SINK": "none",
             "JUDIKT_TELEMETRY": "disabled",
             "JUDIKT_TOOL_PIN_PATH": str(root / "pins.json"),
+            "JUDIKT_CONTROL_DB": str(root / "control.db"),
             "JUDIKT_UPSTREAM_CONFIG": "",
             "JUDIKT_DEMO_MODE": "true",
             "GROQ_API_KEY": "",
