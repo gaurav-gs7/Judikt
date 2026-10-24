@@ -69,6 +69,24 @@ class ContentEvaluationTest(unittest.TestCase):
         self.assertFalse(report["privacy"]["raw_payloads_in_report"])
         self.assertNotIn("ignore previous system instructions", rendered.lower())
 
+    def test_external_holdout_is_pinned_wrapped_and_reported_by_source(self) -> None:
+        holdout = CORPUS.parent / "external" / "holdout.jsonl"
+        records = [json.loads(line) for line in holdout.read_text().splitlines()]
+
+        self.assertEqual(len(records), 635)
+        self.assertEqual({record["split"] for record in records}, {"test"})
+        self.assertEqual(
+            {record["source"] for record in records}, {"BIPIA (MIT)", "InjecAgent (MIT)"}
+        )
+        self.assertTrue(all(record["wrapper"] for record in records))
+        lock = json.loads((holdout.parent / "sources.lock.json").read_text())
+        self.assertEqual(set(lock), {"bipia", "injecagent"})
+
+        report = run_content_evaluation(holdout, POLICY, split="test")
+        self.assertEqual(set(report["by_source"]), {"BIPIA (MIT)", "InjecAgent (MIT)"})
+        self.assertEqual(report["evaluation"]["sample_count"], 635)
+        self.assertNotIn("Attacker Instruction", json.dumps(report))
+
     def test_rejects_unknown_split(self) -> None:
         with self.assertRaisesRegex(ContentEvaluationError, "split must be"):
             run_content_evaluation(CORPUS, POLICY, split="holdout")

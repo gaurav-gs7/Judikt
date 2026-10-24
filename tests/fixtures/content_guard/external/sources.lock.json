@@ -1,0 +1,14 @@
+{
+  "bipia": {
+    "LICENSE": "57cf81c45e0929899bc18051cf90134f00e55963ddecc7b37cfc5ea1494b1e8b",
+    "benchmark/code_attack_test.json": "892545c5aaec0645b1ded65dc7816b3d70e9ef4eadcba2301a7a3db93676b6e0",
+    "benchmark/email/test.jsonl": "217b403faaa1d0cb12c24892bea39f4a0b9e2819919ac7e2b902006e28278cdb",
+    "benchmark/text_attack_test.json": "75750e7b4e8b34e8f9d88d89b357aeaaf02bd07f9e493ccd37eda74a0cd7c7f8"
+  },
+  "injecagent": {
+    "LICENCE": "b48589499dbb84caa796b00b4ea652b0443e49660282c44d890fd473b8c0674e",
+    "data/test_cases_dh_base.json": "0a8186468d21389af432e8c7b399ae42264d1b93a07b65c7a489468508604305",
+    "data/test_cases_ds_base.json": "4daab35c62a3845e8b9400f4dca58b9c9f37e57cd33b2337552557fbb26282e9",
+    "data/user_cases.jsonl": "c840e2b00fdce68e7142d0970220522303d67b2530d6fb36ef1112448cdd8977"
+  }
+}

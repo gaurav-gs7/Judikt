@@ -26,6 +26,7 @@ class ContentScore:
     surface: str
     category: str
     latency_ms: float
+    source: str = ""
 
 
 def run_content_evaluation(
@@ -62,6 +63,7 @@ def run_content_evaluation(
             surface=record["surface"],
             category=record["category"],
             latency_ms=latency_ms,
+            source=record["source"],
         )
         scores.append(score)
         if score.expected_attack != score.predicted_attack:
@@ -89,6 +91,7 @@ def run_content_evaluation(
         "overall": _metrics(scores),
         "by_surface": _grouped(scores, "surface"),
         "by_category": _grouped(scores, "category"),
+        "by_source": _grouped(scores, "source"),
         "mistakes": mistakes,
         "privacy": {
             "raw_payloads_in_report": False,
