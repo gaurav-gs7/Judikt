@@ -43,6 +43,7 @@ from .paths import (
     upstream_state,
 )
 from .pins import accept_summary, run_pins_command
+from .policy import PolicyConfigurationError, load_policy_config
 from .policy_init import (
     STARTER_PROFILES,
     PolicyInitializationError,
@@ -108,7 +109,7 @@ def parser() -> argparse.ArgumentParser:
     subparsers = result.add_subparsers(dest="command", required=True)
     demo = subparsers.add_parser("demo", help="run the deterministic local walkthrough")
     _add_runtime_options(demo)
-    demo.set_defaults(policy=DEMO_POLICY_PATH)
+    demo.set_defaults(default_policy=DEMO_POLICY_PATH)
     gateway = subparsers.add_parser("serve-mcp", help="expose Judikt over JSON-RPC stdio")
     _add_runtime_options(gateway)
     dashboard = subparsers.add_parser("dashboard", help="run the local HTTP dashboard")
@@ -131,12 +132,12 @@ def parser() -> argparse.ArgumentParser:
     approval.add_argument("--ttl-seconds", type=int, default=300)
     evals = subparsers.add_parser("eval", help="run adversarial safety evals")
     _add_runtime_options(evals)
-    evals.set_defaults(policy=DEMO_POLICY_PATH)
+    evals.set_defaults(default_policy=DEMO_POLICY_PATH)
     interop = subparsers.add_parser(
         "interop",
         help="verify Judikt against pinned independently built MCP servers",
     )
-    interop.add_argument("--policy", type=Path, default=argparse.SUPPRESS)
+    interop.add_argument("--policy", type=Path, action=_PolicyPathAction, default=argparse.SUPPRESS)
     interop.add_argument(
         "--profiles",
         type=Path,
@@ -149,7 +150,7 @@ def parser() -> argparse.ArgumentParser:
         help="evaluate deterministic controls against a labeled MCP security dataset",
     )
     attackbench.add_argument("dataset", type=Path)
-    attackbench.add_argument("--policy", type=Path, default=argparse.SUPPRESS)
+    attackbench.add_argument("--policy", type=Path, action=_PolicyPathAction, default=argparse.SUPPRESS)
     attackbench.add_argument("--dataset-id", default="")
     attackbench.add_argument("--payload-field", default="")
     attackbench.add_argument("--label-field", default="")
@@ -160,7 +161,7 @@ def parser() -> argparse.ArgumentParser:
     attackbench.add_argument("--min-recall", type=float, default=0.0)
     attackbench.add_argument("--min-f1", type=float, default=0.0)
     attackbench.add_argument("--output", type=Path)
-    attackbench.set_defaults(policy=DEMO_POLICY_PATH)
+    attackbench.set_defaults(default_policy=DEMO_POLICY_PATH)
     content_eval = subparsers.add_parser(
         "eval-content",
         help="measure content-guard precision and recall on the labeled Judikt corpus",
@@ -168,19 +169,19 @@ def parser() -> argparse.ArgumentParser:
     content_eval.add_argument("--corpus", type=Path, required=True)
     content_eval.add_argument("--split", choices=("dev", "test"), required=True)
     content_eval.add_argument("--output", type=Path, required=True)
-    content_eval.add_argument("--policy", type=Path, default=argparse.SUPPRESS)
-    content_eval.set_defaults(policy=DEFAULT_POLICY_PATH)
+    content_eval.add_argument("--policy", type=Path, action=_PolicyPathAction, default=argparse.SUPPRESS)
+    content_eval.set_defaults(default_policy=DEFAULT_POLICY_PATH)
     performance = subparsers.add_parser(
         "performance",
         help="measure full in-process Judikt tool-call overhead and throughput",
     )
-    performance.add_argument("--policy", type=Path, default=argparse.SUPPRESS)
+    performance.add_argument("--policy", type=Path, action=_PolicyPathAction, default=argparse.SUPPRESS)
     performance.add_argument("--iterations", type=int, default=200)
     performance.add_argument("--warmup", type=int, default=20)
     performance.add_argument("--max-p99-ms", type=float, default=0.0)
     performance.add_argument("--min-throughput", type=float, default=0.0)
     performance.add_argument("--output", type=Path)
-    performance.set_defaults(policy=DEMO_POLICY_PATH)
+    performance.set_defaults(default_policy=DEMO_POLICY_PATH)
     backend = subparsers.add_parser("backend", help=argparse.SUPPRESS)
     backend.add_argument("name", choices=["platform-ops", "incident", "kubernetes"])
     init = subparsers.add_parser(
@@ -267,6 +268,18 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+    args = parser().parse_args(argv)
+    # Some commands default to a different bundled policy. argparse applies a
+    # subcommand's defaults after the global options, so a subcommand default
+    # would overwrite an explicit global --policy. Resolve it here instead: an
+    # explicit --policy, wherever it appears, always wins.
+    default_policy = getattr(args, "default_policy", None)
+    if default_policy is not None and not args.policy_explicit:
+        args.policy = default_policy
+    return args
+
+
 def _add_runtime_options(command: argparse.ArgumentParser) -> None:
     command.add_argument(
         "--policy",
@@ -287,7 +300,7 @@ def _enabled(name: str) -> bool:
 
 
 def main() -> None:
-    args = parser().parse_args()
+    args = parse_arguments()
     if args.command == "init":
         upstream_command = list(args.upstream_command)
         if upstream_command and upstream_command[0] == "--":
@@ -326,7 +339,13 @@ def main() -> None:
                 )
         except ToolIntegrityError as exc:
             _exit_tool_integrity("init", exc)
-        except (PolicyInitializationError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
+        except (
+            PolicyInitializationError,
+            PolicyConfigurationError,
+            MCPProtocolError,
+            OSError,
+            json.JSONDecodeError,
+        ) as exc:
             raise SystemExit(f"init: {_operator_error(exc)}") from None
         print(json.dumps(report, indent=2))
         return
@@ -336,7 +355,13 @@ def main() -> None:
     if args.command == "pins":
         try:
             run_pins_command(args)
-        except (ToolIntegrityError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
+        except (
+            ToolIntegrityError,
+            MCPProtocolError,
+            PolicyConfigurationError,
+            OSError,
+            json.JSONDecodeError,
+        ) as exc:
             print(f"pins: {_operator_error(exc)}", file=sys.stderr)
             raise SystemExit(3) from None
         return
@@ -367,9 +392,7 @@ def main() -> None:
         return
     if args.command in {"kill", "unkill"}:
         try:
-            policy_config = json.loads(args.policy.read_text())
-            if not isinstance(policy_config, dict):
-                raise ValueError("policy must contain a JSON object")
+            policy_config = load_policy_config(args.policy)
             metrics = Metrics()
             audit_store = AuditStore(args.audit_db, metrics=metrics)
             store = build_kill_switch_store(
@@ -410,16 +433,22 @@ def main() -> None:
         run_backend(args.name)
         return
     if args.command == "eval":
-        raise SystemExit(print_evals(args.policy))
+        try:
+            status = print_evals(args.policy)
+        except (PolicyConfigurationError, OSError) as exc:
+            raise SystemExit(f"eval: {exc}") from None
+        raise SystemExit(status)
     if args.command == "interop":
-        raise SystemExit(
-            print_interop_profiles(
+        try:
+            status = print_interop_profiles(
                 args.profiles,
                 args.policy,
                 args.profiles_selected,
                 args.output,
             )
-        )
+        except (PolicyConfigurationError, OSError, ValueError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"interop: {exc}") from None
+        raise SystemExit(status)
     if args.command == "attackbench":
         try:
             report = run_attackbench(
@@ -432,8 +461,8 @@ def main() -> None:
                 surface_field=args.surface_field,
                 expected_samples=args.expected_samples,
             )
-        except (AttackBenchError, OSError, json.JSONDecodeError) as exc:
-            raise SystemExit(f"attackbench: {exc}") from exc
+        except (AttackBenchError, PolicyConfigurationError, OSError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"attackbench: {exc}") from None
         rendered = json.dumps(report, indent=2)
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -456,7 +485,7 @@ def main() -> None:
                 args.policy,
                 split=args.split,
             )
-        except (ContentEvaluationError, OSError, json.JSONDecodeError) as exc:
+        except (ContentEvaluationError, PolicyConfigurationError, OSError, json.JSONDecodeError) as exc:
             raise SystemExit(f"eval-content: {exc}") from None
         args.output.parent.mkdir(parents=True, exist_ok=True)
         rendered = json.dumps(report, indent=2)
@@ -475,8 +504,8 @@ def main() -> None:
                 max_p99_ms=args.max_p99_ms,
                 min_throughput=args.min_throughput,
             )
-        except (PerformanceBenchmarkError, OSError, json.JSONDecodeError) as exc:
-            raise SystemExit(f"performance: {exc}") from exc
+        except (PerformanceBenchmarkError, PolicyConfigurationError, OSError, json.JSONDecodeError) as exc:
+            raise SystemExit(f"performance: {exc}") from None
         rendered = json.dumps(report, indent=2)
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -486,8 +515,15 @@ def main() -> None:
     if args.command == "serve-real-mcp":
         try:
             serve_real_mcp(args)
-        except (AuthError, ApprovalConfigurationError, AuditConfigurationError) as exc:
+        except (
+            AuthError,
+            ApprovalConfigurationError,
+            AuditConfigurationError,
+            PolicyConfigurationError,
+        ) as exc:
             raise SystemExit(f"serve-real-mcp: {exc}") from None
+        except OSError as exc:
+            raise SystemExit(f"serve-real-mcp: {_os_error(exc)}") from None
         except ToolIntegrityError as exc:
             _exit_tool_integrity("serve-real-mcp", exc)
         return
@@ -504,8 +540,10 @@ def main() -> None:
         )
     except ToolIntegrityError as exc:
         _exit_tool_integrity(args.command, exc)
-    except (ApprovalConfigurationError, AuditConfigurationError) as exc:
+    except (ApprovalConfigurationError, AuditConfigurationError, PolicyConfigurationError) as exc:
         raise SystemExit(f"{args.command}: {exc}") from None
+    except OSError as exc:
+        raise SystemExit(f"{args.command}: {_os_error(exc)}") from None
     except MCPProtocolError as exc:
         raise SystemExit(f"{args.command}: {_operator_error(exc)}") from None
     if args.command == "demo":
@@ -519,9 +557,14 @@ def main() -> None:
         serve_dashboard(runtime, args.host, args.port, os.getenv("JUDIKT_API_TOKEN"))
     elif args.command == "issue-approval":
         try:
-            arguments = json.loads(args.arguments)
+            try:
+                arguments = json.loads(args.arguments)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(
+                    f"issue-approval: --arguments is not valid JSON: {exc.msg}"
+                ) from None
             if not isinstance(arguments, dict):
-                raise ValueError("--arguments must decode to a JSON object")
+                raise SystemExit("issue-approval: --arguments must decode to a JSON object")
             token = runtime.policy.issue_approval(
                 actor=args.actor,
                 reason=args.reason,
@@ -533,6 +576,11 @@ def main() -> None:
             print(token)
         finally:
             runtime.close()
+
+
+def _os_error(exc: OSError) -> str:
+    detail = exc.strerror or str(exc)
+    return f"{detail}: {exc.filename}" if exc.filename else detail
 
 
 def _run_wrap(args: argparse.Namespace) -> None:
@@ -620,7 +668,7 @@ def _run_wrap(args: argparse.Namespace) -> None:
             serve_gateway(runtime)
     except ToolIntegrityError as exc:
         _exit_tool_integrity("wrap", exc)
-    except (ApprovalConfigurationError, AuditConfigurationError) as exc:
+    except (ApprovalConfigurationError, AuditConfigurationError, PolicyConfigurationError) as exc:
         raise SystemExit(f"wrap: {exc}") from None
     except (
         PolicyInitializationError,
@@ -686,7 +734,7 @@ def _accept_initial_pins(
         print("Accept these tool definitions? [y/N]", file=sys.stderr)
         if sys.stdin.readline().strip().lower() not in {"y", "yes"}:
             raise ToolIntegrityError("pin acceptance cancelled")
-    policy = json.loads(policy_path.read_text())
+    policy = load_policy_config(policy_path)
     store = ToolIntegrityStore(
         pin_path,
         ContentGuard.from_policy(policy),

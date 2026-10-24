@@ -19,6 +19,101 @@ from .rate_limiter import RateLimit, RateLimitResult, build_rate_limiter
 from .risk import RiskEngine
 
 
+class PolicyConfigurationError(ValueError):
+    """A policy file is missing, unreadable, or not shaped the way Judikt needs."""
+
+
+_REQUIRED_PATTERN_LISTS = (
+    "blocked_argument_patterns",
+    "redacted_key_patterns",
+    "redacted_value_patterns",
+)
+_OPTIONAL_STRING_LISTS = (
+    "forbidden_argument_keys",
+    "approval_required",
+    "actor_required_tools",
+    "production_environments",
+    "rollback_plan_required",
+    "dry_run_supported",
+    "shadow_mode_supported",
+    "identity_argument_fields",
+)
+
+
+def load_policy_config(policy_path: Path) -> dict[str, Any]:
+    """Read and validate a policy file, failing with an operator-readable error."""
+    path = Path(policy_path)
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        raise PolicyConfigurationError(f"policy file not found: {path}") from None
+    except OSError as exc:
+        raise PolicyConfigurationError(
+            f"policy file {path} could not be read: {exc.strerror or exc}"
+        ) from None
+    try:
+        config = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise PolicyConfigurationError(
+            f"policy file {path} is not valid JSON: {exc.msg} at line {exc.lineno} column {exc.colno}"
+        ) from None
+    validate_policy_config(config, source=str(path))
+    return config
+
+
+def validate_policy_config(config: Any, *, source: str = "policy") -> None:
+    def fail(location: str, expectation: str) -> None:
+        raise PolicyConfigurationError(f"{source}: {location} {expectation}")
+
+    def string_list(key: str) -> None:
+        value = config[key]
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            fail(f"'{key}'", "must be a list of strings")
+
+    if not isinstance(config, dict):
+        fail("the document", "must be a JSON object")
+    for key in _REQUIRED_PATTERN_LISTS:
+        if key not in config:
+            fail(f"'{key}'", "is required")
+        string_list(key)
+        for index, pattern in enumerate(config[key]):
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                fail(f"'{key}[{index}]'", f"is not a valid regular expression ({exc})")
+    for key in _OPTIONAL_STRING_LISTS:
+        if key in config:
+            string_list(key)
+    allowed_tools = config.get("allowed_tools")
+    if not isinstance(allowed_tools, dict):
+        fail("'allowed_tools'", "is required and must map server names to lists of tool names")
+    for server, tools in allowed_tools.items():
+        if not isinstance(tools, list) or not all(isinstance(tool, str) for tool in tools):
+            fail(f"'allowed_tools.{server}'", "must be a list of tool names")
+    permissions = config.get("actor_permissions", {})
+    if not isinstance(permissions, dict):
+        fail("'actor_permissions'", "must map actor names to lists of tool patterns")
+    for actor, patterns in permissions.items():
+        if not isinstance(patterns, list) or not all(isinstance(item, str) for item in patterns):
+            fail(f"'actor_permissions.{actor}'", "must be a list of tool patterns")
+    limits = config.get("rate_limits_per_minute")
+    if not isinstance(limits, dict) or "default" not in limits:
+        fail("'rate_limits_per_minute'", "is required and must contain a 'default' limit")
+    for tool, limit in limits.items():
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+            fail(f"'rate_limits_per_minute.{tool}'", "must be a non-negative integer")
+    if "global_rate_limit_per_minute" in config:
+        limit = config["global_rate_limit_per_minute"]
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+            fail("'global_rate_limit_per_minute'", "must be a non-negative integer")
+    if "local_stdio_identity" in config and not isinstance(config["local_stdio_identity"], str):
+        fail("'local_stdio_identity'", "must be a string")
+    if "allow_demo_boolean_approval" in config and not isinstance(
+        config["allow_demo_boolean_approval"], bool
+    ):
+        fail("'allow_demo_boolean_approval'", "must be true or false")
+
+
 class PolicyEngine:
     def __init__(
         self,
@@ -28,8 +123,8 @@ class PolicyEngine:
         metrics: Metrics | None = None,
         production: bool = False,
     ) -> None:
-        # JSON is a YAML subset, which keeps this demo dependency-free.
-        self.config = json.loads(policy_path.read_text())
+        # JSON is a YAML subset, which keeps policy files dependency-free.
+        self.config = load_policy_config(policy_path)
         self.approvals = approval_authority or ApprovalAuthority()
         self.argument_guard = ContentGuard.from_policy(self.config)
         self.risk = RiskEngine(self.config)

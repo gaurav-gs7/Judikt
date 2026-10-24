@@ -68,6 +68,67 @@ class CLITest(unittest.TestCase):
         self.assertIn("remote MCP binding requires bearer or JWT authentication", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_explicit_policy_wins_over_subcommand_default_policy(self) -> None:
+        custom = "/tmp/judikt-custom-policy.json"
+        for command in (["eval"], ["demo"], ["performance"], ["attackbench", "data.jsonl"]):
+            with self.subTest(command=command[0]):
+                self.assertEqual(cli.parse_arguments(command).policy, cli.DEMO_POLICY_PATH)
+                before = cli.parse_arguments(["--policy", custom, *command])
+                self.assertEqual(before.policy, Path(custom))
+                after = cli.parse_arguments([*command, "--policy", custom])
+                self.assertEqual(after.policy, Path(custom))
+        content = ["eval-content", "--corpus", "c.jsonl", "--split", "dev", "--output", "o.json"]
+        self.assertEqual(cli.parse_arguments(content).policy, cli.DEFAULT_POLICY_PATH)
+        self.assertEqual(
+            cli.parse_arguments(["--policy", custom, *content]).policy, Path(custom)
+        )
+        self.assertEqual(cli.parse_arguments(["serve-mcp"]).policy, cli.DEFAULT_POLICY_PATH)
+
+    def test_configuration_errors_exit_cleanly_without_tracebacks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            invalid_json = root / "invalid.json"
+            invalid_json.write_text('{"broken": ')
+            missing_key = root / "missing.json"
+            missing_key.write_text('{"allowed_tools": {}}')
+            cases = [
+                (["--policy", str(root / "absent.json"), "serve-mcp"], "policy file not found"),
+                (["--policy", str(root / "absent.json"), "eval"], "policy file not found"),
+                (["--policy", str(invalid_json), "serve-mcp"], "is not valid JSON"),
+                (["--policy", str(missing_key), "serve-mcp"], "'blocked_argument_patterns' is required"),
+                (["interop", "--profile", "unknown-profile"], "unknown interoperability profile"),
+                (
+                    ["issue-approval", "--actor", "a", "--reason", "r", "--server", "s",
+                     "--tool", "t", "--arguments", "{bad"],
+                    "--arguments is not valid JSON",
+                ),
+                (
+                    ["issue-approval", "--actor", "a", "--reason", "r", "--server", "s",
+                     "--tool", "t", "--arguments", "[1]"],
+                    "--arguments must decode to a JSON object",
+                ),
+            ]
+            environment = {
+                **os.environ,
+                "HOME": str(root),
+                "XDG_STATE_HOME": str(root / "state"),
+                "PYTHONPATH": str(Path(cli.__file__).resolve().parents[1]),
+            }
+            for argv, expected in cases:
+                with self.subTest(argv=argv[:3]):
+                    result = subprocess.run(
+                        [sys.executable, "-m", "judikt.cli", *argv],
+                        capture_output=True,
+                        text=True,
+                        env=environment,
+                        stdin=subprocess.DEVNULL,
+                        timeout=60,
+                        check=False,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(expected, result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+
     def test_runtime_options_are_accepted_after_public_subcommand(self) -> None:
         args = parser().parse_args(["serve-mcp", "--audit-db", "/tmp/judikt-test.db"])
 
