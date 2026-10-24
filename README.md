@@ -194,6 +194,10 @@ For a checkout-based MCP client configuration, use:
 
 Set `JUDIKT_UPSTREAM_CONFIG` to a JSON file using the shape in [`config/upstreams.example.json`](config/upstreams.example.json). Commands are executed directly without a shell. Sensitive upstream credentials should use `from_env` or `from_aws_secret`; caller-supplied OAuth tokens are denied recursively by policy.
 
+Both stdio and Streamable HTTP clients receive policy- and pin-filtered native upstream tools with their original title, schema, output schema, metadata, and stricter-only annotations. HTTP calls use the same guarded pipeline and return standard MCP `CallToolResult` denials with `isError: true` and Judikt decision metadata. Live upstream `tools/list_changed` notifications rebuild the catalog and notify connected HTTP sessions. The deprecated `judikt.call_upstream` envelope is disabled by default and is available only when `http.legacy_call_upstream` is explicitly `true`.
+
+When independently built servers expose the same tool name, set a `tool_name_prefix` such as `"github."` on an upstream. Judikt validates the prefix and resulting names against MCP tool-name rules, then applies the exposed name consistently to policy, risk, pinning, audit, and routing.
+
 Upstream requests default to 30-second `initialize` and `tools/list` deadlines and a 120-second `tools/call` deadline. Set `JUDIKT_UPSTREAM_TIMEOUT_SECONDS` for one global deadline or add per-server `timeouts` with `initialize`, `list`, and `call` values in the registry. Timed-out calls receive MCP `notifications/cancelled`; crashed subprocesses restart with bounded exponential backoff and must pass tool-pin verification again before calls resume.
 
 The `platform-ops`, `kubernetes`, and `incident` adapters are walkthrough fixtures loaded only by `judikt demo` or the explicit `JUDIKT_DEMO_MODE=true` test harness. Production gateway commands load only operator-selected upstream servers.

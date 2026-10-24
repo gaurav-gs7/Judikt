@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import dataclasses
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
 from .approval import ApprovalAuthority
 from .auth import AuthError, Authenticator
+from .catalog import ToolCatalog, gateway_result
 from .ops_runtime import JudiktOpsRuntime
 from .request_context import (
     bind_authenticated_subject,
+    authenticated_subject,
     can_execute_control_plane_tool,
     is_control_plane_admin,
     reset_authenticated_subject,
@@ -87,10 +91,11 @@ def serve_real_mcp(args: argparse.Namespace) -> None:
         port=args.port,
         streamable_http_path=args.mcp_path,
         json_response=True,
-        stateless_http=True,
+        stateless_http=False,
     )
 
     register_tools(mcp, runtime)
+    register_native_tools(mcp, runtime, ToolCatalog(runtime))
     app = mcp.streamable_http_app()
 
     app.add_middleware(
@@ -189,11 +194,17 @@ class _AuthMiddleware:
 
 
 def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
-    @mcp.tool(
+    legacy_tool = (
+        mcp.tool
+        if runtime.policy.config.get("http", {}).get("legacy_call_upstream", False)
+        else _skip_tool_registration
+    )
+
+    @legacy_tool(
         name="judikt.call_upstream",
         description=(
-            "Call an operator-configured external MCP server through Judikt policy, "
-            "metadata pinning, result inspection, redaction, tracing, and audit controls."
+            "Deprecated compatibility tool. Prefer the natively advertised upstream "
+            "tools, which preserve their schemas and annotations."
         ),
     )
     def guard_call_upstream(server: str, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -511,6 +522,97 @@ def register_tools(mcp: Any, runtime: JudiktOpsRuntime) -> None:
             "finding_delivery": runtime.finding_delivery(),
             "recent_audit": runtime.recent_audit(limit),
         }
+
+
+def register_native_tools(
+    mcp: Any,
+    runtime: JudiktOpsRuntime,
+    catalog: ToolCatalog,
+) -> None:
+    """Expose policy-approved upstream tools with their native MCP definitions."""
+    from mcp import types
+    from mcp.server.lowlevel.server import NotificationOptions
+
+    original_list_tools = mcp.list_tools
+    original_call_tool = mcp.call_tool
+    notifier = _HTTPToolListNotifier()
+
+    original_initialization_options = mcp._mcp_server.create_initialization_options
+
+    def initialization_options(
+        notification_options: Any = None,
+        experimental_capabilities: dict[str, dict[str, Any]] | None = None,
+    ) -> Any:
+        return original_initialization_options(
+            notification_options or NotificationOptions(tools_changed=True),
+            experimental_capabilities,
+        )
+
+    mcp._mcp_server.create_initialization_options = initialization_options
+
+    @mcp._mcp_server.list_tools()
+    async def list_tools() -> list[Any]:
+        notifier.track(
+            mcp._mcp_server.request_context.session,
+            asyncio.get_running_loop(),
+        )
+        static_tools = await original_list_tools()
+        static_names = {tool.name for tool in static_tools}
+        native_tools = [
+            types.Tool.model_validate(tool.as_mcp())
+            for tool in catalog.tools(authenticated_subject())
+            if tool.name not in static_names
+        ]
+        return [*static_tools, *native_tools]
+
+    @mcp._mcp_server.call_tool(validate_input=True)
+    async def call_tool(name: str, arguments: dict[str, Any]) -> Any:
+        static_names = {tool.name for tool in await original_list_tools()}
+        if name in static_names:
+            return await original_call_tool(name, arguments)
+        server = catalog.server_for(name)
+        if server is None:
+            raise ValueError(f"unknown proxied tool: {name}")
+        guarded = runtime.call_tool(server, name, arguments)
+        return types.CallToolResult.model_validate(gateway_result(guarded))
+
+    catalog.subscribe(notifier.emit)
+
+
+class _HTTPToolListNotifier:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._sessions: dict[int, tuple[Any, asyncio.AbstractEventLoop]] = {}
+
+    def track(self, session: Any, loop: asyncio.AbstractEventLoop) -> None:
+        with self._lock:
+            self._sessions[id(session)] = (session, loop)
+
+    def emit(self) -> None:
+        with self._lock:
+            sessions = list(self._sessions.items())
+        for session_id, (session, loop) in sessions:
+            if loop.is_closed():
+                self._discard(session_id)
+                continue
+            future = asyncio.run_coroutine_threadsafe(
+                session.send_tool_list_changed(), loop
+            )
+            future.add_done_callback(
+                lambda completed, session_id=session_id: self._complete(
+                    session_id, completed
+                )
+            )
+
+    def _complete(self, session_id: int, completed: Any) -> None:
+        try:
+            completed.result()
+        except Exception:
+            self._discard(session_id)
+
+    def _discard(self, session_id: int) -> None:
+        with self._lock:
+            self._sessions.pop(session_id, None)
 
 
 def _operation_arguments(

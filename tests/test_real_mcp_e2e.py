@@ -20,6 +20,7 @@ from judikt.paths import DEFAULT_POLICY_PATH
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 IDENTITY_FIXTURE = PROJECT_ROOT / "tests" / "fixtures" / "external_mcp_server.py"
+LIST_CHANGED_FIXTURE = PROJECT_ROOT / "tests" / "fixtures" / "list_changed_mcp_server.py"
 
 
 def _free_port() -> int:
@@ -688,16 +689,17 @@ class RealMCPDefaultPolicyIdentityEndToEndTest(unittest.TestCase):
             self.jwt_secret,
         )
 
-        result = asyncio.run(self._call_get_user(token))
+        result = asyncio.run(self._call_native_tools(token))
 
-        self.assertTrue(result["allowed"])
-        self.assertEqual(result["rule"], "allow")
         self.assertEqual(
-            result["result"]["received_arguments"],
+            result["allowed"]["received_arguments"],
             {"user": "octocat"},
         )
+        self.assertEqual(result["allowed_rule"], "allow")
+        self.assertTrue(result["denied_is_error"])
+        self.assertEqual(result["denied_rule"], "allowlist")
 
-    async def _call_get_user(self, token: str) -> dict[str, object]:
+    async def _call_native_tools(self, token: str) -> dict[str, object]:
         import httpx
         from mcp import ClientSession
         from mcp.client.streamable_http import streamable_http_client
@@ -710,17 +712,169 @@ class RealMCPDefaultPolicyIdentityEndToEndTest(unittest.TestCase):
             ) as (read_stream, write_stream, _):
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
-                    response = await session.call_tool(
-                        "judikt.call_upstream",
-                        {
-                            "server": "external-identities",
-                            "tool": "external.get_user",
-                            "arguments": {"user": "octocat"},
-                        },
+                    listed = await session.list_tools()
+                    native = {tool.name: tool for tool in listed.tools}
+                    self.assertIn("external.get_user", native)
+                    self.assertNotIn("judikt.call_upstream", native)
+                    self.assertEqual(
+                        native["external.get_user"].inputSchema["required"],
+                        ["user"],
                     )
-                    self.assertFalse(response.isError, response)
-                    self.assertIsInstance(response.structuredContent, dict)
-                    return response.structuredContent
+                    allowed = await session.call_tool(
+                        "external.get_user", {"user": "octocat"}
+                    )
+                    denied = await session.call_tool(
+                        "external.fetch_issue", {"issue_id": "INC-1"}
+                    )
+                    self.assertFalse(allowed.isError, allowed)
+                    self.assertIsInstance(allowed.structuredContent, dict)
+                    return {
+                        "allowed": allowed.structuredContent,
+                        "allowed_rule": allowed.meta["io.judikt/decision"]["rule"],
+                        "denied_is_error": denied.isError,
+                        "denied_rule": denied.meta["io.judikt/decision"]["rule"],
+                    }
+
+
+class RealMCPNativeListChangedEndToEndTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.temp_dir = tempfile.TemporaryDirectory()
+        root = Path(cls.temp_dir.name)
+        cls.port = _free_port()
+        policy = json.loads(DEFAULT_POLICY_PATH.read_text())
+        tools = ["dynamic.trigger", "dynamic.added"]
+        policy["allowed_tools"] = {"dynamic": tools}
+        policy["actor_permissions"] = {"anonymous": tools, "local-operator": []}
+        policy_path = root / "policy.json"
+        policy_path.write_text(json.dumps(policy))
+        upstream_path = root / "upstreams.json"
+        upstream_path.write_text(
+            json.dumps(
+                {
+                    "servers": {
+                        "dynamic": {
+                            "command": [
+                                sys.executable,
+                                str(LIST_CHANGED_FIXTURE),
+                                "add",
+                            ]
+                        }
+                    }
+                }
+            )
+        )
+        environment = {
+            **os.environ,
+            "PYTHONPATH": str(PROJECT_ROOT / "src"),
+            "JUDIKT_HTTP_BEARER_TOKEN": "native-catalog-token",
+            "JUDIKT_APPROVAL_SECRET": "native-catalog-approval-secret-at-least-32-bytes",
+            "JUDIKT_AUDIT_HMAC_SECRET": "native-catalog-audit-secret-at-least-32-bytes",
+            "JUDIKT_AUDIT_SINK": "none",
+            "JUDIKT_TELEMETRY": "disabled",
+            "JUDIKT_TOOL_PIN_PATH": str(root / "pins.json"),
+            "JUDIKT_UPSTREAM_CONFIG": str(upstream_path),
+            "JUDIKT_DEMO_MODE": "",
+        }
+        cls.process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "judikt.cli",
+                "--policy",
+                str(policy_path),
+                "--audit-db",
+                str(root / "audit.db"),
+                "serve-real-mcp",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(cls.port),
+                "--log-level",
+                "warning",
+            ],
+            cwd=PROJECT_ROOT,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        cls.base_url = f"http://127.0.0.1:{cls.port}"
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            if cls.process.poll() is not None:
+                stdout, stderr = cls.process.communicate(timeout=3)
+                raise RuntimeError(f"native MCP server exited:\n{stdout}\n{stderr}")
+            try:
+                with urllib.request.urlopen(f"{cls.base_url}/healthz", timeout=1):
+                    break
+            except (OSError, urllib.error.URLError):
+                time.sleep(0.1)
+        else:
+            raise RuntimeError("native MCP server did not become healthy")
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if cls.process.poll() is None:
+            cls.process.terminate()
+            try:
+                cls.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                cls.process.kill()
+                cls.process.wait(timeout=5)
+        for stream in (cls.process.stdout, cls.process.stderr):
+            if stream is not None:
+                stream.close()
+        cls.temp_dir.cleanup()
+
+    def test_native_catalog_refreshes_and_notifies_official_client(self) -> None:
+        asyncio.run(self._exercise_list_changed())
+
+    async def _exercise_list_changed(self) -> None:
+        import httpx
+        from mcp import ClientSession, types
+        from mcp.client.streamable_http import streamable_http_client
+
+        changed = asyncio.Event()
+
+        async def handle(message: object) -> None:
+            if isinstance(message, types.ServerNotification) and isinstance(
+                message.root, types.ToolListChangedNotification
+            ):
+                changed.set()
+
+        async with httpx.AsyncClient(
+            headers={"Authorization": "Bearer native-catalog-token"}, timeout=10
+        ) as http_client:
+            async with streamable_http_client(
+                f"{self.base_url}/mcp", http_client=http_client
+            ) as (read_stream, write_stream, _):
+                async with ClientSession(
+                    read_stream,
+                    write_stream,
+                    message_handler=handle,
+                ) as session:
+                    initialized = await session.initialize()
+                    self.assertTrue(initialized.capabilities.tools.listChanged)
+                    initial = await session.list_tools()
+                    self.assertIn(
+                        "dynamic.trigger", {tool.name for tool in initial.tools}
+                    )
+                    self.assertNotIn(
+                        "dynamic.added", {tool.name for tool in initial.tools}
+                    )
+                    triggered = await session.call_tool("dynamic.trigger", {})
+                    self.assertFalse(triggered.isError, triggered)
+                    await asyncio.wait_for(changed.wait(), timeout=3)
+                    refreshed = await session.list_tools()
+                    self.assertIn(
+                        "dynamic.added", {tool.name for tool in refreshed.tools}
+                    )
+                    added = await session.call_tool("dynamic.added", {})
+                    self.assertFalse(added.isError, added)
+                    self.assertEqual(
+                        added.structuredContent, {"tool": "dynamic.added"}
+                    )
 
 
 if __name__ == "__main__":

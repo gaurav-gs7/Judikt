@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from .secrets import SecretBrokerError, read_aws_secret, read_vault_secret
 
 
 SENSITIVE_ENV_MARKERS = ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "API_KEY", "PRIVATE_KEY")
+MCP_TOOL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
 
 class UpstreamConfigError(ValueError):
@@ -26,6 +28,7 @@ class UpstreamServer:
     state_key: str = ""
     fingerprint: str = ""
     timeouts: dict[str, float] = field(default_factory=dict)
+    tool_name_prefix: str = ""
 
 
 def load_upstream_servers(path: str | Path | None = None) -> list[UpstreamServer]:
@@ -51,6 +54,13 @@ def load_upstream_servers(path: str | Path | None = None) -> list[UpstreamServer
         cwd = raw.get("cwd")
         if cwd is not None and not isinstance(cwd, str):
             raise UpstreamConfigError(f"upstream {name!r} cwd must be a string")
+        tool_name_prefix = raw.get("tool_name_prefix", "")
+        if not isinstance(tool_name_prefix, str) or (
+            tool_name_prefix and MCP_TOOL_NAME_PATTERN.fullmatch(tool_name_prefix) is None
+        ):
+            raise UpstreamConfigError(
+                f"upstream {name!r} tool_name_prefix must follow MCP tool-name rules"
+            )
         result.append(
             UpstreamServer(
                 name=name,
@@ -58,6 +68,7 @@ def load_upstream_servers(path: str | Path | None = None) -> list[UpstreamServer
                 environment=resolve_operator_environment(name, raw.get("env", {})),
                 cwd=cwd,
                 timeouts=_parse_timeouts(name, raw.get("timeouts", {})),
+                tool_name_prefix=tool_name_prefix,
             )
         )
     return result

@@ -100,6 +100,7 @@ class JudiktRuntime:
             else upstream_servers
         )
         pin_metadata: dict[str, ToolPinMetadata] = {}
+        tool_name_prefixes: dict[str, str] = {}
         for upstream in configured_upstreams:
             if upstream.name in self.clients:
                 raise ValueError(
@@ -121,8 +122,9 @@ class JudiktRuntime:
                 cwd=upstream.cwd or "",
                 environment_names=tuple(sorted(upstream.environment)),
             )
+            tool_name_prefixes[upstream.name] = upstream.tool_name_prefix
 
-        self.upstreams = StdioUpstreamRegistry(self.clients)
+        self.upstreams = StdioUpstreamRegistry(self.clients, tool_name_prefixes)
         self._circuit_store = InMemoryCircuitBreakerStore(
             circuit_failure_threshold,
             circuit_cooldown_seconds,
@@ -305,7 +307,8 @@ class JudiktRuntime:
         server: str,
         client: StdioMCPClient,
     ) -> None:
-        tools = client.list_tools()
+        del client
+        tools = self.upstreams.definitions()[server]
         self.tool_integrity_reports[server] = self.tool_integrity.verify(
             server, tools
         ).as_dict()

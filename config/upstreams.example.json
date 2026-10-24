@@ -10,6 +10,7 @@
     },
     "authenticated-example": {
       "command": ["python3", "/opt/company-mcp/server.py"],
+      "tool_name_prefix": "company.",
       "timeouts": {
         "initialize": 30,
         "list": 30,

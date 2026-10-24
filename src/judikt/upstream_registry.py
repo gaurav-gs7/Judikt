@@ -12,6 +12,7 @@ from .backends import (
 )
 from .protocol import StdioMCPClient
 from .tool_integrity import verify_unique_tool_names
+from .upstreams import MCP_TOOL_NAME_PATTERN
 
 
 class UpstreamRegistry(Protocol):
@@ -31,8 +32,13 @@ class UpstreamRegistry(Protocol):
 class StdioUpstreamRegistry:
     """Registry for upstream MCP servers managed as stdio subprocesses."""
 
-    def __init__(self, clients: dict[str, StdioMCPClient]) -> None:
+    def __init__(
+        self,
+        clients: dict[str, StdioMCPClient],
+        tool_name_prefixes: dict[str, str] | None = None,
+    ) -> None:
         self._clients = clients
+        self._tool_name_prefixes = tool_name_prefixes or {}
 
     @property
     def clients(self) -> dict[str, StdioMCPClient]:
@@ -43,7 +49,12 @@ class StdioUpstreamRegistry:
         return None
 
     def definitions(self) -> dict[str, list[dict[str, Any]]]:
-        result = {server: client.list_tools() for server, client in self._clients.items()}
+        result = {
+            server: _prefixed_definitions(
+                client.list_tools(), self._tool_name_prefixes.get(server, ""), server
+            )
+            for server, client in self._clients.items()
+        }
         verify_unique_tool_names(result)
         return result
 
@@ -51,7 +62,10 @@ class StdioUpstreamRegistry:
         client = self._clients.get(server)
         if client is None:
             raise ValueError(f"unknown server: {server}")
-        return client.call_tool(tool, arguments)
+        return client.call_tool(
+            _upstream_tool_name(tool, self._tool_name_prefixes.get(server, "")),
+            arguments,
+        )
 
     def close(self) -> None:
         for client in self._clients.values():
@@ -68,11 +82,13 @@ class OperationsUpstreamRegistry:
         kubernetes: KubernetesBackend | None,
         incidents: IncidentBackend | None,
         external_clients: dict[str, StdioMCPClient],
+        tool_name_prefixes: dict[str, str] | None = None,
     ) -> None:
         self.platform = platform
         self.kubernetes = kubernetes
         self.incidents = incidents
         self._clients = external_clients
+        self._tool_name_prefixes = tool_name_prefixes or {}
 
     @property
     def clients(self) -> dict[str, StdioMCPClient]:
@@ -91,7 +107,12 @@ class OperationsUpstreamRegistry:
         if self.incidents is not None:
             result["incident"] = [tool.as_mcp() for tool in INCIDENT_TOOLS]
         result.update(
-            {server: client.list_tools() for server, client in self._clients.items()}
+            {
+                server: _prefixed_definitions(
+                    client.list_tools(), self._tool_name_prefixes.get(server, ""), server
+                )
+                for server, client in self._clients.items()
+            }
         )
         verify_unique_tool_names(result)
         return result
@@ -105,9 +126,38 @@ class OperationsUpstreamRegistry:
             return self.incidents.call(tool, arguments)
         client = self._clients.get(server)
         if client is not None:
-            return client.call_tool(tool, arguments)
+            return client.call_tool(
+                _upstream_tool_name(tool, self._tool_name_prefixes.get(server, "")),
+                arguments,
+            )
         raise ValueError(f"unknown server: {server}")
 
     def close(self) -> None:
         for client in self._clients.values():
             client.close()
+
+
+def _prefixed_definitions(
+    definitions: list[dict[str, Any]], prefix: str, server: str
+) -> list[dict[str, Any]]:
+    if not prefix:
+        return definitions
+    result = []
+    for definition in definitions:
+        prefixed = dict(definition)
+        prefixed["name"] = f"{prefix}{definition.get('name', '')}"
+        if MCP_TOOL_NAME_PATTERN.fullmatch(str(prefixed["name"])) is None:
+            raise ValueError(
+                f"prefixed tool name {prefixed['name']!r} from {server!r} "
+                "does not follow MCP tool-name rules"
+            )
+        result.append(prefixed)
+    return result
+
+
+def _upstream_tool_name(tool: str, prefix: str) -> str:
+    if not prefix:
+        return tool
+    if not tool.startswith(prefix):
+        raise ValueError(f"tool {tool!r} does not use configured prefix {prefix!r}")
+    return tool[len(prefix) :]

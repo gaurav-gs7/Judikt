@@ -23,6 +23,7 @@ from judikt.protocol import (
     UpstreamTimeoutError,
 )
 from judikt.runtime import JudiktRuntime
+from judikt.upstream_registry import StdioUpstreamRegistry
 from judikt.upstreams import UpstreamConfigError, UpstreamServer, load_upstream_servers
 
 
@@ -430,6 +431,51 @@ class UpstreamTimeoutConfigurationTest(unittest.TestCase):
                 )
             )
             with self.assertRaisesRegex(UpstreamConfigError, "positive number"):
+                load_upstream_servers(path)
+
+    def test_tool_prefix_is_validated_and_applied_at_registry_boundary(self) -> None:
+        class Client:
+            def __init__(self) -> None:
+                self.called: tuple[str, dict[str, object]] | None = None
+
+            def list_tools(self) -> list[dict[str, object]]:
+                return [{"name": "search", "inputSchema": {"type": "object"}}]
+
+            def call_tool(
+                self, tool: str, arguments: dict[str, object]
+            ) -> dict[str, object]:
+                self.called = (tool, arguments)
+                return {"tool": tool}
+
+            def close(self) -> None:
+                return None
+
+        client = Client()
+        registry = StdioUpstreamRegistry(  # type: ignore[arg-type]
+            {"github": client}, {"github": "github."}
+        )
+
+        self.assertEqual(
+            registry.definitions()["github"][0]["name"], "github.search"
+        )
+        registry.execute("github", "github.search", {"query": "judikt"})
+        self.assertEqual(client.called, ("search", {"query": "judikt"}))
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "upstreams.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "servers": {
+                            "github": {
+                                "command": ["github-mcp"],
+                                "tool_name_prefix": "bad prefix/",
+                            }
+                        }
+                    }
+                )
+            )
+            with self.assertRaisesRegex(UpstreamConfigError, "MCP tool-name rules"):
                 load_upstream_servers(path)
 
 

@@ -1,120 +1,18 @@
 from __future__ import annotations
 
-import json
-import sys
-import threading
-from typing import Any, Callable
+from typing import Any
 
-from .models import Tool, ToolCallResult
+from .catalog import (
+    ToolCatalog as _GatewayCatalog,
+    gateway_result as _gateway_result,
+    proxy_tool,
+)
 from .protocol import serve_stdio
 from .runtime import JudiktRuntime
-from .tool_integrity import ToolDriftError, ToolIntegrityError
 
 
-class _GatewayCatalog:
-    def __init__(self, runtime: JudiktRuntime, local_identity: str) -> None:
-        self.runtime = runtime
-        self.local_identity = local_identity
-        self._lock = threading.RLock()
-        self._definitions = runtime.list_tools()
-        self._tools: list[Tool] = []
-        self._call_servers: dict[str, str] = {}
-        self._warned_pending: set[tuple[str, str]] = set()
-        self._rebuild()
-        self._warn_pending()
-
-    def tools(self) -> list[Tool]:
-        with self._lock:
-            return list(self._tools)
-
-    def names(self) -> set[str]:
-        with self._lock:
-            return set(self._call_servers)
-
-    def server_for(self, tool: str) -> str | None:
-        with self._lock:
-            return self._call_servers.get(tool)
-
-    def subscribe(self, emit: Callable[[], None]) -> None:
-        for server, client in self.runtime.clients.items():
-            client.add_notification_handler(
-                "notifications/tools/list_changed",
-                lambda _message, server=server: self._refresh(server, emit),
-            )
-
-    def _refresh(self, server: str, emit: Callable[[], None]) -> None:
-        client = self.runtime.clients[server]
-        try:
-            definitions = client.list_tools()
-            report = self.runtime.tool_integrity.verify(server, definitions)
-            trusted = definitions
-            self.runtime.tool_integrity_reports[server] = report.as_dict()
-            self._warn_pending(server)
-        except ToolDriftError as exc:
-            excluded = set(exc.added_tools) | set(exc.changed_tools)
-            trusted = [tool for tool in definitions if tool.get("name") not in excluded]
-            self.runtime.tool_integrity_reports[server] = {
-                "server": server,
-                "status": "drifted",
-                "excluded_tools": sorted(excluded),
-            }
-        except ToolIntegrityError:
-            trusted = []
-            self.runtime.tool_integrity_reports[server] = {
-                "server": server,
-                "status": "quarantined",
-            }
-        with self._lock:
-            self._definitions[server] = trusted
-            self._rebuild()
-        emit()
-
-    def _warn_pending(self, only_server: str = "") -> None:
-        servers = [only_server] if only_server else list(self._definitions)
-        for server in servers:
-            integrity = getattr(self.runtime, "tool_integrity", None)
-            metadata_map = getattr(integrity, "metadata", {})
-            metadata = metadata_map.get(server)
-            state_key = metadata.state_key if metadata is not None else server
-            for tool in self._pending_tools(server):
-                key = (server, tool)
-                if key in self._warned_pending:
-                    continue
-                print(
-                    f"Judikt pin pending: {tool}; accept with: judikt pins accept "
-                    f"{state_key} --tool {tool} --yes",
-                    file=sys.stderr,
-                )
-                self._warned_pending.add(key)
-
-    def _pending_tools(self, server: str) -> list[str]:
-        integrity = getattr(self.runtime, "tool_integrity", None)
-        pending = getattr(integrity, "pending_tools", None)
-        return list(pending(server)) if callable(pending) else []
-
-    def _rebuild(self) -> None:
-        tools: list[Tool] = []
-        call_servers: dict[str, str] = {}
-        for server, definitions in self._definitions.items():
-            pending = set(self._pending_tools(server))
-            for upstream in definitions:
-                name = str(upstream.get("name", ""))
-                if not name or name in call_servers:
-                    continue
-                call_servers[name] = server
-                if name in pending:
-                    continue
-                if not self._is_allowed(server, name):
-                    continue
-                tools.append(_proxy_tool(self.runtime, server, upstream))
-        self._tools = tools
-        self._call_servers = call_servers
-
-    def _is_allowed(self, server: str, tool: str) -> bool:
-        return (
-            tool in self.runtime.policy.config["allowed_tools"].get(server, [])
-            and self.runtime.policy.actor_can_call(self.local_identity, tool)
-        )
+def _proxy_tool(runtime: Any, server: str, upstream: dict[str, Any]) -> Any:
+    return proxy_tool(runtime, server, upstream)
 
 
 def serve_gateway(runtime: JudiktRuntime) -> None:
@@ -144,80 +42,6 @@ def serve_gateway(runtime: JudiktRuntime) -> None:
         )
     finally:
         runtime.close()
-
-
-def _proxy_tool(runtime: JudiktRuntime, server: str, upstream: dict[str, Any]) -> Tool:
-    name = str(upstream["name"])
-    annotations = dict(upstream.get("annotations") or {})
-    classification = runtime.policy.config.get("tool_classification", {}).get(name, {})
-    tier = classification.get("tier") if isinstance(classification, dict) else None
-    if name in runtime.policy.config.get("approval_required", []) or tier in {
-        "write",
-        "destructive",
-    }:
-        annotations["readOnlyHint"] = False
-        annotations["destructiveHint"] = True
-    return Tool(
-        name=name,
-        description=(
-            f"[proxied via Judikt from {server}] "
-            f"{str(upstream.get('description', ''))}"
-        ),
-        input_schema=dict(upstream.get("inputSchema") or {}),
-        title=upstream.get("title") if isinstance(upstream.get("title"), str) else None,
-        annotations=annotations or None,
-        output_schema=(
-            dict(upstream["outputSchema"])
-            if isinstance(upstream.get("outputSchema"), dict)
-            else None
-        ),
-        meta=dict(upstream["_meta"]) if isinstance(upstream.get("_meta"), dict) else None,
-    )
-
-
-def _gateway_result(guarded: ToolCallResult) -> dict[str, Any]:
-    decision = {
-        "correlation_id": guarded.correlation_id,
-        "rule": guarded.rule,
-        "action": guarded.action,
-        "risk_level": guarded.risk_level,
-    }
-    for evidence in guarded.evidence:
-        if evidence.startswith("approval_jti_sha256:"):
-            decision["approval_jti_sha256"] = evidence.partition(":")[2]
-        elif evidence.startswith("retry_after_seconds:"):
-            try:
-                decision["retry_after_seconds"] = float(evidence.partition(":")[2])
-            except ValueError:
-                continue
-    if guarded.mcp_result is not None and (
-        guarded.allowed or guarded.mcp_result.get("isError") is True
-    ):
-        result = dict(guarded.mcp_result)
-        meta = dict(result.get("_meta") or {})
-        meta["io.judikt/decision"] = decision
-        result["_meta"] = meta
-        return result
-    if guarded.allowed:
-        return {
-            "content": [
-                {"type": "text", "text": json.dumps(guarded.result, sort_keys=True)}
-            ],
-            "structuredContent": guarded.result,
-            "isError": False,
-            "_meta": {"io.judikt/decision": decision},
-        }
-    message = (
-        f"Judikt blocked this call: {guarded.reason} "
-        f"(rule: {guarded.rule}, correlation: {guarded.correlation_id})"
-    )
-    if guarded.rule == "approval_required":
-        message += " A human must obtain approval through the configured Judikt approval workflow."
-    return {
-        "content": [{"type": "text", "text": message}],
-        "isError": True,
-        "_meta": {"io.judikt/decision": decision},
-    }
 
 
 def _local_stdio_identity(runtime: JudiktRuntime) -> str:
