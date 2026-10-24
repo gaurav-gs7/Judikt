@@ -20,7 +20,8 @@ Runs on push and pull request:
 - runs pinned official Filesystem and Memory MCP interoperability checks
 - packages the serverless Lambda artifact
 - runs Terraform fmt and validate for both AWS modules
-- builds the production MCP Docker image
+- lints and renders the Helm chart, and checks that it refuses unsafe values (several replicas without Redis or with a shared volume, short or shared secrets)
+- builds the production MCP Docker image and starts it in both modes with a read-only root filesystem, as the chart runs it: health, authentication, MCP initialize, and the reported version
 - uploads sanitized coverage, attack-benchmark, performance, and interoperability evidence JSON
 
 This workflow does not create AWS resources.

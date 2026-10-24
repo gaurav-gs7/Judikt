@@ -8,8 +8,8 @@ jobs:
   python-compatibility:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install project at the minimum supported Python version
@@ -22,13 +22,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: "22"
+          # The pinned community MCP servers (2.0.0) declare node >=24.
+          node-version: "24"
       - name: Install project and release-quality tooling
         run: |
           python -m pip install --upgrade 'pip>=26.2.2'
@@ -45,7 +46,7 @@ jobs:
         run: ./scripts/run_skill_acceptance.sh
       - name: Run unified Tier 1, 2, and 3 release qualification
         run: ./scripts/run_release_tests.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: judikt-ci-evidence
           path: |
@@ -59,11 +60,11 @@ jobs:
   terraform:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v5
         with:
           version: v3.15.4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: "1.5.7"
       - name: Install CloudFormation linter
@@ -74,13 +75,42 @@ jobs:
         run: terraform fmt -check -recursive infra/aws/terraform infra/aws/serverless
       - name: Validate CloudFormation
         run: cfn-lint infra/aws/cloudformation/judikt-ec2.yml
-      - name: Render production Helm chart
-        run: >-
-          helm template judikt charts/judikt
-          --set-string auth.bearerToken=ci-bearer-token
-          --set-string auth.resourceUri=http://127.0.0.1:8080/mcp
-          --set-string approvalSecret=ci-approval-secret-at-least-32-bytes-long
-          --set-string audit.hmacSecret=ci-independent-audit-secret-at-least-32-bytes
+      - name: Render and check the production Helm chart
+        run: |
+          set -euo pipefail
+          values=(
+            --set-string auth.bearerToken=ci-bearer-token
+            --set-string auth.resourceUri=http://127.0.0.1:8080/mcp
+            --set-string approvalSecret=ci-approval-secret-at-least-32-bytes-long
+            --set-string audit.hmacSecret=ci-independent-audit-secret-at-least-32-bytes
+          )
+          helm lint charts/judikt "${values[@]}"
+          # One replica without Redis runs single-instance and always mounts /app/data.
+          helm template judikt charts/judikt "${values[@]}" > /tmp/default.yaml
+          grep -q 'name: JUDIKT_SINGLE_INSTANCE' /tmp/default.yaml
+          grep -q 'mountPath: /app/data' /tmp/default.yaml
+          helm template judikt charts/judikt "${values[@]}" --set persistence.enabled=false > /tmp/ephemeral.yaml
+          grep -q 'mountPath: /app/data' /tmp/ephemeral.yaml
+          # Several replicas need Redis and per-pod data; then kill switches use Redis.
+          helm template judikt charts/judikt "${values[@]}" --set replicaCount=2 \
+            --set persistence.enabled=false --set-string redis.url=redis://redis:6379/0 > /tmp/replicas.yaml
+          grep -q 'name: JUDIKT_KILL_SWITCH_BACKEND' /tmp/replicas.yaml
+          if grep -q 'name: JUDIKT_SINGLE_INSTANCE' /tmp/replicas.yaml; then
+            echo 'multi-replica render must not set JUDIKT_SINGLE_INSTANCE' >&2; exit 1
+          fi
+          # Unsafe values must refuse to render.
+          expect_failure() {
+            local expected="$1"; shift
+            if helm template judikt charts/judikt "$@" > /dev/null 2> /tmp/helm-error; then
+              echo "expected the chart to refuse: $expected" >&2; exit 1
+            fi
+            grep -q "$expected" /tmp/helm-error
+          }
+          expect_failure "requires redis.url" "${values[@]}" --set replicaCount=2 --set persistence.enabled=false
+          expect_failure "cannot share one persistence volume" "${values[@]}" --set replicaCount=2 --set-string redis.url=redis://redis:6379/0
+          expect_failure "at least 32 bytes" "${values[@]}" --set-string approvalSecret=too-short
+          expect_failure "must be independent" "${values[@]}" \
+            --set-string audit.hmacSecret=ci-approval-secret-at-least-32-bytes-long
       - name: Validate EC2 real MCP Terraform
         run: |
           terraform -chdir=infra/aws/terraform init -backend=false
@@ -93,10 +123,10 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v4
       - name: Build production MCP container
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           load: true
@@ -106,3 +136,41 @@ jobs:
         run: >-
           docker run --rm --entrypoint python judikt:ci -c
           "import boto3, jwt, mcp, openinference.semconv, opentelemetry, redis"
+      - name: Start the container the way the chart runs it
+        run: |
+          set -euo pipefail
+          version="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
+          token=ci-smoke-bearer-token-at-least-32-bytes
+          initialize='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}'
+          # Read-only root filesystem and only /tmp and /app/data writable, as in the Helm chart.
+          docker run -d --name judikt-smoke -p 18080:8080 --read-only \
+            --tmpfs /tmp --tmpfs /app/data:uid=10001,gid=10001,mode=0700 \
+            -e JUDIKT_HTTP_BEARER_TOKEN="$token" \
+            -e JUDIKT_APPROVAL_SECRET=ci-smoke-approval-secret-at-least-32-bytes \
+            -e JUDIKT_AUDIT_HMAC_SECRET=ci-smoke-independent-audit-secret-32-bytes \
+            -e JUDIKT_SINGLE_INSTANCE=true \
+            judikt:ci
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:18080/healthz > /dev/null && break; sleep 1; done
+          curl -fsS http://127.0.0.1:18080/healthz
+          status="$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:18080/mcp \
+            -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d "$initialize")"
+          test "$status" = 401
+          curl -fsS -X POST http://127.0.0.1:18080/mcp -H "Authorization: Bearer $token" \
+            -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+            -d "$initialize" | tee /tmp/initialize.json
+          grep -q "\"version\":\"$version\"" /tmp/initialize.json
+      - name: Start the dashboard container
+        run: |
+          set -euo pipefail
+          token=ci-smoke-dashboard-token-at-least-32-bytes
+          docker run -d --name judikt-dashboard -p 18081:8080 --read-only \
+            --tmpfs /tmp --tmpfs /app/data:uid=10001,gid=10001,mode=0700 \
+            -e JUDIKT_MODE=dashboard -e JUDIKT_API_TOKEN="$token" judikt:ci
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:18081/healthz > /dev/null && break; sleep 1; done
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18081/api/tools)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" http://127.0.0.1:18081/api/tools)" = 200
+      - name: Show container logs
+        if: always()
+        run: |
+          docker logs judikt-smoke 2>&1 | tail -50 || true
+          docker logs judikt-dashboard 2>&1 | tail -50 || true
