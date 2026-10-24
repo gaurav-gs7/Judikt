@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import secrets
 import shlex
 import sys
@@ -208,6 +209,17 @@ def parser() -> argparse.ArgumentParser:
         help="generate a starter policy from an upstream MCP tools/list response",
     )
     init.add_argument("--name", default="")
+    init.add_argument(
+        "--env",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help=(
+            "pass this variable from your shell to the stdio upstream; repeatable. "
+            "Judikt otherwise starts upstreams with a minimal environment, so use this "
+            "for values such as HTTPS_PROXY or NODE_EXTRA_CA_CERTS"
+        ),
+    )
     init.add_argument("--identity", default="local-operator")
     init.add_argument("--profile", choices=STARTER_PROFILES, default="read-only")
     init.add_argument("--output", type=Path, default=Path("judikt-policy.json"))
@@ -229,6 +241,17 @@ def parser() -> argparse.ArgumentParser:
     )
     _add_runtime_options(wrap)
     wrap.add_argument("--name", default="")
+    wrap.add_argument(
+        "--env",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help=(
+            "pass this variable from your shell to the stdio upstream; repeatable. "
+            "Judikt otherwise starts upstreams with a minimal environment, so use this "
+            "for values such as HTTPS_PROXY or NODE_EXTRA_CA_CERTS"
+        ),
+    )
     wrap.add_argument("--identity", default="local-operator")
     wrap.add_argument("--profile", choices=STARTER_PROFILES, default="read-only")
     wrap.add_argument("--url", default="", help="remote Streamable HTTP MCP endpoint")
@@ -325,11 +348,12 @@ def main() -> None:
         if upstream_command and upstream_command[0] == "--":
             upstream_command = upstream_command[1:]
         try:
+            environment = _passthrough_environment(args.env)
             server_name = normalize_server_name(
                 args.name or derive_server_name(upstream_command)
             )
             if args.accept_pins:
-                tools = discover_tools(upstream_command, server_name)
+                tools = discover_tools(upstream_command, server_name, environment)
                 report = initialize_policy_from_tools(
                     tools,
                     server_name=server_name,
@@ -346,6 +370,7 @@ def main() -> None:
                     identity=args.identity,
                     profile=args.profile,
                     force=args.force,
+                    environment=environment,
                 )
             _print_classification_summary(report)
             if args.accept_pins:
@@ -353,6 +378,7 @@ def main() -> None:
                     tools,
                     server_name=server_name,
                     upstream_command=upstream_command,
+                    environment_names=tuple(environment),
                     policy_path=args.output,
                     assume_yes=args.yes,
                 )
@@ -609,6 +635,9 @@ def _run_wrap(args: argparse.Namespace) -> None:
             raise PolicyInitializationError(
                 "an upstream command is required unless --url is provided"
             )
+        if remote_url and getattr(args, "env", None):
+            raise PolicyInitializationError("--env applies to stdio upstreams, not --url")
+        environment = _passthrough_environment(getattr(args, "env", []))
         default_name = (
             derive_remote_server_name(remote_url)
             if remote_url
@@ -624,7 +653,9 @@ def _run_wrap(args: argparse.Namespace) -> None:
             if remote_url
             else tuple(upstream_command)
         )
-        state = upstream_state(server_name, state_command)
+        state = upstream_state(
+            server_name, state_command, environment_names=tuple(environment)
+        )
         audit_path = args.audit_db
         if not getattr(args, "audit_explicit", False) and not os.getenv("JUDIKT_AUDIT_DB"):
             ensure_private_directory(state.directory)
@@ -632,7 +663,7 @@ def _run_wrap(args: argparse.Namespace) -> None:
         upstream = UpstreamServer(
             name=server_name,
             command=state.command if not remote_url else (),
-            environment={},
+            environment=environment,
             cwd=str(state.cwd) if not remote_url else None,
             state_key=state.state_key,
             fingerprint=state.fingerprint,
@@ -671,6 +702,7 @@ def _run_wrap(args: argparse.Namespace) -> None:
                     output_path=policy_path,
                     identity=args.identity,
                     profile=args.profile,
+                    environment=environment,
                 )
             _print_classification_summary(report)
             runtime = JudiktRuntime(
@@ -718,6 +750,22 @@ def _print_hidden_gated_tools(runtime: Any, server: str, state_key: str) -> None
     )
 
 
+_ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _passthrough_environment(names: list[str] | None) -> dict[str, str]:
+    """Resolve ``--env NAME`` options against the operator's shell."""
+
+    environment: dict[str, str] = {}
+    for name in names or []:
+        if not _ENVIRONMENT_NAME.fullmatch(name):
+            raise PolicyInitializationError(f"--env {name!r} is not a valid variable name")
+        if name not in os.environ:
+            raise PolicyInitializationError(f"--env {name} is not set in this shell")
+        environment[name] = os.environ[name]
+    return environment
+
+
 def _accept_initial_pins(
     tools: list[dict[str, Any]],
     *,
@@ -725,10 +773,13 @@ def _accept_initial_pins(
     upstream_command: list[str],
     policy_path: Path,
     assume_yes: bool,
+    environment_names: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Pin every discovered definition into the state judikt wrap will use."""
 
-    state = upstream_state(server_name, tuple(upstream_command))
+    state = upstream_state(
+        server_name, tuple(upstream_command), environment_names=environment_names
+    )
     explicit_pins = os.getenv("JUDIKT_TOOL_PIN_PATH")
     explicit_audit = os.getenv("JUDIKT_AUDIT_DB")
     if explicit_pins:
@@ -758,6 +809,7 @@ def _accept_initial_pins(
                 fingerprint=state.fingerprint,
                 command=state.command,
                 cwd=str(state.cwd),
+                environment_names=state.environment_names,
             )
         },
         policy=policy,

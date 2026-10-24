@@ -211,6 +211,7 @@ class PolicyInitializationTest(unittest.TestCase):
             client_type.assert_called_once_with(
                 "company-tools",
                 command=("company-mcp", "--stdio"),
+                environment={},
                 inherit_environment=False,
             )
             client.close.assert_called_once_with()

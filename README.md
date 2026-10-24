@@ -95,6 +95,14 @@ Wrap any stdio MCP server with one command. Judikt discovers `tools/list`, creat
 judikt wrap -- npx -y @modelcontextprotocol/server-filesystem /absolute/safe/path
 ```
 
+Judikt starts stdio upstreams with a minimal environment (`PATH`, temp and locale variables), so your shell's secrets never reach them by accident. Pass anything an upstream genuinely needs with `--env NAME`, which forwards that one variable from your shell. Behind a corporate proxy, `npx`-launched servers need the proxy and CA settings, or they hang until the initialize timeout:
+
+```bash
+judikt wrap --env HTTPS_PROXY --env NODE_EXTRA_CA_CERTS -- npx -y @modelcontextprotocol/server-filesystem /absolute/safe/path
+```
+
+`judikt init` takes the same option. The variable names (never their values) become part of the upstream's state key, and `judikt pins accept` relaunches the upstream with them.
+
 The same entry point wraps a remote Streamable HTTP upstream. HTTPS is required except for localhost; local/private addresses additionally require explicit operator consent:
 
 ```bash

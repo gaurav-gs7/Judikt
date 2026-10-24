@@ -19,6 +19,16 @@ judikt pins accept <state-key> --tool <tool-name>
 
 Omit `--tool` only when the complete current catalog was reviewed. `--yes` suppresses the confirmation prompt and should be used only in an already authorized, auditable workflow. Never invoke pin acceptance automatically. `JUDIKT_TOOL_PIN_MODE=refresh` is compatibility-only and re-trusts every server in the pin file.
 
+## Upstream Hangs During Initialize Behind a Proxy
+
+Judikt starts stdio upstreams with a minimal environment. An `npx`-launched server behind a proxy cannot download its package and times out during `initialize`. Ask the user which variables the upstream needs, then forward each one explicitly. For example:
+
+```bash
+judikt wrap --env HTTPS_PROXY --env NODE_EXTRA_CA_CERTS -- <upstream command>
+```
+
+Forward only variables the user names. Never forward credentials the upstream does not need, and never print their values.
+
 ## Upstream Timeouts, Exits, and Errors
 
 Agent-visible denials such as `MCP upstream '<name>' timed out during 'tools/call' after 30s` or `MCP upstream '<name>' returned an error (code -32000)` are deliberately generic. Judikt never forwards upstream stderr, upstream JSON-RPC error messages, or remote transport exception text to the agent, because that text is attacker-controllable.

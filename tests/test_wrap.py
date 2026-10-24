@@ -554,3 +554,106 @@ class WrapProfileEndToEndTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+_ENV_FIXTURE = '''
+import json, os, sys
+TOOLS = [{"name": "show_env", "description": "Report visible variables.",
+          "inputSchema": {"type": "object", "properties": {}},
+          "annotations": {"readOnlyHint": True}}]
+for line in sys.stdin:
+    message = json.loads(line)
+    if "id" not in message:
+        continue
+    method = message.get("method")
+    if method == "initialize":
+        result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}},
+                  "serverInfo": {"name": "env-fixture", "version": "1"}}
+    elif method == "tools/list":
+        result = {"tools": TOOLS}
+    elif method == "tools/call":
+        seen = {name: os.environ.get(name, "<unset>")
+                for name in ("JUDIKT_TEST_PASSTHROUGH", "JUDIKT_TEST_NOT_REQUESTED")}
+        result = {"content": [{"type": "text", "text": json.dumps(seen, sort_keys=True)}],
+                  "isError": False}
+    else:
+        result = {}
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": message["id"], "result": result}) + "\\n")
+    sys.stdout.flush()
+'''
+
+
+class WrapEnvironmentPassthroughTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.root = Path(self.temp_dir.name)
+        self.fixture = self.root / "env_fixture.py"
+        self.fixture.write_text(_ENV_FIXTURE)
+        self.environment = {
+            **os.environ,
+            "PYTHONPATH": str(PROJECT_ROOT / "src"),
+            "HOME": str(self.root),
+            "XDG_STATE_HOME": str(self.root / "state"),
+            "JUDIKT_TEST_PASSTHROUGH": "proxy.example:3128",
+            "JUDIKT_TEST_NOT_REQUESTED": "must-stay-hidden",
+        }
+        for name in ("JUDIKT_AUDIT_DB", "JUDIKT_TOOL_PIN_PATH", "JUDIKT_UPSTREAM_CONFIG"):
+            self.environment.pop(name, None)
+
+    def _visible(self, *wrap_options: str) -> dict[str, str]:
+        client = StdioMCPClient(
+            "judikt-wrap-env",
+            command=[
+                sys.executable, "-m", "judikt.cli", "wrap", *wrap_options,
+                "--", sys.executable, str(self.fixture),
+            ],
+            environment=self.environment,
+            cwd=str(PROJECT_ROOT),
+            inherit_environment=False,
+        )
+        try:
+            result = client.call_tool("show_env", {})
+        finally:
+            client.close()
+        return json.loads(result["content"][0]["text"])
+
+    def test_requested_variable_reaches_the_upstream_and_nothing_else(self) -> None:
+        self.assertEqual(
+            self._visible("--env", "JUDIKT_TEST_PASSTHROUGH"),
+            {
+                "JUDIKT_TEST_NOT_REQUESTED": "<unset>",
+                "JUDIKT_TEST_PASSTHROUGH": "proxy.example:3128",
+            },
+        )
+
+    def test_without_env_the_upstream_gets_the_minimal_environment(self) -> None:
+        self.assertEqual(
+            self._visible(),
+            {"JUDIKT_TEST_NOT_REQUESTED": "<unset>", "JUDIKT_TEST_PASSTHROUGH": "<unset>"},
+        )
+
+    def test_invalid_env_options_fail_without_traceback(self) -> None:
+        cases = [
+            (["--env", "JUDIKT_TEST_DEFINITELY_UNSET", "--", sys.executable, str(self.fixture)],
+             "is not set in this shell"),
+            (["--env", "BAD-NAME", "--", sys.executable, str(self.fixture)],
+             "is not a valid variable name"),
+            (["--env", "JUDIKT_TEST_PASSTHROUGH", "--url", "https://example.com/mcp"],
+             "--env applies to stdio upstreams"),
+        ]
+        for options, expected in cases:
+            with self.subTest(expected=expected):
+                result = subprocess.run(
+                    [sys.executable, "-m", "judikt.cli", "wrap", *options],
+                    cwd=PROJECT_ROOT,
+                    env={k: v for k, v in self.environment.items() if k != "JUDIKT_TEST_DEFINITELY_UNSET"},
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)

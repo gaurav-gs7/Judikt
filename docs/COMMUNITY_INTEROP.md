@@ -33,6 +33,8 @@ The JSON report retains hashes and decisions, not raw third-party output. A fail
 make interop-community
 ```
 
+Profiles fetch their servers with `npx` at run time. When `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` (or their lowercase forms), `NODE_EXTRA_CA_CERTS`, or `SSL_CERT_FILE` is set, the harness forwards it to the profile's upstream so the run works behind a proxy. No other variables are forwarded, and a value a profile defines itself is never overridden.
+
 The report is written to `build/community-interop.json`. The same command runs in the `community-interop` GitHub Actions job and uploads the JSON evidence as a workflow artifact.
 
 ## Run GitHub's Official Server

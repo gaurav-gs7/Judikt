@@ -120,6 +120,33 @@ def load_interop_profiles(config_path: Path) -> dict[str, InteropProfile]:
     return profiles
 
 
+NETWORK_ENVIRONMENT = (
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "NO_PROXY",
+    "https_proxy",
+    "http_proxy",
+    "no_proxy",
+    "NODE_EXTRA_CA_CERTS",
+    "SSL_CERT_FILE",
+)
+
+
+def with_network_passthrough(raw_environment: dict[str, Any]) -> dict[str, Any]:
+    """Forward the operator's proxy and CA settings to an interop profile.
+
+    Community servers are fetched with npx at run time. Behind a proxy
+    (corporate networks, sandboxed CI) npm needs these settings, which
+    Judikt's minimal upstream environment otherwise drops. Only the names in
+    NETWORK_ENVIRONMENT are forwarded, only when set, and never over a value
+    the profile defines itself.
+    """
+    merged = dict(raw_environment)
+    for name in NETWORK_ENVIRONMENT:
+        if name in os.environ and name not in merged:
+            merged[name] = {"from_env": name}
+    return merged
+
 def _run_profile(profile: InteropProfile, policy_path: Path) -> dict[str, Any]:
     started = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix=f"judikt-{profile.name}-") as directory:
@@ -129,6 +156,7 @@ def _run_profile(profile: InteropProfile, policy_path: Path) -> dict[str, Any]:
         replacements = {"${SANDBOX}": str(sandbox)}
         command = tuple(_replace(part, replacements) for part in profile.command)
         raw_environment = _replace_value(profile.environment, replacements)
+        raw_environment = with_network_passthrough(raw_environment)
         environment = resolve_operator_environment(profile.name, raw_environment)
         safe_call = _replace_value(profile.safe_call, replacements)
         pin_path = sandbox / "tool-pins.json"

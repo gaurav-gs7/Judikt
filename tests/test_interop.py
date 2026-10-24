@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from judikt.interop import load_interop_profiles, run_interop_profiles
+from judikt.interop import load_interop_profiles, run_interop_profiles, with_network_passthrough
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +16,26 @@ FIXTURE = Path(__file__).parent / "fixtures" / "external_mcp_server.py"
 
 
 class CommunityInteropTest(unittest.TestCase):
+    def test_network_settings_are_forwarded_only_when_set(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {"HTTPS_PROXY": "http://proxy.example:3128", "NODE_EXTRA_CA_CERTS": "/ca.pem"},
+            clear=True,
+        ):
+            merged = with_network_passthrough(
+                {"NPM_CONFIG_CACHE": "/sandbox/npm", "HTTPS_PROXY": "profile-owned"}
+            )
+        self.assertEqual(
+            merged,
+            {
+                "NPM_CONFIG_CACHE": "/sandbox/npm",
+                "HTTPS_PROXY": "profile-owned",
+                "NODE_EXTRA_CA_CERTS": {"from_env": "NODE_EXTRA_CA_CERTS"},
+            },
+        )
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(with_network_passthrough({"A": "b"}), {"A": "b"})
+
     def test_loads_versioned_profiles_and_runs_full_guarded_flow(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             profile_path = Path(directory) / "profiles.json"
