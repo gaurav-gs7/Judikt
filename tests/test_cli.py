@@ -117,6 +117,97 @@ class CLITest(unittest.TestCase):
         self.assertEqual(args.max_p99_ms, 25)
         self.assertEqual(args.min_throughput, 20)
 
+    def test_audit_checkpoint_command_captures_head_for_truncation_detection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            os.environ,
+            {
+                "JUDIKT_AUDIT_HMAC_SECRET": "cli-audit-secret-with-at-least-32-bytes",
+                "JUDIKT_AUDIT_SINK": "none",
+            },
+            clear=False,
+        ):
+            audit_path = Path(directory) / "audit.db"
+            checkpoint_path = Path(directory) / "external" / "checkpoint.json"
+            store = AuditStore(audit_path)
+            for index in range(10):
+                store.record(
+                    correlation_id=f"checkpoint-{index}",
+                    server="test",
+                    tool="test.read",
+                    allowed=True,
+                    rule="allow",
+                    reason="allowed",
+                    arguments={},
+                    result={"ok": True},
+                    duration_ms=1,
+                )
+            store._connection.close()
+
+            output = io.StringIO()
+            with mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "judikt",
+                    "audit",
+                    "checkpoint",
+                    "--audit-db",
+                    str(audit_path),
+                    "--output",
+                    str(checkpoint_path),
+                ],
+            ), redirect_stdout(output):
+                cli.main()
+            printed = json.loads(output.getvalue())
+            exported = json.loads(checkpoint_path.read_text())
+            self.assertEqual(set(printed), {"chain_id", "seq", "head_hash"})
+            self.assertEqual(printed["seq"], 10)
+            self.assertEqual(exported["seq"], 10)
+            self.assertEqual(exported["head_hash"], printed["head_hash"])
+            self.assertTrue(exported["signature"])
+
+            tampered = AuditStore(audit_path)
+            tampered._connection.execute("DELETE FROM audit_events WHERE seq > 7")
+            tampered._connection.execute("DELETE FROM audit_checkpoints")
+            tampered._connection.commit()
+            tampered.close()
+
+            output, exit_code = self.run_main_with_exit(
+                [
+                    "audit",
+                    "verify",
+                    "--audit-db",
+                    str(audit_path),
+                    "--checkpoint",
+                    str(checkpoint_path),
+                    "--full",
+                ]
+            )
+
+        report = json.loads(output)
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(report["status"], "tampered")
+        self.assertIn("truncated", {error["error"] for error in report["errors"]})
+
+    def test_audit_checkpoint_to_s3_fails_clearly_without_credentials(self) -> None:
+        from judikt.audit import write_checkpoint
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "AWS_SHARED_CREDENTIALS_FILE": "/nonexistent",
+                "AWS_CONFIG_FILE": "/nonexistent",
+                "AWS_EC2_METADATA_DISABLED": "true",
+                "AWS_DEFAULT_REGION": "us-east-1",
+            },
+        ):
+            for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_PROFILE"):
+                os.environ.pop(name, None)
+            with self.assertRaisesRegex(RuntimeError, "credentials|boto3"):
+                write_checkpoint({"seq": 1}, "s3://bucket/key.json")
+        with self.assertRaisesRegex(RuntimeError, "s3://bucket/key"):
+            write_checkpoint({"seq": 1}, "s3://bucket-only")
+
     def test_audit_verify_reports_truncation_against_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
             os.environ,

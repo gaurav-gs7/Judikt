@@ -15,7 +15,7 @@ from .attackbench import (
     run_attackbench,
 )
 from .auth import AuthError
-from .audit import AuditConfigurationError, AuditStore, load_checkpoint
+from .audit import AuditConfigurationError, AuditStore, load_checkpoint, write_checkpoint
 from .backends import run_backend
 from .content_eval import ContentEvaluationError, run_content_evaluation
 from .demo import run_demo
@@ -219,6 +219,16 @@ def parser() -> argparse.ArgumentParser:
     audit_verify.add_argument("--full", action="store_true")
     audit_status = audit_commands.add_parser("status", help="show durable audit delivery state")
     audit_status.add_argument("--audit-db", type=Path, action=_AuditPathAction, default=argparse.SUPPRESS)
+    audit_checkpoint = audit_commands.add_parser(
+        "checkpoint",
+        help="write a signed checkpoint at the current head for external storage",
+    )
+    audit_checkpoint.add_argument("--audit-db", type=Path, action=_AuditPathAction, default=argparse.SUPPRESS)
+    audit_checkpoint.add_argument(
+        "--output",
+        required=True,
+        help="destination file or s3://bucket/key",
+    )
     audit_reconcile = audit_commands.add_parser(
         "reconcile", help="retry pending audit sink deliveries now"
     )
@@ -299,12 +309,18 @@ def main() -> None:
                     report = store.verify_chain(checkpoint, full=args.full)
                 elif args.audit_command == "status":
                     report = store.outbox_status()
+                elif args.audit_command == "checkpoint":
+                    checkpoint = store.checkpoint_now()
+                    write_checkpoint(checkpoint, args.output)
+                    report = {
+                        key: checkpoint[key] for key in ("chain_id", "seq", "head_hash")
+                    }
                 else:
                     report = store.reconcile(args.limit)
             finally:
                 store.close()
         except (AuditConfigurationError, RuntimeError, OSError, json.JSONDecodeError) as exc:
-            raise SystemExit(f"audit verify: {exc}") from None
+            raise SystemExit(f"audit {args.audit_command}: {exc}") from None
         print(json.dumps(report, indent=2))
         if args.audit_command == "verify":
             raise SystemExit(0 if report["valid"] else 1)

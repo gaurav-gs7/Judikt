@@ -466,6 +466,38 @@ class AuditStore:
             ).fetchone()
             return self._checkpoint_from_row(row) if row else None
 
+    def checkpoint_now(self) -> dict[str, Any]:
+        """Force a signed checkpoint at the current chain head and return it.
+
+        Uses the same transaction rules as event recording, so it cannot race
+        a concurrent append. Re-running at an unchanged head returns the
+        stored checkpoint for that sequence number.
+        """
+
+        with self._lock:
+            self._connection.execute("BEGIN IMMEDIATE")
+            try:
+                head = self._connection.execute(
+                    "SELECT seq, event_hash FROM audit_events ORDER BY seq DESC LIMIT 1"
+                ).fetchone()
+                if head is None:
+                    raise RuntimeError("the audit chain has no events to checkpoint")
+                self._maybe_checkpoint(
+                    int(head["seq"]),
+                    str(head["event_hash"] or ""),
+                    force=True,
+                )
+                row = self._connection.execute(
+                    "SELECT * FROM audit_checkpoints WHERE chain_id = ? AND seq = ?",
+                    (self._chain_id, int(head["seq"])),
+                ).fetchone()
+                self._connection.commit()
+            except Exception:
+                self._connection.rollback()
+                raise
+        self.flush_outbox(limit=1)
+        return self._checkpoint_from_row(row)
+
     def export_checkpoint(self, path: Path) -> dict[str, Any]:
         checkpoint = self.latest_checkpoint()
         if checkpoint is None:
@@ -965,6 +997,50 @@ def _read_audit_key(path: Path) -> str:
             return value
         time.sleep(0.01)
     raise AuditConfigurationError(f"audit key {path} was created but remained empty")
+
+
+def write_checkpoint(checkpoint: dict[str, Any], destination: str) -> None:
+    """Write a signed checkpoint to a local file or ``s3://bucket/key``."""
+
+    rendered = json.dumps(checkpoint, indent=2, sort_keys=True) + "\n"
+    if not destination.startswith("s3://"):
+        path = Path(destination)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(rendered)
+        return
+    bucket, separator, key = destination[5:].partition("/")
+    if not separator or not bucket or not key:
+        raise RuntimeError("checkpoint S3 URI must be s3://bucket/key")
+    try:
+        import boto3
+        from botocore.exceptions import (
+            BotoCoreError,
+            ClientError,
+            NoCredentialsError,
+            PartialCredentialsError,
+            ProfileNotFound,
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            "S3 checkpoints require boto3; install the optional aws dependencies "
+            "with: python3 -m pip install 'judikt[aws]'"
+        ) from exc
+    try:
+        boto3.client("s3").put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=rendered.encode(),
+            ContentType="application/json",
+            ServerSideEncryption="AES256",
+        )
+    except (NoCredentialsError, PartialCredentialsError, ProfileNotFound) as exc:
+        raise RuntimeError(
+            "AWS credentials are not configured; cannot write the checkpoint to S3"
+        ) from exc
+    except (BotoCoreError, ClientError) as exc:
+        raise RuntimeError(
+            f"could not write the checkpoint to {destination}: {exc.__class__.__name__}"
+        ) from exc
 
 
 def load_checkpoint(value: str) -> dict[str, Any]:
