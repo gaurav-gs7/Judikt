@@ -7,7 +7,7 @@ from typing import Any
 
 from .approval import ApprovalAuthority
 from .approval_replay import build_approval_replay_store
-from .audit import AuditStore
+from .audit import AuditConfigurationError, AuditStore, ensure_independent_audit_key
 from .backends import IncidentBackend, KubernetesBackend, PlatformOpsBackend
 from .content_guard import ContentGuard
 from .findings import FindingDispatcher, build_finding_event
@@ -68,6 +68,13 @@ class JudiktOpsRuntime:
             backpressure=backpressure,
             metrics=self.metrics,
         )
+        if remote_mode or production:
+            try:
+                ensure_independent_audit_key(self.policy.approvals.secret, self.audit)
+            except AuditConfigurationError:
+                self.audit.close()
+                self.approval_replays.close()
+                raise
         self.kill_switch_store = build_kill_switch_store(
             self.policy.config,
             metrics=self.metrics,

@@ -7,7 +7,7 @@ from typing import Any, Sequence
 
 from .approval import ApprovalAuthority
 from .approval_replay import build_approval_replay_store
-from .audit import AuditStore
+from .audit import AuditConfigurationError, AuditStore, ensure_independent_audit_key
 from .content_guard import ContentGuard
 from .findings import FindingDispatcher, build_finding_event
 from .groq import IncidentAnalyst
@@ -65,6 +65,13 @@ class JudiktRuntime:
             backpressure=backpressure,
             metrics=self.metrics,
         )
+        if production:
+            try:
+                ensure_independent_audit_key(self.policy.approvals.secret, self.audit)
+            except AuditConfigurationError:
+                self.audit.close()
+                self.approval_replays.close()
+                raise
         self.kill_switch_store = build_kill_switch_store(
             self.policy.config,
             metrics=self.metrics,

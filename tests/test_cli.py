@@ -148,6 +148,17 @@ class CLITest(unittest.TestCase):
             cases.append(
                 (
                     ["serve-real-mcp", "--host", "0.0.0.0", "--port", "18089"],
+                    "must be independent from JUDIKT_APPROVAL_SECRET",
+                    {
+                        **remote_secrets,
+                        "JUDIKT_SINGLE_INSTANCE": "true",
+                        "JUDIKT_AUDIT_HMAC_SECRET": remote_secrets["JUDIKT_APPROVAL_SECRET"],
+                    },
+                )
+            )
+            cases.append(
+                (
+                    ["serve-real-mcp", "--host", "0.0.0.0", "--port", "18089"],
                     "Redis approval replay backend is unavailable",
                     {**remote_secrets, "JUDIKT_REDIS_URL": "redis://127.0.0.1:1/0"},
                 )

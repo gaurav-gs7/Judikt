@@ -879,6 +879,11 @@ class AuditStore:
             self._signing_secret.encode(), canonical.encode(), hashlib.sha256
         ).hexdigest()
 
+    @property
+    def signing_secret(self) -> str:
+        """The resolved audit HMAC key, for startup independence checks only."""
+        return self._signing_secret
+
     def close(self) -> None:
         self._stop.set()
         if self._worker is not None:
@@ -938,6 +943,18 @@ def _normalize_backpressure(
         "max_age_seconds": max_age_seconds,
         "mode": mode,
     }
+
+
+def ensure_independent_audit_key(approval_secret: bytes, audit: "AuditStore") -> None:
+    """Refuse a deployment whose audit key equals its approval secret.
+
+    A shared key would let anyone who can verify audit signatures mint
+    approval tokens.
+    """
+    if hmac.compare_digest(approval_secret, audit.signing_secret.encode()):
+        raise AuditConfigurationError(
+            "JUDIKT_AUDIT_HMAC_SECRET must be independent from JUDIKT_APPROVAL_SECRET"
+        )
 
 
 def resolve_audit_secret(*, require_configured: bool = False) -> str:

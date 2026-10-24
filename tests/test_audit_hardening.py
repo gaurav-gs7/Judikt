@@ -433,6 +433,39 @@ class AuditHardeningTest(unittest.TestCase):
         ), self.assertRaisesRegex(RuntimeError, "requires a configured shared audit"):
             AuditStore(Path(directory) / "audit.db", require_configured_key=True)
 
+    def test_production_runtimes_refuse_an_audit_key_equal_to_the_approval_secret(self) -> None:
+        from judikt.audit import AuditConfigurationError
+        from judikt.ops_runtime import JudiktOpsRuntime
+        from judikt.paths import DEFAULT_POLICY_PATH
+        from judikt.runtime import JudiktRuntime
+
+        shared = "shared-approval-and-audit-secret-32-bytes!"
+        environment = {
+            "JUDIKT_APPROVAL_SECRET": shared,
+            "JUDIKT_AUDIT_HMAC_SECRET": shared,
+            "JUDIKT_SINGLE_INSTANCE": "true",
+            "JUDIKT_REDIS_URL": "",
+            "JUDIKT_UPSTREAM_CONFIG": "",
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {**environment, "XDG_STATE_HOME": directory}, clear=False
+        ):
+            with self.assertRaisesRegex(AuditConfigurationError, "must be independent"):
+                JudiktOpsRuntime(DEFAULT_POLICY_PATH, Path(directory) / "remote.db", remote_mode=True)
+            # Production mode also requires Redis rate limiting; use the local
+            # limiter so construction reaches the key-independence check.
+            from judikt.rate_limiter import LocalRateLimiter
+
+            with patch.dict(os.environ, {"JUDIKT_PRODUCTION": "true"}), patch(
+                "judikt.policy.build_rate_limiter", return_value=LocalRateLimiter()
+            ), self.assertRaisesRegex(AuditConfigurationError, "must be independent"):
+                JudiktRuntime(DEFAULT_POLICY_PATH, Path(directory) / "stdio.db", upstream_servers=[])
+            with patch.dict(os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": AUDIT_SECRET}):
+                runtime = JudiktOpsRuntime(
+                    DEFAULT_POLICY_PATH, Path(directory) / "ok.db", remote_mode=True
+                )
+                runtime.close()
+
     def test_short_configured_audit_key_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             os.environ, {"JUDIKT_AUDIT_HMAC_SECRET": "too-short"}, clear=False
