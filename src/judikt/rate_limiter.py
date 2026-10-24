@@ -169,13 +169,13 @@ return {1, '0'}
         try:
             import redis
         except ImportError as exc:  # pragma: no cover - optional dependency
-            raise RuntimeError("Redis rate limiting requires optional redis dependency") from exc
+            raise RateLimiterUnavailable("Redis rate limiting requires optional redis dependency") from exc
         self._client = redis.Redis.from_url(redis_url, decode_responses=True)
         self._prefix = prefix
         try:
             self._client.ping()
         except redis.RedisError as exc:
-            raise RuntimeError("Redis rate limiting backend is unavailable") from exc
+            raise RateLimiterUnavailable("Redis rate limiting backend is unavailable") from exc
 
     def allow_all(self, limits: Sequence[RateLimit]) -> RateLimitResult:
         normalized = _normalize_limits(limits)

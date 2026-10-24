@@ -57,12 +57,29 @@ from .policy_init import (
 from .diagnostics import redact_diagnostic
 from .protocol import MCPProtocolError
 from .real_mcp import serve_real_mcp
+from .rate_limiter import RateLimiterUnavailable
+from .risk import RiskConfigError
 from .runtime import JudiktRuntime
+from .secrets import SecretBrokerError
 from .tool_integrity import ToolIntegrityError, ToolIntegrityStore, ToolPinMetadata
 from .upstreams import (
     UpstreamConfigError,
     UpstreamServer,
     create_upstream_client,
+)
+
+
+# Errors that mean the operator's configuration cannot start Judikt. The CLI
+# reports them as one line instead of a traceback; anything else still raises.
+STARTUP_CONFIGURATION_ERRORS: tuple[type[BaseException], ...] = (
+    ApprovalConfigurationError,
+    AuditConfigurationError,
+    PolicyConfigurationError,
+    RiskConfigError,
+    UpstreamConfigError,
+    SecretBrokerError,
+    KillSwitchStoreError,
+    RateLimiterUnavailable,
 )
 
 
@@ -515,13 +532,8 @@ def main() -> None:
     if args.command == "serve-real-mcp":
         try:
             serve_real_mcp(args)
-        except (
-            AuthError,
-            ApprovalConfigurationError,
-            AuditConfigurationError,
-            PolicyConfigurationError,
-        ) as exc:
-            raise SystemExit(f"serve-real-mcp: {exc}") from None
+        except (AuthError, *STARTUP_CONFIGURATION_ERRORS) as exc:
+            raise SystemExit(f"serve-real-mcp: {_operator_error(exc)}") from None
         except OSError as exc:
             raise SystemExit(f"serve-real-mcp: {_os_error(exc)}") from None
         except ToolIntegrityError as exc:
@@ -540,8 +552,8 @@ def main() -> None:
         )
     except ToolIntegrityError as exc:
         _exit_tool_integrity(args.command, exc)
-    except (ApprovalConfigurationError, AuditConfigurationError, PolicyConfigurationError) as exc:
-        raise SystemExit(f"{args.command}: {exc}") from None
+    except STARTUP_CONFIGURATION_ERRORS as exc:
+        raise SystemExit(f"{args.command}: {_operator_error(exc)}") from None
     except OSError as exc:
         raise SystemExit(f"{args.command}: {_os_error(exc)}") from None
     except MCPProtocolError as exc:
@@ -668,8 +680,8 @@ def _run_wrap(args: argparse.Namespace) -> None:
             serve_gateway(runtime)
     except ToolIntegrityError as exc:
         _exit_tool_integrity("wrap", exc)
-    except (ApprovalConfigurationError, AuditConfigurationError, PolicyConfigurationError) as exc:
-        raise SystemExit(f"wrap: {exc}") from None
+    except STARTUP_CONFIGURATION_ERRORS as exc:
+        raise SystemExit(f"wrap: {_operator_error(exc)}") from None
     except (
         PolicyInitializationError,
         UpstreamConfigError,

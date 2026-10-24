@@ -91,12 +91,19 @@ class CLITest(unittest.TestCase):
             invalid_json.write_text('{"broken": ')
             missing_key = root / "missing.json"
             missing_key.write_text('{"allowed_tools": {}}')
+            policy = json.loads(cli.DEFAULT_POLICY_PATH.read_text())
+            policy["risk"]["levels"] = {"critical": 80}
+            bad_risk = root / "bad-risk.json"
+            bad_risk.write_text(json.dumps(policy))
+            bad_upstreams = root / "upstreams.json"
+            bad_upstreams.write_text('{"servers": {"x": {"command": "not-a-list"}}}')
             cases = [
                 (["--policy", str(root / "absent.json"), "serve-mcp"], "policy file not found"),
                 (["--policy", str(root / "absent.json"), "eval"], "policy file not found"),
                 (["--policy", str(invalid_json), "serve-mcp"], "is not valid JSON"),
                 (["--policy", str(missing_key), "serve-mcp"], "'blocked_argument_patterns' is required"),
                 (["interop", "--profile", "unknown-profile"], "unknown interoperability profile"),
+                (["--policy", str(bad_risk), "serve-mcp"], "risk.levels"),
                 (
                     ["issue-approval", "--actor", "a", "--reason", "r", "--server", "s",
                      "--tool", "t", "--arguments", "{bad"],
@@ -114,13 +121,24 @@ class CLITest(unittest.TestCase):
                 "XDG_STATE_HOME": str(root / "state"),
                 "PYTHONPATH": str(Path(cli.__file__).resolve().parents[1]),
             }
-            for argv, expected in cases:
-                with self.subTest(argv=argv[:3]):
+            env_cases = [
+                ({"JUDIKT_UPSTREAM_CONFIG": str(bad_upstreams)}, "command must be a non-empty string array"),
+                ({"JUDIKT_KILL_SWITCH_BACKEND": "bogus"}, "kill_switches.backend must be"),
+                (
+                    {"JUDIKT_REDIS_URL": "redis://127.0.0.1:1/0", "JUDIKT_REDIS_REQUIRED": "true"},
+                    "Redis rate limiting backend is unavailable",
+                ),
+            ]
+            cases.extend((["serve-mcp"], expected, extra) for extra, expected in env_cases)
+            for case in cases:
+                argv, expected = case[0], case[1]
+                extra_environment = case[2] if len(case) > 2 else {}
+                with self.subTest(argv=argv[:3], environment=sorted(extra_environment)):
                     result = subprocess.run(
                         [sys.executable, "-m", "judikt.cli", *argv],
                         capture_output=True,
                         text=True,
-                        env=environment,
+                        env={**environment, **extra_environment},
                         stdin=subprocess.DEVNULL,
                         timeout=60,
                         check=False,

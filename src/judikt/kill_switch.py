@@ -18,6 +18,10 @@ class KillSwitchStoreError(RuntimeError):
     pass
 
 
+class KillSwitchConfigurationError(KillSwitchStoreError, ValueError):
+    """The kill-switch store cannot be built from the configured settings."""
+
+
 class KillSwitchUnavailable(KillSwitchStoreError):
     pass
 
@@ -152,7 +156,7 @@ return version
 
     def __init__(self, redis_url: str, prefix: str = "judikt:kill-switch") -> None:
         if not redis_url:
-            raise ValueError("Redis kill-switch storage requires a Redis URL")
+            raise KillSwitchConfigurationError("Redis kill-switch storage requires a Redis URL")
         try:
             import redis
         except ImportError as exc:  # pragma: no cover - optional dependency
@@ -307,9 +311,9 @@ class CachedKillSwitchStore:
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if not 0 <= ttl_seconds <= 1:
-            raise ValueError("kill-switch cache TTL must be between 0 and 1 second")
+            raise KillSwitchConfigurationError("kill-switch cache TTL must be between 0 and 1 second")
         if on_store_failure not in {"deny", "last_known"}:
-            raise ValueError(
+            raise KillSwitchConfigurationError(
                 "kill_switches.on_store_failure must be 'deny' or 'last_known'"
             )
         self.store = store
@@ -400,7 +404,7 @@ def build_kill_switch_store(
 ) -> CachedKillSwitchStore:
     configured = config.get("kill_switches", {})
     if not isinstance(configured, dict):
-        raise ValueError("kill_switches policy configuration must be an object")
+        raise KillSwitchConfigurationError("kill_switches policy configuration must be an object")
     backend = str(
         os.getenv("JUDIKT_KILL_SWITCH_BACKEND", configured.get("backend", "sqlite"))
     ).lower()
@@ -409,7 +413,7 @@ def build_kill_switch_store(
     elif backend == "redis":
         store = RedisKillSwitchStore(os.getenv("JUDIKT_REDIS_URL", ""))
     else:
-        raise ValueError("kill_switches.backend must be 'sqlite' or 'redis'")
+        raise KillSwitchConfigurationError("kill_switches.backend must be 'sqlite' or 'redis'")
     ttl = float(configured.get("cache_ttl_seconds", 1.0))
     failure_mode = str(
         configured.get("on_store_failure", "deny" if production else "last_known")
