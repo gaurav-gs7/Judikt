@@ -367,6 +367,52 @@ class RemoteUpstreamSecurityTest(unittest.TestCase):
                 validate_remote_url(url, False, resolve_dns=False)
         validate_remote_url("http://[::1]/mcp", True, resolve_dns=False)
 
+    def test_wrap_refuses_private_ipv6_literals_by_address_policy(self) -> None:
+        for url, address in (
+            ("https://[::1]:9/mcp", "::1"),
+            ("https://[fd00::1]:9/mcp", "fd00::1"),
+        ):
+            with self.subTest(url=url), tempfile.TemporaryDirectory() as directory:
+                completed = subprocess.run(
+                    [sys.executable, "-m", "judikt.cli", "wrap", "--url", url],
+                    cwd=PROJECT_ROOT,
+                    env={
+                        **os.environ,
+                        "PYTHONPATH": str(PROJECT_ROOT / "src"),
+                        "XDG_STATE_HOME": directory,
+                        "JUDIKT_AUDIT_SINK": "none",
+                        "JUDIKT_TELEMETRY": "disabled",
+                        "JUDIKT_UPSTREAM_CONFIG": "",
+                    },
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn(
+                    f"remote upstream url resolves to disallowed address {address}",
+                    completed.stderr,
+                )
+                self.assertNotIn("server name must contain only", completed.stderr)
+                self.assertEqual(completed.stdout, "")
+
+    def test_remote_server_name_derivation_handles_ipv6_literals(self) -> None:
+        from judikt.policy_init import derive_remote_server_name, normalize_server_name
+
+        cases = {
+            "https://[2001:4860:4860::8888]/mcp": "2001-4860-4860-8888",
+            "https://[::1]:9/mcp": "1",
+            "https://mcp.example.com/mcp": "mcp.example.com",
+            "https://[::]/mcp": "remote",
+        }
+        for url, expected in cases.items():
+            with self.subTest(url=url):
+                name = derive_remote_server_name(url)
+                self.assertEqual(name, expected)
+                self.assertEqual(normalize_server_name(name), expected)
+
     def test_remote_config_resolves_brokered_header_and_rejects_plain_secret(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "upstreams.json"

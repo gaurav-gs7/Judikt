@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.parse
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Sequence
@@ -252,6 +253,22 @@ def normalize_command(command: Sequence[str]) -> tuple[str, ...]:
     if not normalized or not all(isinstance(part, str) and part for part in normalized):
         raise PolicyInitializationError("an upstream command is required after --")
     return normalized
+
+
+def derive_remote_server_name(url: str) -> str:
+    """Derive a default server name from a remote URL's host.
+
+    IPv6 literals such as ``[::1]`` contain colons, so any character outside
+    the server-name alphabet becomes ``-`` and leading or trailing separators
+    are stripped. The URL's address policy is checked separately.
+    """
+
+    try:
+        host = urllib.parse.urlsplit(url).hostname or ""
+    except ValueError:
+        host = ""
+    candidate = re.sub(r"[^a-zA-Z0-9._-]+", "-", host).strip("-._")
+    return candidate or "remote"
 
 
 def normalize_server_name(value: str) -> str:

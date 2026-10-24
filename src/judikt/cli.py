@@ -6,7 +6,6 @@ import os
 import secrets
 import sys
 import tempfile
-import urllib.parse
 from pathlib import Path
 
 from .approval import ApprovalAuthority, ApprovalConfigurationError
@@ -43,6 +42,7 @@ from .pins import run_pins_command
 from .policy_init import (
     STARTER_PROFILES,
     PolicyInitializationError,
+    derive_remote_server_name,
     derive_server_name,
     initialize_policy,
     initialize_policy_from_tools,
@@ -492,7 +492,7 @@ def _run_wrap(args: argparse.Namespace) -> None:
                 "an upstream command is required unless --url is provided"
             )
         default_name = (
-            urllib.parse.urlsplit(remote_url).hostname or "remote"
+            derive_remote_server_name(remote_url)
             if remote_url
             else derive_server_name(upstream_command)
         )
