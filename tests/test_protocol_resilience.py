@@ -183,7 +183,9 @@ class StdioMCPResilienceTest(unittest.TestCase):
         with self.assertRaises(UpstreamExitedError) as raised:
             client.call_tool("resilient.echo", {"value": "failure"})
 
-        rendered = str(raised.exception)
+        # stderr is operator-only: it is in the diagnostic, never in str(exc).
+        self.assertNotIn("recent stderr", str(raised.exception))
+        rendered = raised.exception.diagnostic
         self.assertIn("recent stderr: failure", rendered)
         self.assertNotIn("\x1b", rendered)
         self.assertNotIn("\x00", rendered)

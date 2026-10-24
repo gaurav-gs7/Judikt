@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 from judikt.approval import ApprovalAuthority
-from judikt.protocol import StdioMCPClient
+from judikt.protocol import StdioMCPClient, UpstreamErrorResponse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -194,8 +194,10 @@ class StdioGatewayEndToEndTest(unittest.TestCase):
 
     def test_ping_and_unknown_tool_protocol_errors(self) -> None:
         self.assertEqual(self.client.request("ping", {}), {})
-        with self.assertRaisesRegex(Exception, "unknown tool"):
+        with self.assertRaises(UpstreamErrorResponse) as raised:
             self.client.call_tool("missing.tool", {})
+        self.assertEqual(raised.exception.upstream_code, -32602)
+        self.assertIn("unknown tool", raised.exception.upstream_message)
 
     def test_demo_actor_claim_cannot_spoof_local_identity(self) -> None:
         result = self.client.call_tool(

@@ -139,6 +139,7 @@ class AuditStore:
             self._ensure_column("seq", "INTEGER")
             self._ensure_column("chain_id", "TEXT")
             self._ensure_column("hash_version", "INTEGER")
+            self._ensure_column("diagnostic", "TEXT")
             self._connection.execute(
                 "CREATE TABLE IF NOT EXISTS audit_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
             )
@@ -225,7 +226,13 @@ class AuditStore:
         duration_ms: float,
         action: str = "ALLOW",
         evidence: list[str] | None = None,
+        diagnostic: str | None = None,
     ) -> int:
+        """Append one hash-chained, signed audit event.
+
+        ``diagnostic`` is operator-only detail about an upstream failure. Callers
+        must redact it first; it is never returned to agents.
+        """
         with self._lock:
             created_at = dt.datetime.now(dt.UTC).isoformat()
             rounded_duration = round(float(duration_ms), 3)
@@ -257,6 +264,8 @@ class AuditStore:
                     "instance_id": self._instance_id,
                     "previous_hash": previous_hash,
                 }
+                if diagnostic is not None:
+                    event["diagnostic"] = diagnostic
                 event_hash = self._hash_event(event)
                 signature = self._sign(event_hash)
                 self._connection.execute(
@@ -265,8 +274,9 @@ class AuditStore:
                         created_at, correlation_id, server, tool, allowed, rule,
                         reason, arguments_json, result_json, duration_ms, action,
                         previous_hash, event_hash, signature, instance_id,
-                        event_version, evidence_json, seq, chain_id, hash_version
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        event_version, evidence_json, seq, chain_id, hash_version,
+                        diagnostic
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         created_at,
@@ -289,6 +299,7 @@ class AuditStore:
                         seq,
                         self._chain_id,
                         2,
+                        diagnostic,
                     ),
                 )
                 envelope = {**event, "event_hash": event_hash, "signature": signature}
@@ -799,6 +810,8 @@ class AuditStore:
             event["hash_version"] = int(row["hash_version"])
             event["chain_id"] = str(row["chain_id"])
             event["seq"] = int(row["seq"])
+        if row["diagnostic"] is not None:
+            event["diagnostic"] = row["diagnostic"]
         return event
 
     @staticmethod

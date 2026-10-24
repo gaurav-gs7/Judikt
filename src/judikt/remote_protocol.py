@@ -8,6 +8,7 @@ import threading
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any, Coroutine
 
+from .diagnostics import strip_control_characters
 from .metrics import Metrics
 from .protocol import (
     DEFAULT_MAX_MESSAGE_BYTES,
@@ -15,6 +16,7 @@ from .protocol import (
     MCPProtocolError,
     NotificationHandler,
     RestartHandler,
+    UpstreamErrorResponse,
     UpstreamTimeoutError,
 )
 from .upstreams import UpstreamConfigError, validate_remote_url
@@ -33,8 +35,10 @@ class StreamableHTTPMCPClient:
         timeouts: dict[str, float] | None = None,
         max_message_bytes: int | None = None,
         metrics: Metrics | None = None,
+        expose_error_messages: bool = False,
     ) -> None:
         self.backend = backend
+        self.expose_error_messages = bool(expose_error_messages)
         self.url = url
         self._headers = dict(headers or {})
         self._allow_private_network = allow_private_network
@@ -66,12 +70,17 @@ class StreamableHTTPMCPClient:
             self.close()
             self._observe_timeout()
             raise UpstreamTimeoutError(
-                f"MCP backend {backend!r} timed out during 'initialize' "
+                f"remote MCP upstream {backend!r} timed out during 'initialize' "
                 f"after {self._timeouts['initialize']:g}s"
             )
         if self._startup_error is not None:
             self.close()
-            raise _protocol_error(backend, "initialize", self._startup_error)
+            raise _protocol_error(
+                backend,
+                "initialize",
+                self._startup_error,
+                exposable=self.expose_error_messages,
+            )
 
     def add_notification_handler(self, method: str, handler: NotificationHandler) -> None:
         with self._handler_lock:
@@ -131,7 +140,7 @@ class StreamableHTTPMCPClient:
             length = response.headers.get("content-length")
             if length is not None and int(length) > self._max_message_bytes:
                 raise MCPProtocolError(
-                    f"MCP backend {self.backend!r} exceeded the "
+                    f"remote MCP upstream {self.backend!r} exceeded the "
                     f"{self._max_message_bytes}-byte HTTP response limit"
                 )
 
@@ -184,11 +193,11 @@ class StreamableHTTPMCPClient:
                 return tools
             if cursor in observed:
                 raise MCPProtocolError(
-                    f"MCP backend {self.backend!r} repeated a pagination cursor"
+                    f"remote MCP upstream {self.backend!r} repeated a pagination cursor"
                 )
             observed.add(cursor)
         raise MCPProtocolError(
-            f"MCP backend {self.backend!r} exceeded the tool pagination limit"
+            f"remote MCP upstream {self.backend!r} exceeded the tool pagination limit"
         )
 
     async def _call_tool(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -249,7 +258,7 @@ class StreamableHTTPMCPClient:
     def _submit(self, request: Coroutine[Any, Any, Any], method: str, timeout: float) -> Any:
         if self._closed.is_set() or self._loop is None:
             request.close()
-            raise MCPProtocolError(f"MCP backend {self.backend!r} was closed")
+            raise MCPProtocolError(f"remote MCP upstream {self.backend!r} was closed")
         future = asyncio.run_coroutine_threadsafe(request, self._loop)
         try:
             return future.result(timeout=timeout)
@@ -257,23 +266,33 @@ class StreamableHTTPMCPClient:
             future.cancel()
             self._observe_timeout()
             raise UpstreamTimeoutError(
-                f"MCP backend {self.backend!r} timed out during {method!r} "
+                f"remote MCP upstream {self.backend!r} timed out during {method!r} "
                 f"after {timeout:g}s"
             ) from None
-        except MCPProtocolError:
-            raise
         except BaseException as exc:
-            raise _protocol_error(self.backend, method, exc) from None
+            raise _protocol_error(
+                self.backend,
+                method,
+                exc,
+                exposable=self.expose_error_messages,
+            ) from None
 
     def _validate_destination(self) -> None:
         try:
             validate_remote_url(self.url, self._allow_private_network)
         except UpstreamConfigError as exc:
-            raise MCPProtocolError(str(exc)) from None
+            public_reason = (
+                f"remote MCP upstream {self.backend!r} request failed "
+                "(destination refused)"
+            )
+            raise MCPProtocolError(
+                public_reason,
+                diagnostic=f"{public_reason}: {exc}",
+            ) from None
 
     def _require_session(self) -> Any:
         if self._session is None:
-            raise MCPProtocolError(f"MCP backend {self.backend!r} is not connected")
+            raise MCPProtocolError(f"remote MCP upstream {self.backend!r} is not connected")
         return self._session
 
     def _check_size(self, value: Any, label: str) -> None:
@@ -282,7 +301,7 @@ class StreamableHTTPMCPClient:
             if self._metrics is not None:
                 self._metrics.observe_upstream_protocol_violation(self.backend)
             raise MCPProtocolError(
-                f"MCP backend {self.backend!r} {label} exceeded the "
+                f"remote MCP upstream {self.backend!r} {label} exceeded the "
                 f"{self._max_message_bytes}-byte response limit"
             )
 
@@ -364,9 +383,116 @@ def _positive_int(value: Any, name: str) -> int:
     return result
 
 
-def _protocol_error(backend: str, method: str, exc: BaseException) -> MCPProtocolError:
-    if isinstance(exc, MCPProtocolError):
-        return exc
+def _protocol_error(
+    backend: str,
+    method: str,
+    exc: BaseException,
+    *,
+    exposable: bool = False,
+) -> MCPProtocolError:
+    """Map a transport or SDK exception to a fixed public category.
+
+    Exception text from httpx or the MCP SDK can contain URLs (including
+    userinfo), response fragments or server-supplied messages, so it is only
+    ever used as an operator diagnostic.
+    """
+
+    leaf = _leaf_exception(exc)
+    label = f"remote MCP upstream {backend!r}"
+    detail = _exception_detail(exc)
+    if isinstance(leaf, MCPProtocolError):
+        if leaf.__class__ is MCPProtocolError and leaf.public_reason.startswith(
+            ("remote upstream", "remote MCP upstream")
+        ):
+            return leaf
+        if not isinstance(leaf, UpstreamTimeoutError | UpstreamErrorResponse):
+            public_reason = f"{label} request failed (protocol error)"
+            return MCPProtocolError(public_reason, diagnostic=f"{public_reason}: {detail}")
+        return leaf
+    error_data = getattr(leaf, "error", None)
+    if error_data is not None and hasattr(error_data, "code") and hasattr(error_data, "message"):
+        code = error_data.code if isinstance(error_data.code, int) else None
+        message = strip_control_characters(str(error_data.message or ""))[:2000]
+        public_reason = (
+            f"{label} returned an error (code {code})"
+            if code is not None
+            else f"{label} returned an error"
+        )
+        return UpstreamErrorResponse(
+            public_reason,
+            upstream_code=code,
+            upstream_message=message,
+            diagnostic=f"{public_reason} during {method!r}; upstream message: {message!r}",
+            exposable=exposable,
+        )
+    category = _transport_category(leaf)
+    public_reason = f"{label} request failed ({category})"
     return MCPProtocolError(
-        f"MCP backend {backend!r} failed during {method!r}: {exc.__class__.__name__}"
+        public_reason,
+        diagnostic=f"{public_reason} during {method!r}: {detail}",
     )
+
+
+def _leaf_exception(exc: BaseException) -> BaseException:
+    current = exc
+    for _ in range(10):
+        nested = getattr(current, "exceptions", None)
+        if isinstance(current, BaseExceptionGroup) and nested:
+            current = nested[0]
+            continue
+        break
+    return current
+
+
+def _exception_detail(exc: BaseException) -> str:
+    parts = []
+    current: BaseException | None = exc
+    for _ in range(5):
+        if current is None:
+            break
+        if isinstance(current, BaseExceptionGroup):
+            current = current.exceptions[0] if current.exceptions else None
+            continue
+        parts.append(f"{current.__class__.__name__}: {current}")
+        current = current.__cause__ or current.__context__
+    return " <- ".join(parts)
+
+
+def _transport_category(exc: BaseException) -> str:
+    import ssl
+
+    chain: list[BaseException] = []
+    current: BaseException | None = exc
+    while current is not None and len(chain) < 10:
+        chain.append(current)
+        current = current.__cause__ or current.__context__
+    names = {item.__class__.__name__ for item in chain}
+    if any(isinstance(item, ssl.SSLError) for item in chain) or any(
+        "SSL" in name or "TLS" in name or "Certificate" in name for name in names
+    ):
+        return "TLS error"
+    try:
+        import httpx
+    except ImportError:  # pragma: no cover - optional dependency path
+        httpx = None  # type: ignore[assignment]
+    if httpx is not None:
+        if any(isinstance(item, httpx.TimeoutException) for item in chain):
+            return "network timeout"
+        if any(isinstance(item, httpx.HTTPStatusError) for item in chain):
+            status = next(
+                item.response.status_code
+                for item in chain
+                if isinstance(item, httpx.HTTPStatusError)
+            )
+            return f"HTTP status {int(status)}"
+        if any(isinstance(item, httpx.ConnectError) for item in chain):
+            return "connection error"
+        if any(isinstance(item, (httpx.RemoteProtocolError, httpx.DecodingError)) for item in chain):
+            return "protocol error"
+        if any(isinstance(item, httpx.HTTPError) for item in chain):
+            return "HTTP error"
+    if any(isinstance(item, ConnectionError | OSError) for item in chain):
+        return "connection error"
+    if any(isinstance(item, ValueError | TypeError) for item in chain):
+        return "malformed response"
+    return "unexpected error"

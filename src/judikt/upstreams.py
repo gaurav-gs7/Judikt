@@ -40,6 +40,7 @@ class UpstreamServer:
     url: str = ""
     headers: dict[str, str] = field(default_factory=dict)
     allow_private_network: bool = False
+    expose_error_messages: bool = False
 
 
 def load_upstream_servers(path: str | Path | None = None) -> list[UpstreamServer]:
@@ -88,6 +89,11 @@ def load_upstream_servers(path: str | Path | None = None) -> list[UpstreamServer
             )
         if url is not None:
             validate_remote_url(url.strip(), allow_private_network, resolve_dns=False)
+        expose_error_messages = raw.get("expose_error_messages", False)
+        if not isinstance(expose_error_messages, bool):
+            raise UpstreamConfigError(
+                f"upstream {name!r} expose_error_messages must be a boolean"
+            )
         cwd = raw.get("cwd")
         if cwd is not None and not isinstance(cwd, str):
             raise UpstreamConfigError(f"upstream {name!r} cwd must be a string")
@@ -119,6 +125,7 @@ def load_upstream_servers(path: str | Path | None = None) -> list[UpstreamServer
                     else {}
                 ),
                 allow_private_network=allow_private_network,
+                expose_error_messages=expose_error_messages,
             )
         )
     return result
@@ -360,6 +367,7 @@ def create_upstream_client(upstream: UpstreamServer, metrics: Any = None) -> Any
             allow_private_network=upstream.allow_private_network,
             timeouts=upstream.timeouts,
             metrics=metrics,
+            expose_error_messages=upstream.expose_error_messages,
         )
     from .protocol import StdioMCPClient
 
@@ -371,4 +379,5 @@ def create_upstream_client(upstream: UpstreamServer, metrics: Any = None) -> Any
         inherit_environment=False,
         timeouts=upstream.timeouts,
         metrics=metrics,
+        expose_error_messages=upstream.expose_error_messages,
     )

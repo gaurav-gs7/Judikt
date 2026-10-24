@@ -119,7 +119,12 @@ class IncidentAnalyst:
 
 
 def _bounded_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    safe_events = [_redact_for_llm(event) for event in events[:30]]
+    # Operator diagnostics can hold upstream-controlled text (stderr, upstream
+    # error messages). They are never sent to a model.
+    safe_events = [
+        _redact_for_llm({key: item for key, item in event.items() if key != "diagnostic"})
+        for event in events[:30]
+    ]
     event_budget = MAX_REQUEST_BYTES - 4096
     while safe_events and len(json.dumps(safe_events, sort_keys=True).encode()) > event_budget:
         safe_events.pop()

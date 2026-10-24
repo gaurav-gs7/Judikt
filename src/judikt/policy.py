@@ -8,6 +8,7 @@ from typing import Any
 
 from .approval import ApprovalAuthority, ApprovalClaims, ApprovalTokenError
 from .content_guard import ContentGuard
+from .diagnostics import redact_diagnostic
 from .metrics import Metrics
 from .models import PolicyDecision
 from .rate_limiter import RateLimit, RateLimitResult, build_rate_limiter
@@ -217,6 +218,11 @@ class PolicyEngine:
                 result = pattern.sub("[REDACTED]", result)
             return result
         return value
+
+    def redact_diagnostic(self, text: str) -> str:
+        """Redact and bound operator-only diagnostic text before storing it."""
+
+        return redact_diagnostic(text, self._redacted_values)
 
     def redact_mcp_result(self, value: Any) -> Any:
         if not isinstance(value, dict) or not isinstance(value.get("content"), list):

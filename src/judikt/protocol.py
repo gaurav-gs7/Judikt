@@ -14,18 +14,62 @@ from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from typing import Any
 
+from .diagnostics import safe_rule, strip_control_characters
 from .metrics import Metrics
 from .models import Tool
 
 
 class MCPProtocolError(RuntimeError):
-    def __init__(self, message: str, *, code: int = -32000) -> None:
-        super().__init__(message)
+    """MCP failure with separate agent-visible and operator-only text.
+
+    ``public_reason`` is fixed, Judikt-authored text that may reach an agent.
+    ``diagnostic`` is operator-only detail and may contain upstream-controlled
+    text such as stderr or an upstream JSON-RPC error message. ``str(exc)``
+    always returns only the public reason, so call sites that forget the
+    distinction fail safe.
+    """
+
+    def __init__(
+        self,
+        public_reason: str,
+        *,
+        code: int = -32000,
+        diagnostic: str | None = None,
+    ) -> None:
+        super().__init__(public_reason)
+        self.public_reason = public_reason
         self.code = code
+        self.diagnostic = diagnostic if diagnostic is not None else public_reason
+
+    def __str__(self) -> str:
+        return self.public_reason
 
 
 class UpstreamTimeoutError(MCPProtocolError):
     pass
+
+
+class UpstreamErrorResponse(MCPProtocolError):
+    """An upstream answered a request with a JSON-RPC error object.
+
+    ``upstream_message`` is untrusted. It is only ever shown to an agent when the
+    operator opted in with ``expose_error_messages`` and the text passed content
+    inspection and policy redaction.
+    """
+
+    def __init__(
+        self,
+        public_reason: str,
+        *,
+        upstream_code: int | None,
+        upstream_message: str,
+        diagnostic: str,
+        exposable: bool = False,
+    ) -> None:
+        super().__init__(public_reason, diagnostic=diagnostic)
+        self.upstream_code = upstream_code
+        self.upstream_message = upstream_message
+        self.exposable = exposable
 
 
 class GuardedToolError(MCPProtocolError):
@@ -36,11 +80,16 @@ class GuardedToolError(MCPProtocolError):
         result: dict[str, Any],
         *,
         operational_failure: bool = False,
+        diagnostic: str | None = None,
+        trusted: bool = True,
     ) -> None:
-        super().__init__(message, code=-32042)
+        super().__init__(message, code=-32042, diagnostic=diagnostic)
         self.rule = rule
         self.result = result
         self.operational_failure = operational_failure
+        # False when the refusal was relayed from an external upstream. The
+        # pipeline then inspects ``result`` before an agent can see it.
+        self.trusted = trusted
 
     def as_data(self) -> dict[str, Any]:
         return {
@@ -56,6 +105,10 @@ class UpstreamExitedError(MCPProtocolError):
 
 class UpstreamRestartLimitError(MCPProtocolError):
     pass
+
+
+def upstream_label(server: str) -> str:
+    return f"MCP upstream {server!r}"
 
 
 ToolHandler = Callable[[str, dict[str, Any]], Any]
@@ -238,8 +291,14 @@ class StdioMCPClient:
         restart_window_seconds: float = 300.0,
         restart_backoff_seconds: float = 1.0,
         metrics: Metrics | None = None,
+        expose_error_messages: bool = False,
     ) -> None:
         self.backend = backend
+        # Built-in Judikt backends (no explicit command) author their own error
+        # text. Every other upstream is untrusted: its error text is diagnostic
+        # only unless the operator opts in to inspected exposure.
+        self._trusted_error_text = command is None
+        self.expose_error_messages = bool(expose_error_messages)
         self._command = tuple(command or [sys.executable, "-m", "judikt.cli", "backend", backend])
         self._cwd = cwd
         self._write_lock = threading.Lock()
@@ -350,22 +409,30 @@ class StdioMCPClient:
             result = self.request("tools/list", {"cursor": cursor} if cursor else {})
             page = result.get("tools")
             if not isinstance(page, list) or not all(isinstance(tool, dict) for tool in page):
-                raise MCPProtocolError(f"MCP backend {self.backend!r} returned an invalid tool catalog")
+                raise MCPProtocolError(
+                    f"{upstream_label(self.backend)} returned an invalid tool catalog"
+                )
             tools.extend(page)
             next_cursor = result.get("nextCursor")
             if not next_cursor:
                 return tools
             cursor = str(next_cursor)
             if cursor in observed_cursors:
-                raise MCPProtocolError(f"MCP backend {self.backend!r} repeated a pagination cursor")
+                raise MCPProtocolError(
+                    f"{upstream_label(self.backend)} repeated a pagination cursor"
+                )
             observed_cursors.add(cursor)
-        raise MCPProtocolError(f"MCP backend {self.backend!r} exceeded the tool pagination limit")
+        raise MCPProtocolError(
+            f"{upstream_label(self.backend)} exceeded the tool pagination limit"
+        )
 
     def call_tool(self, tool: str, arguments: dict[str, Any]) -> Any:
         response = self.request("tools/call", {"name": tool, "arguments": arguments})
         content = response.get("content")
         if not isinstance(content, list):
-            raise MCPProtocolError(f"MCP backend {self.backend!r} returned an invalid tool result")
+            raise MCPProtocolError(
+                f"{upstream_label(self.backend)} returned a malformed 'tools/call' result"
+            )
         result = {"content": content, "isError": response.get("isError") is True}
         if "structuredContent" in response:
             result["structuredContent"] = response["structuredContent"]
@@ -378,7 +445,7 @@ class StdioMCPClient:
             return
         started = time.monotonic()
         self._closed.set()
-        self._fail_pending(None, MCPProtocolError(f"MCP backend {self.backend!r} was closed"))
+        self._fail_pending(None, MCPProtocolError(f"{upstream_label(self.backend)} was closed"))
         with self._lifecycle_lock:
             process = self._process
             self._process = None
@@ -423,7 +490,7 @@ class StdioMCPClient:
 
     def _spawn_locked(self) -> None:
         if self._closed.is_set():
-            raise MCPProtocolError(f"MCP backend {self.backend!r} was closed")
+            raise MCPProtocolError(f"{upstream_label(self.backend)} was closed")
         self._generation += 1
         generation = self._generation
         process = subprocess.Popen(
@@ -506,39 +573,83 @@ class StdioMCPClient:
                     pass
                 if self._metrics is not None:
                     self._metrics.observe_upstream_timeout(self.backend)
+                public_reason = (
+                    f"{upstream_label(self.backend)} timed out during {method!r} "
+                    f"after {deadline:g}s"
+                )
                 raise UpstreamTimeoutError(
-                    f"MCP backend {self.backend!r} timed out during {method!r} "
-                    f"after {deadline:g}s{self._diagnostic_suffix()}"
+                    public_reason,
+                    diagnostic=f"{public_reason}{self._diagnostic_suffix()}",
                 ) from None
         if "error" in response:
-            error = response.get("error")
-            message = error.get("message") if isinstance(error, dict) else None
-            data = error.get("data") if isinstance(error, dict) else None
-            if (
-                isinstance(error, dict)
-                and error.get("code") == -32042
-                and isinstance(data, dict)
-                and isinstance(data.get("rule"), str)
-                and isinstance(data.get("result"), dict)
-            ):
-                raise GuardedToolError(
+            raise self._error_response(response.get("error"), method)
+        result = response.get("result")
+        if not isinstance(result, dict):
+            raise MCPProtocolError(
+                f"{upstream_label(self.backend)} returned a malformed {method!r} result"
+            )
+        return result
+
+    def _error_response(self, error: Any, method: str) -> MCPProtocolError:
+        label = upstream_label(self.backend)
+        message = error.get("message") if isinstance(error, dict) else None
+        upstream_message = _bounded_upstream_text(message)
+        data = error.get("data") if isinstance(error, dict) else None
+        raw_code = error.get("code") if isinstance(error, dict) else None
+        code = (
+            raw_code
+            if isinstance(raw_code, int) and not isinstance(raw_code, bool)
+            and -(2**31) <= raw_code < 2**31
+            else None
+        )
+        if (
+            code == -32042
+            and isinstance(data, dict)
+            and isinstance(data.get("rule"), str)
+            and isinstance(data.get("result"), dict)
+        ):
+            if self._trusted_error_text:
+                return GuardedToolError(
                     data["rule"],
                     str(message or "guarded upstream operation was refused"),
                     data["result"],
                     operational_failure=data.get("operational_failure") is True,
                 )
-            raise MCPProtocolError(str(message or "upstream returned a JSON-RPC error"))
-        result = response.get("result")
-        if not isinstance(result, dict):
-            raise MCPProtocolError(
-                f"MCP backend {self.backend!r} returned a malformed {method!r} result"
+            rule = safe_rule(data["rule"])
+            public_reason = f"{label} refused the operation (rule: {rule})"
+            return GuardedToolError(
+                rule,
+                public_reason,
+                data["result"],
+                operational_failure=data.get("operational_failure") is True,
+                diagnostic=(
+                    f"{public_reason} during {method!r}; upstream message: "
+                    f"{upstream_message!r}"
+                ),
+                trusted=False,
             )
-        return result
+        if self._trusted_error_text:
+            return MCPProtocolError(str(message or "upstream returned a JSON-RPC error"))
+        public_reason = (
+            f"{label} returned an error (code {code})"
+            if code is not None
+            else f"{label} returned an error"
+        )
+        return UpstreamErrorResponse(
+            public_reason,
+            upstream_code=code,
+            upstream_message=upstream_message,
+            diagnostic=(
+                f"{public_reason} during {method!r}; upstream message: "
+                f"{upstream_message!r}{self._diagnostic_suffix()}"
+            ),
+            exposable=self.expose_error_messages,
+        )
 
     def _ensure_process(self) -> None:
         with self._lifecycle_lock:
             if self._closed.is_set():
-                raise MCPProtocolError(f"MCP backend {self.backend!r} was closed")
+                raise MCPProtocolError(f"{upstream_label(self.backend)} was closed")
             if self._permanent_failure is not None:
                 raise self._permanent_failure
             process = self._process
@@ -548,10 +659,13 @@ class StdioMCPClient:
             while self._restart_history and now - self._restart_history[0] > self._restart_window_seconds:
                 self._restart_history.popleft()
             if len(self._restart_history) >= self._restart_limit:
-                self._permanent_failure = UpstreamRestartLimitError(
-                    f"MCP backend {self.backend!r} exhausted its restart budget "
+                public_reason = (
+                    f"{upstream_label(self.backend)} exhausted its restart budget "
                     f"({self._restart_limit} restarts in {self._restart_window_seconds:g}s)"
-                    f"{self._diagnostic_suffix()}"
+                )
+                self._permanent_failure = UpstreamRestartLimitError(
+                    public_reason,
+                    diagnostic=f"{public_reason}{self._diagnostic_suffix()}",
                 )
                 raise self._permanent_failure
             delay = min(
@@ -559,7 +673,7 @@ class StdioMCPClient:
                 30.0,
             )
             if delay and self._closed.wait(delay):
-                raise MCPProtocolError(f"MCP backend {self.backend!r} was closed")
+                raise MCPProtocolError(f"{upstream_label(self.backend)} was closed")
             if process is not None:
                 previous_threads = (self._reader_thread, self._stderr_thread)
                 _terminate_process(process, terminate_timeout=0.2, kill_timeout=0.2)
@@ -613,7 +727,7 @@ class StdioMCPClient:
                     "stdout message exceeded max_message_bytes"
                 )
                 failure = MCPProtocolError(
-                    f"MCP backend {self.backend!r} exceeded the "
+                    f"{upstream_label(self.backend)} exceeded the "
                     f"{self._max_message_bytes}-byte stdout message limit"
                 )
                 self._mark_process_failed(generation, failure, terminate=True)
@@ -637,7 +751,9 @@ class StdioMCPClient:
                 try:
                     self._handle_server_request(message)
                 except MCPProtocolError as exc:
-                    self._stderr.append(f"[judikt] server-request response failed: {exc}")
+                    self._stderr.append(
+                        f"[judikt] server-request response failed: {exc.diagnostic}"
+                    )
                 continue
             if "id" in message:
                 with self._pending_lock:
@@ -728,8 +844,10 @@ class StdioMCPClient:
         self._stderr.append(f"[judikt] protocol violation: {marker}")
 
     def _exit_error(self, reason: str) -> UpstreamExitedError:
+        public_reason = f"{upstream_label(self.backend)} {reason}"
         return UpstreamExitedError(
-            f"MCP backend {self.backend!r} {reason}{self._diagnostic_suffix()}"
+            public_reason,
+            diagnostic=f"{public_reason}{self._diagnostic_suffix()}",
         )
 
     def _diagnostic_suffix(self) -> str:
@@ -789,6 +907,13 @@ def _positive_int(value: Any, name: str) -> int:
 def _positive_int_env(name: str, default: int) -> int:
     raw = os.getenv(name, "").strip()
     return _positive_int(raw, name) if raw else default
+
+
+def _bounded_upstream_text(value: Any, limit: int = 2000) -> str:
+    if value is None:
+        return ""
+    text = value if isinstance(value, str) else json.dumps(value, default=str)
+    return strip_control_characters(text)[:limit]
 
 
 def _safe_diagnostic_line(line: str) -> str:

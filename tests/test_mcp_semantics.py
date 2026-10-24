@@ -12,7 +12,11 @@ from pathlib import Path
 from typing import Iterator
 
 from judikt.paths import DEFAULT_POLICY_PATH
-from judikt.protocol import MCPProtocolError, STABLE_PROTOCOL_VERSION, StdioMCPClient
+from judikt.protocol import (
+    STABLE_PROTOCOL_VERSION,
+    StdioMCPClient,
+    UpstreamErrorResponse,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -213,8 +217,11 @@ class MCPListChangedTest(unittest.TestCase):
                         == {"dynamic.trigger"}
                     )
                 )
-                with self.assertRaisesRegex(MCPProtocolError, "unknown tool"):
+                with self.assertRaises(UpstreamErrorResponse) as raised:
                     client.call_tool("dynamic.stable", {})
+                # Upstream error text is diagnostic-only on the client side.
+                self.assertIn("unknown tool", raised.exception.upstream_message)
+                self.assertNotIn("unknown tool", str(raised.exception))
 
     @contextmanager
     def _client(

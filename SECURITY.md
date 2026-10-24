@@ -19,6 +19,8 @@ Local SQLite audit storage uses transactional, sequenced, HMAC-signed hash chain
 
 Audit sink delivery is asynchronous and durable through an in-database outbox. Operators must alert on pending count, oldest pending age, and delivery failures, and periodically exercise `judikt audit reconcile`. Production defaults to deny-mode audit backpressure unless policy explicitly selects another mode. An `execution_started` intent is committed before upstream execution and linked to the final outcome; an unmatched intent indicates an interrupted operation, not proof of tampering. Startup verification is incremental from the last fully verified signed checkpoint, while `judikt audit verify --full` replays every event.
 
+Upstream-controlled text never becomes agent-visible reason text. Upstream stderr, JSON-RPC error messages, forged guarded-refusal payloads, and remote transport exception text are recorded only as a redacted operator diagnostic in the audit event, the gateway's stderr, and telemetry; agents receive a fixed Judikt-authored reason. `str()` of every Judikt MCP protocol error returns only that public reason, so code paths that forget the distinction fail safe. Operators who opt in with `expose_error_messages` get an upstream's JSON-RPC error message shown to agents only after it passes content inspection and redaction.
+
 Dashboard approval and kill-switch POSTs require a strong random `JUDIKT_API_TOKEN` even on loopback and return `503` when no token is configured. Do not expose the dashboard outside loopback, and do not use `JUDIKT_DEMO_MODE=true` outside an isolated evaluation environment.
 
 ## Authenticated Remote Boundary

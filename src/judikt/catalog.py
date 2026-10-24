@@ -5,6 +5,7 @@ import sys
 import threading
 from typing import Any, Callable
 
+from .diagnostics import emit_operator_diagnostic, exception_diagnostic, redact_diagnostic
 from .models import Tool, ToolCallResult
 from .tool_integrity import ToolDriftError, ToolIntegrityError
 
@@ -55,6 +56,15 @@ class ToolCatalog:
     def _refresh(self, server: str, emit: Callable[[], None]) -> None:
         try:
             definitions = self._server_definitions(server)
+        except Exception as exc:
+            # A failed refresh keeps the last verified catalog. Upstream text in
+            # the failure is operator-only, so it goes to stderr, redacted.
+            emit_operator_diagnostic(
+                self._redact(exception_diagnostic(exc)),
+                server=server,
+            )
+            return
+        try:
             report = self.runtime.tool_integrity.verify(server, definitions)
             trusted = definitions
             self.runtime.tool_integrity_reports[server] = report.as_dict()
@@ -79,6 +89,11 @@ class ToolCatalog:
             self._definitions[server] = trusted
             self._rebuild()
         emit()
+
+    def _redact(self, text: str) -> str:
+        policy = getattr(self.runtime, "policy", None)
+        redact = getattr(policy, "redact_diagnostic", None)
+        return redact(text) if callable(redact) else redact_diagnostic(text)
 
     def _server_definitions(self, server: str) -> list[dict[str, Any]]:
         upstreams = getattr(self.runtime, "upstreams", None)

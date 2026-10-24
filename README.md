@@ -233,6 +233,18 @@ The `platform-ops`, `kubernetes`, and `incident` adapters are walkthrough fixtur
 
 The test suite launches [`tests/fixtures/external_mcp_server.py`](tests/fixtures/external_mcp_server.py) as an independent process and proves normal and text-only responses, paginated discovery, server-initiated requests, environment isolation, injected-result quarantine, and changed metadata blocking. The versioned [community interoperability harness](docs/COMMUNITY_INTEROP.md) separately targets the official MCP Filesystem and Memory servers plus GitHub's official read-only server.
 
+### Troubleshooting Upstream Failures
+
+Agents never see upstream-controlled diagnostic text. When an upstream times out, exits, returns a JSON-RPC error, or a remote request fails, the agent receives a fixed Judikt-authored reason that interpolates only the configured server name, the MCP method, the timeout, a numeric JSON-RPC error code, or a transport category, for example `MCP upstream 'github' timed out during 'tools/call' after 30s` or `remote MCP upstream 'docs' request failed (TLS error)`. Upstream stderr, upstream JSON-RPC error messages, and transport exception text can carry secrets or prompt injection, so they are kept as an operator-only diagnostic:
+
+- in the audit record's `diagnostic` field (hash-chained and signed with the rest of the event), read it with the dashboard's recent-events view, `judikt.runtime_state`, or `sqlite3 <audit-db> "SELECT seq, rule, diagnostic FROM audit_events WHERE diagnostic IS NOT NULL ORDER BY seq DESC LIMIT 20"`;
+- on the gateway's own stderr as one `Judikt upstream diagnostic (correlation=... server=... tool=...)` line, which MCP clients write to their server log (for Claude Desktop, the `mcp-server-<name>.log` file);
+- as the `judikt.upstream.diagnostic` span attribute when tracing is enabled, capped at 4 KB.
+
+Every diagnostic passes the policy's `redacted_value_patterns`, Judikt's default secret patterns, and `key=value` credential redaction before it is stored or printed. Use the correlation ID shown to the agent to find the matching audit event. CLI startup errors from `judikt init`, `judikt wrap`, and `judikt pins accept` print the redacted diagnostic to the operator's terminal.
+
+To let agents see an upstream's JSON-RPC error message, set `"expose_error_messages": true` on that upstream. The message is then bounded to 500 characters, inspected as a `tool_result`, and policy-redacted; if inspection reports any finding, the agent receives only the fixed reason. An upstream tool result with `isError: true` is a tool result rather than a diagnostic: it is inspected, quarantined, or redacted like any other result.
+
 ### MCP Result Semantics
 
 For an allowed stdio call, Judikt preserves the upstream MCP result: `content`, optional `structuredContent`, `isError`, and upstream `_meta`. Text is inspected and redacted before delivery; image, audio, resource-blob, and resource-link payloads pass through without binary rewriting. Judikt adds only `_meta["io.judikt/decision"]`, containing the correlation ID, policy rule, action, risk level, and an approval-token digest when applicable. An upstream `isError: true` remains a tool error.

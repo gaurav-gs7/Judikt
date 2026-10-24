@@ -8,6 +8,11 @@ from typing import Any, Callable, Protocol
 from .approval_replay import ApprovalReplayStore, approval_jti_digest
 from .audit import AuditStore
 from .content_guard import ContentGuard, quarantine_result
+from .diagnostics import (
+    MAX_EXPOSED_MESSAGE_CHARS,
+    emit_operator_diagnostic,
+    exception_diagnostic,
+)
 from .findings import FindingDispatcher, build_finding_event, should_emit_finding
 from .kill_switch import KillSwitchStore, KillSwitchUnavailable
 from .metrics import Metrics
@@ -16,6 +21,7 @@ from .policy import PolicyEngine
 from .protocol import (
     GuardedToolError,
     MCPProtocolError,
+    UpstreamErrorResponse,
     UpstreamTimeoutError,
     is_mcp_tool_error,
 )
@@ -23,6 +29,7 @@ from .request_context import authenticated_subject
 from .telemetry import Telemetry
 from .tool_integrity import ToolDriftError, ToolIntegrityError, ToolIntegrityStore
 from .upstream_registry import UpstreamRegistry
+from .upstreams import MCP_TOOL_NAME_PATTERN
 
 
 class IdentityProvider(Protocol):
@@ -169,6 +176,7 @@ class GuardedCallPipeline:
         evidence = list(decision.evidence)
         result: Any = None
         mcp_result: dict[str, Any] | None = None
+        diagnostic = ""
 
         with self.telemetry.span(
             "judikt.call_tool",
@@ -195,7 +203,14 @@ class GuardedCallPipeline:
                     tool,
                     arguments,
                 ):
-                    allowed, rule, reason, result, mcp_result = self._execute_guarded(
+                    (
+                        allowed,
+                        rule,
+                        reason,
+                        result,
+                        mcp_result,
+                        diagnostic,
+                    ) = self._execute_guarded(
                         server=server,
                         tool=tool,
                         arguments=arguments,
@@ -208,7 +223,14 @@ class GuardedCallPipeline:
                         decision.action, server, tool, safe_arguments
                     )
                 else:
-                    allowed, rule, reason, result, mcp_result = self._execute_guarded(
+                    (
+                        allowed,
+                        rule,
+                        reason,
+                        result,
+                        mcp_result,
+                        diagnostic,
+                    ) = self._execute_guarded(
                         server=server,
                         tool=tool,
                         arguments=arguments,
@@ -221,6 +243,8 @@ class GuardedCallPipeline:
                     arguments, server, tool, correlation_id, decision, result
                 )
             request_span.set_policy(allowed=allowed, rule=rule, reason=reason)
+            if diagnostic:
+                request_span.set_attribute("judikt.upstream.diagnostic", diagnostic)
             request_span.set_json_output({"allowed": allowed, "result": result})
 
         duration_ms = (time.perf_counter() - started) * 1000
@@ -240,7 +264,15 @@ class GuardedCallPipeline:
             duration_ms=duration_ms,
             decision=decision,
             evidence=evidence,
+            diagnostic=diagnostic,
         )
+        if diagnostic:
+            emit_operator_diagnostic(
+                diagnostic,
+                correlation_id=correlation_id,
+                server=server,
+                tool=tool,
+            )
         return ToolCallResult(
             correlation_id=correlation_id,
             allowed=allowed,
@@ -399,10 +431,10 @@ class GuardedCallPipeline:
         safe_arguments: dict[str, Any],
         correlation_id: str,
         evidence: list[str],
-    ) -> tuple[bool, str, str, Any, dict[str, Any] | None]:
+    ) -> tuple[bool, str, str, Any, dict[str, Any] | None, str]:
         definitions = self.upstreams.definitions()
         if server not in definitions:
-            return False, "unknown_server", f"unknown MCP server: {server}", None, None
+            return False, "unknown_server", f"unknown MCP server: {server}", None, None, ""
         try:
             self.tool_integrity_reports[server] = self.tool_integrity.verify(
                 server, definitions[server]
@@ -414,6 +446,7 @@ class GuardedCallPipeline:
                     str(self.tool_integrity.pending_error(server, tool)),
                     None,
                     None,
+                    "",
                 )
             claims = self.policy.approval_claims(server, tool, arguments)
             if claims is not None:
@@ -425,6 +458,7 @@ class GuardedCallPipeline:
                         "approval token has already been used",
                         None,
                         None,
+                        "",
                     )
             with self.telemetry.span(
                 f"mcp.{tool}",
@@ -458,7 +492,7 @@ class GuardedCallPipeline:
                     self.circuits.record_failure(server, tool, reason)
                     result = quarantine_result(inspection)
                     tool_span.set_json_output(result)
-                    return False, "inbound_prompt_injection", reason, result, None
+                    return False, "inbound_prompt_injection", reason, result, None, ""
                 redacted_result = self.policy.redact_mcp_result(
                     inspection.sanitized_value
                 )
@@ -468,35 +502,88 @@ class GuardedCallPipeline:
                     reason = "upstream MCP tool reported an execution error"
                     self.circuits.record_failure(server, tool, reason)
                     tool_span.set_json_output(result)
-                    return False, "upstream_error", reason, result, mcp_result
+                    return False, "upstream_error", reason, result, mcp_result, ""
                 self.circuits.reset(server, tool)
                 tool_span.set_json_output(result)
-                return True, "allow", "allowed by policy", result, mcp_result
+                return True, "allow", "allowed by policy", result, mcp_result, ""
         except ToolIntegrityError as exc:
-            reason = exc.one_line() if isinstance(exc, ToolDriftError) else str(exc)
-            return False, "tool_integrity", reason, None, None
+            return (
+                False,
+                "tool_integrity",
+                _tool_integrity_reason(exc),
+                None,
+                None,
+                self._diagnostic(exc),
+            )
         except UpstreamTimeoutError as exc:
-            reason = str(exc)
+            reason = exc.public_reason
             self.circuits.record_failure(server, tool, reason)
-            return False, "upstream_timeout", reason, None, None
+            return False, "upstream_timeout", reason, None, None, self._diagnostic(exc)
         except GuardedToolError as exc:
-            if exc.operational_failure:
-                self.circuits.record_failure(server, tool, str(exc))
-            mcp_result = {
-                "content": [{"type": "text", "text": str(exc)}],
-                "structuredContent": exc.result,
-                "isError": True,
-                "_meta": {"io.judikt/backend-rule": exc.rule},
-            }
-            return False, exc.rule, str(exc), exc.result, mcp_result
+            return self._guarded_refusal(server, tool, exc)
+        except UpstreamErrorResponse as exc:
+            reason = self._error_response_reason(exc)
+            self.circuits.record_failure(server, tool, exc.public_reason)
+            return False, "upstream_error", reason, None, None, self._diagnostic(exc)
         except MCPProtocolError as exc:
-            reason = str(exc)
+            reason = exc.public_reason
             self.circuits.record_failure(server, tool, reason)
-            return False, "upstream_error", reason, None, None
-        except Exception:
+            return False, "upstream_error", reason, None, None, self._diagnostic(exc)
+        except Exception as exc:
             reason = "upstream tool execution failed"
             self.circuits.record_failure(server, tool, reason)
-            return False, "upstream_error", reason, None, None
+            return False, "upstream_error", reason, None, None, self._diagnostic(exc)
+
+    def _diagnostic(self, exc: BaseException) -> str:
+        return self.policy.redact_diagnostic(exception_diagnostic(exc))
+
+    def _guarded_refusal(
+        self,
+        server: str,
+        tool: str,
+        exc: GuardedToolError,
+    ) -> tuple[bool, str, str, Any, dict[str, Any] | None, str]:
+        reason = exc.public_reason
+        if exc.operational_failure:
+            self.circuits.record_failure(server, tool, reason)
+        structured: Any = exc.result
+        if not exc.trusted:
+            # A refusal relayed by an external upstream is untrusted content.
+            inspection = self.content_guard.inspect(structured, surface="tool_result")
+            if not inspection.allowed:
+                quarantined = quarantine_result(inspection)
+                return (
+                    False,
+                    "inbound_prompt_injection",
+                    "tool output was quarantined by deterministic inbound content inspection",
+                    quarantined,
+                    None,
+                    self._diagnostic(exc),
+                )
+            structured = inspection.sanitized_value
+        structured = self.policy.redact(structured)
+        mcp_result = {
+            "content": [{"type": "text", "text": reason}],
+            "structuredContent": structured,
+            "isError": True,
+            "_meta": {"io.judikt/backend-rule": exc.rule},
+        }
+        diagnostic = "" if exc.trusted else self._diagnostic(exc)
+        return False, exc.rule, reason, structured, mcp_result, diagnostic
+
+    def _error_response_reason(self, exc: UpstreamErrorResponse) -> str:
+        """Return what an agent may see for an upstream JSON-RPC error."""
+
+        if not exc.exposable or not exc.upstream_message:
+            return exc.public_reason
+        message = exc.upstream_message[:MAX_EXPOSED_MESSAGE_CHARS]
+        inspection = self.content_guard.inspect(message, surface="tool_result")
+        if not inspection.allowed or inspection.findings:
+            return exc.public_reason
+        exposed = self.policy.redact(inspection.sanitized_value)
+        if not isinstance(exposed, str) or not exposed.strip():
+            return exc.public_reason
+        return f"{exc.public_reason}: {exposed}"
 
     def _maybe_annotate_incident(
         self,
@@ -554,6 +641,7 @@ class GuardedCallPipeline:
         duration_ms: float,
         decision: PolicyDecision,
         evidence: list[str],
+        diagnostic: str = "",
     ) -> None:
         self.audit.record(
             correlation_id=correlation_id,
@@ -567,6 +655,7 @@ class GuardedCallPipeline:
             result=result,
             duration_ms=duration_ms,
             evidence=evidence,
+            diagnostic=diagnostic or None,
         )
         if should_emit_finding(rule, decision.risk_level, allowed):
             outcome = self.findings.dispatch(
@@ -586,6 +675,20 @@ class GuardedCallPipeline:
             )
             self.metrics.observe_finding(outcome)
         self.metrics.observe(server, tool, allowed, duration_ms)
+
+
+def _tool_integrity_reason(exc: ToolIntegrityError) -> str:
+    if not isinstance(exc, ToolDriftError):
+        return str(exc)
+    names = [*exc.added_tools, *exc.removed_tools, *exc.changed_tools]
+    if all(MCP_TOOL_NAME_PATTERN.fullmatch(str(name)) for name in names):
+        return exc.one_line()
+    # Tool names are upstream-controlled; never echo names that fall outside
+    # MCP tool-name rules into agent-visible text.
+    return (
+        "tool definition drift detected; tool names were withheld because they "
+        f"do not follow MCP tool-name rules; accept with: {exc.accept_command}"
+    )
 
 
 def _evaluation_only_result(

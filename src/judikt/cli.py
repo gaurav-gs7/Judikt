@@ -48,6 +48,7 @@ from .policy_init import (
     initialize_policy_from_tools,
     normalize_server_name,
 )
+from .diagnostics import redact_diagnostic
 from .protocol import MCPProtocolError
 from .real_mcp import serve_real_mcp
 from .runtime import JudiktRuntime
@@ -275,7 +276,7 @@ def main() -> None:
                 force=args.force,
             )
         except (PolicyInitializationError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
-            raise SystemExit(f"init: {exc}") from None
+            raise SystemExit(f"init: {_operator_error(exc)}") from None
         _print_classification_summary(report)
         print(json.dumps(report, indent=2))
         return
@@ -286,7 +287,7 @@ def main() -> None:
         try:
             run_pins_command(args)
         except (ToolIntegrityError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
-            print(f"pins: {exc}", file=sys.stderr)
+            print(f"pins: {_operator_error(exc)}", file=sys.stderr)
             raise SystemExit(3) from None
         return
     if args.command == "audit":
@@ -449,6 +450,8 @@ def main() -> None:
         _exit_tool_integrity(args.command, exc)
     except (ApprovalConfigurationError, AuditConfigurationError) as exc:
         raise SystemExit(f"{args.command}: {exc}") from None
+    except MCPProtocolError as exc:
+        raise SystemExit(f"{args.command}: {_operator_error(exc)}") from None
     if args.command == "demo":
         try:
             run_demo(runtime)
@@ -568,7 +571,20 @@ def _run_wrap(args: argparse.Namespace) -> None:
         OSError,
         json.JSONDecodeError,
     ) as exc:
-        raise SystemExit(f"wrap: {exc}") from None
+        raise SystemExit(f"wrap: {_operator_error(exc)}") from None
+
+
+def _operator_error(exc: BaseException) -> str:
+    """Render a CLI error for the operator's terminal.
+
+    Upstream failures carry a fixed public reason for agents and a separate
+    diagnostic. The operator is the reader here, so show the diagnostic, but
+    redact secrets first because terminals are often captured in logs.
+    """
+
+    if isinstance(exc, MCPProtocolError):
+        return redact_diagnostic(exc.diagnostic)
+    return str(exc)
 
 
 def _exit_tool_integrity(command: str, exc: ToolIntegrityError) -> None:
