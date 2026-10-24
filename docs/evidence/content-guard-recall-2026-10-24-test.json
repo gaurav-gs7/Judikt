@@ -1,0 +1,526 @@
+{
+  "schema_version": 1,
+  "evaluation": {
+    "name": "Judikt content-guard precision corpus",
+    "split": "test",
+    "sample_count": 178,
+    "corpus_sha256": "2935d4da69677f498db2ff1575068ecb1aa3beee9e8cbbf9a20e21d1d3b68eb4",
+    "policy_sha256": "19caf9c0fcf0f473df531c794740a4a72b18388a7eb20c66da689ea02656772a"
+  },
+  "overall": {
+    "sample_count": 178,
+    "true_positive": 69,
+    "false_positive": 0,
+    "true_negative": 108,
+    "false_negative": 1,
+    "precision": 1.0,
+    "recall": 0.985714,
+    "false_positive_rate": 0.0,
+    "f1": 0.992806,
+    "latency_ms": {
+      "p50": 0.225284,
+      "p95": 0.307942,
+      "p99": 0.344983
+    }
+  },
+  "by_surface": {
+    "tool_argument": {
+      "sample_count": 64,
+      "true_positive": 27,
+      "false_positive": 0,
+      "true_negative": 36,
+      "false_negative": 1,
+      "precision": 1.0,
+      "recall": 0.964286,
+      "false_positive_rate": 0.0,
+      "f1": 0.981818,
+      "latency_ms": {
+        "p50": 0.219523,
+        "p95": 0.301159,
+        "p99": 0.318195
+      }
+    },
+    "tool_description": {
+      "sample_count": 50,
+      "true_positive": 14,
+      "false_positive": 0,
+      "true_negative": 36,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.223016,
+        "p95": 0.318965,
+        "p99": 0.344983
+      }
+    },
+    "tool_result": {
+      "sample_count": 64,
+      "true_positive": 28,
+      "false_positive": 0,
+      "true_negative": 36,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.237144,
+        "p95": 0.331911,
+        "p99": 0.545357
+      }
+    }
+  },
+  "by_category": {
+    "authority_impersonation": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.155475,
+        "p95": 0.163985,
+        "p99": 0.163985
+      }
+    },
+    "cli_help": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 9,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.168094,
+        "p95": 0.229405,
+        "p99": 0.229405
+      }
+    },
+    "code_comment": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 9,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.247705,
+        "p95": 0.266325,
+        "p99": 0.266325
+      }
+    },
+    "concealment": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.172953,
+        "p95": 0.213702,
+        "p99": 0.213702
+      }
+    },
+    "confusables": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.146897,
+        "p95": 0.204642,
+        "p99": 0.204642
+      }
+    },
+    "contributing": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 9,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.241998,
+        "p95": 0.27092,
+        "p99": 0.27092
+      }
+    },
+    "encoded_base64": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.237541,
+        "p95": 0.333037,
+        "p99": 0.333037
+      }
+    },
+    "encoded_hex": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.241574,
+        "p95": 0.262129,
+        "p99": 0.262129
+      }
+    },
+    "encoded_url": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.331911,
+        "p95": 0.566607,
+        "p99": 0.566607
+      }
+    },
+    "instruction_override": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.208497,
+        "p95": 0.252574,
+        "p99": 0.252574
+      }
+    },
+    "invisible_unicode": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.188907,
+        "p95": 0.246918,
+        "p99": 0.246918
+      }
+    },
+    "issue_pr": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 9,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.225284,
+        "p95": 0.264093,
+        "p99": 0.264093
+      }
+    },
+    "log_line": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 9,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.256285,
+        "p95": 0.305288,
+        "p99": 0.305288
+      }
+    },
+    "multilingual_attack": {
+      "sample_count": 5,
+      "true_positive": 4,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 1,
+      "precision": 1.0,
+      "recall": 0.8,
+      "false_positive_rate": 0.0,
+      "f1": 0.888889,
+      "latency_ms": {
+        "p50": 0.098607,
+        "p95": 0.124445,
+        "p99": 0.124445
+      }
+    },
+    "multilingual_benign": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 9,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.200949,
+        "p95": 0.241139,
+        "p99": 0.241139
+      }
+    },
+    "ordinary_prose": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 9,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.256809,
+        "p95": 0.327695,
+        "p99": 0.327695
+      }
+    },
+    "policy_documentation": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 9,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.256109,
+        "p95": 0.272639,
+        "p99": 0.272639
+      }
+    },
+    "readme_setup": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 9,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.238042,
+        "p95": 0.545357,
+        "p99": 0.545357
+      }
+    },
+    "role_reassignment": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.152709,
+        "p95": 0.195241,
+        "p99": 0.195241
+      }
+    },
+    "runbook": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 9,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.276371,
+        "p95": 0.318965,
+        "p99": 0.318965
+      }
+    },
+    "secret_exfiltration": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.239113,
+        "p95": 0.288673,
+        "p99": 0.288673
+      }
+    },
+    "security_documentation": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 9,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.230665,
+        "p95": 0.334723,
+        "p99": 0.334723
+      }
+    },
+    "spaced_letters": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.178749,
+        "p95": 0.210554,
+        "p99": 0.210554
+      }
+    },
+    "split_fields": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.214036,
+        "p95": 0.28638,
+        "p99": 0.28638
+      }
+    },
+    "stack_trace": {
+      "sample_count": 9,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 9,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.249402,
+        "p95": 0.261772,
+        "p99": 0.261772
+      }
+    },
+    "tool_coercion": {
+      "sample_count": 5,
+      "true_positive": 5,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.180707,
+        "p95": 0.224619,
+        "p99": 0.224619
+      }
+    }
+  },
+  "by_source": {
+    "Judikt project-authored synthetic corpus (Apache-2.0)": {
+      "sample_count": 178,
+      "true_positive": 69,
+      "false_positive": 0,
+      "true_negative": 108,
+      "false_negative": 1,
+      "precision": 1.0,
+      "recall": 0.985714,
+      "false_positive_rate": 0.0,
+      "f1": 0.992806,
+      "latency_ms": {
+        "p50": 0.225284,
+        "p95": 0.307942,
+        "p99": 0.344983
+      }
+    }
+  },
+  "mistakes": [
+    {
+      "sample_id_sha256": "76364e9b6237c483252a596119f554df221fbab3cf8beb1b10087743d33362b0",
+      "surface": "tool_argument",
+      "category": "multilingual_attack",
+      "expected_attack": true,
+      "predicted_attack": false,
+      "matched_rules": []
+    }
+  ],
+  "privacy": {
+    "raw_payloads_in_report": false,
+    "sample_identifiers": "sha256"
+  }
+}

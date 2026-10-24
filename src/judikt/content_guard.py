@@ -65,6 +65,8 @@ class _Detected:
     finding: ContentFinding
     start: int | None = None
     end: int | None = None
+    # Exact spans (whole lines) are redacted as-is; phrase spans get padding.
+    exact: bool = False
 
 
 DEFAULT_INJECTION_RULES = {
@@ -124,10 +126,83 @@ _AGENT_CUE = re.compile(
     r"\b(you|assistant|ai|the model|llm|agent|claude|chatgpt)\b|system:|<\|im_start\|>|###\s*instruction",
     re.IGNORECASE,
 )
+# A destination or recipient for data: a URL, an email address, an external
+# host, a chat channel, or an explicitly external party. Generic words such
+# as "webhook" or "endpoint" are not destinations on their own; operational
+# docs routinely say a webhook carries a secret in a header.
 _DESTINATION_CUE = re.compile(
-    r"https?://|webhook|endpoint|external|remote|collector|attacker|\.invalid\b|\bto\s+[a-z0-9.-]+\.[a-z]{2,}\b",
+    r"https?://|\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b|\bcollector\b|\battacker\b|\.invalid\b"
+    r"|\bto\s+(?:the\s+)?(?:external|remote|third[- ]party|outside)\b"
+    r"|\bto\s+(?:https?://)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|dev|app|xyz|ru|cn|example|invalid|sh|me|co)\b"
+    r"|\bto\s+#[a-z0-9_-]+",
     re.IGNORECASE,
 )
+
+# Direct address of the agent reading the content. Each form must be clearly
+# vocative: a role header ("SYSTEM:"), a name followed by a comma, colon or
+# parenthesis, or an explicit phrase such as "the AI reading this".
+_AGENT_NAMES = r"(?:ai|assistant|agent|model|llm|bot|claude|copilot|cursor|chatgpt|gpt|gemini)"
+_AGENT_ADDRESS = re.compile(
+    rf"(?:^|(?<=[\n.!?;>*\-])|\b(?:hey|hi|hello|dear|attention|note for|to any|to all|for any)\s)"
+    rf"\s*(?:the\s+|any\s+|all\s+)?(?:automated\s+)?{_AGENT_NAMES}s?"
+    rf"(?:\s*/\s*{_AGENT_NAMES})*"
+    rf"(?:\s+(?:helper|agents?|assistants?|models?|reviewers?|readers?|directive|instructions?))?"
+    rf"\s*(?:,|:|\()"
+    rf"|\b(?:the|any|an?)\s+{_AGENT_NAMES}\s+(?:reading|processing|summari[sz]ing|reviewing)\s+this\b"
+    rf"|\byou\s*\(\s*the\s+{_AGENT_NAMES}\s*\)"
+    rf"|\bnote\s+(?:for|to)\s+(?:automated|ai)\s+(?:reviewers?|agents?|assistants?|tools?)\b"
+    rf"|(?:^|(?<=[\n>*\-]))\s*(?:system|developer|administrator)\s*:",
+    re.IGNORECASE | re.MULTILINE,
+)
+_AGENT_SIGNALS = {
+    "tool_action": re.compile(
+        r"\b(?:run|call|invoke|execute|use|trigger)\b.{0,60}"
+        r"(?:\b[a-z][a-z0-9]*_[a-z0-9_]+\b|\btools?\b|`[^`]+`)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    "data_action": re.compile(
+        r"\b(?:read|include|append|upload|forward|print|send|post|reply\s+(?:only\s+)?with|"
+        r"output|reveal|share|dump|copy|exfiltrate|fetch)\b.{0,80}"
+        r"(?:credentials?|\.env\b|\benv(?:ironment)?\b(?:\s+variables?)?|process\.env|tokens?\b|"
+        r"api[_ -]?keys?|secrets?\b|\bssh\b|id_rsa|\.aws\b|history|system\s+prompt|"
+        r"hidden\s+instructions|instructions\s+verbatim|passwords?)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    "concealment": re.compile(
+        r"\b(?:quietly|silently|secretly|without\s+(?:telling|informing|notifying|asking|alerting)|"
+        r"do\s+not\s+(?:mention|tell|inform|notify|alert|leave\s+(?:any\s+)?comments?)|"
+        r"don't\s+(?:mention|tell|inform)|no\s+need\s+to\s+(?:confirm|ask)|without\s+confirmation)\b",
+        re.IGNORECASE,
+    ),
+    "authority_claim": re.compile(
+        r"\b(?:pre-?authori[sz]ed|authori[sz]ed\s+you|(?:has|have)\s+granted|granted\s+(?:you\s+)?"
+        r"(?:elevated|admin|full|root)|elevated\s+permissions?|supersedes?|overrides?|priority\s*0|"
+        r"maintenance\s+mode|developer\s+mode|unrestricted|no\s+safety|disregard|"
+        r"ignore\s+(?:your|all|any)|from\s+now\s+on|behave\s+as|treat\s+all\s+subsequent)\b",
+        re.IGNORECASE,
+    ),
+}
+_AGENT_SIGNAL_WINDOW = 320
+
+# Chat-template and role tokens, or fake closing tags of a tool result or system
+# message. Legitimate prose has no reason to contain them outside code.
+_STRUCTURAL_MARKER = re.compile(
+    r"\[/?INST\]|<<\s*/?SYS\s*>>|<\|(?:im_start|im_end|system|user|assistant|endoftext|eot_id|"
+    r"start_header_id|end_header_id)\|>|</?(?:system|tool_result|tool_results|function_results?|"
+    r"tool_call|tool_response|assistant_response)\s*>"
+    r"|^[ \t]*###[ \t]*instruction[ \t]*:?[ \t]*$|^[ \t]*###[ \t]*(?:instruction|system)[ \t]*:",
+    re.IGNORECASE | re.MULTILINE,
+)
+_CODE_PATTERN = re.compile(r"```[\s\S]*?```|`[^`\n]+`")
+
+# A payload explicitly framed as an example and quoted, for instance
+# "Prompt injection example (do not follow): 'ignore previous instructions'".
+_EXAMPLE_QUOTE = re.compile(
+    r"\b(?:examples?\s*\((?:do\s+not|don't)\s+follow\)|for\s+example|such\s+as|e\.g\.)"
+    r"\s*[:,]?\s*([\"'“‘])(.{1,300}?)([\"'”’])",
+    re.IGNORECASE | re.DOTALL,
+)
+_SEVERITY_DOWNGRADE = {"high": "medium", "medium": "low", "low": "low"}
 _QUOTED_PATTERN = re.compile(r"```[\s\S]*?```|`[^`\n]+`|^\s*>.*$", re.MULTILINE)
 _SECURITY_DISCUSSION = re.compile(
     r"\b(training example|security note|threat model|detection guide)\b"
@@ -198,10 +273,12 @@ class ContentGuard:
         detected: list[_Detected] = []
         normalized_segments: list[str] = []
         for segment in segments:
-            detected.extend(self._scan_text(segment.text, segment.path, surface, offset=segment.offset))
+            segment_detected = self._scan_text(
+                segment.text, segment.path, surface, offset=segment.offset
+            )
             normalized = _normalize_for_matching(segment.text)
             if normalized != segment.text:
-                detected.extend(
+                segment_detected.extend(
                     self._scan_text(
                         normalized,
                         segment.path,
@@ -209,6 +286,29 @@ class ContentGuard:
                         suffix="__evasion_normalized",
                     )
                 )
+            segment_detected.extend(
+                _scan_structural(segment.text, segment.path, surface, offset=segment.offset)
+            )
+            if not any(
+                item.finding.severity in {"medium", "high"} for item in segment_detected
+            ):
+                # Many injections trigger none of the phrase rules. Directly
+                # addressing the agent and pairing that with an action,
+                # concealment or authority claim is a separate signal; it only
+                # adds a finding where the phrase rules found nothing, so it
+                # never double-counts toward the medium-finding limit.
+                agent_directed = _scan_agent_directed(
+                    segment.text, segment.path, surface, offset=segment.offset
+                )
+                if not agent_directed and normalized != segment.text:
+                    agent_directed = _scan_agent_directed(
+                        normalized,
+                        segment.path,
+                        surface,
+                        suffix="__evasion_normalized",
+                    )
+                segment_detected.extend(agent_directed)
+            detected.extend(segment_detected)
             normalized_segments.append(normalized)
             invisible = INVISIBLE_CONTROL_PATTERN.search(segment.text)
             if invisible:
@@ -320,12 +420,25 @@ class ContentGuard:
     ) -> list[_Detected]:
         hits: list[_Detected] = []
         quoted = list(_QUOTED_PATTERN.finditer(text))
+        examples = [
+            (match.start(2), match.end(2)) for match in _EXAMPLE_QUOTE.finditer(text)
+        ]
+        has_structural_marker = _STRUCTURAL_MARKER.search(text) is not None
         for name, pattern in self._rules.items():
             match = pattern.search(text)
             if match:
                 if _inside_security_discussion(text, match.start(), match.end()):
                     continue
                 severity = _rule_severity(name, text, match, suffix)
+                in_example = any(
+                    start <= match.start() and match.end() <= end for start, end in examples
+                )
+                if in_example and not has_structural_marker and "__decoded_" not in suffix:
+                    # Explicitly framed and quoted as an example: one level lower,
+                    # and then treated like any other quoted context.
+                    severity = _SEVERITY_DOWNGRADE[severity]
+                    if severity != "high":
+                        continue
                 if severity != "high" and _inside_quoted_context(match.start(), match.end(), quoted):
                     continue
                 finding = _finding(f"{name}{suffix}", severity, surface, path, match.group(0))
@@ -369,7 +482,12 @@ def _rule_severity(name: str, text: str, match: re.Match[str], suffix: str) -> s
     window = text[max(0, match.start() - 120) : min(len(text), match.end() + 120)]
     agent_directed = bool(_AGENT_CUE.search(window))
     if name == "secret_exfiltration":
-        return "high" if _DESTINATION_CUE.search(window) else "medium"
+        # Only a destination or recipient, or a direct address of the agent,
+        # turns "post the key" into exfiltration. Operational docs about
+        # posting a secret to a vault or a header stay report-only.
+        if _DESTINATION_CUE.search(window) or _AGENT_ADDRESS.search(window):
+            return "high"
+        return "low"
     if name == "role_reassignment":
         return "high" if agent_directed else "low"
     if name == "tool_coercion":
@@ -378,6 +496,65 @@ def _rule_severity(name: str, text: str, match: re.Match[str], suffix: str) -> s
     if name == "concealment":
         return "medium" if agent_directed else "low"
     return "medium"
+
+
+def _scan_structural(
+    text: str,
+    path: str,
+    surface: str,
+    *,
+    offset: int = 0,
+) -> list[_Detected]:
+    code = list(_CODE_PATTERN.finditer(text))
+    for match in _STRUCTURAL_MARKER.finditer(text):
+        if _inside_quoted_context(match.start(), match.end(), code):
+            continue
+        finding = _finding("structural_role_marker", "high", surface, path, match.group(0))
+        return [_Detected(finding, offset + match.start(), offset + match.end())]
+    return []
+
+
+def _scan_agent_directed(
+    text: str,
+    path: str,
+    surface: str,
+    *,
+    suffix: str = "",
+    offset: int = 0,
+) -> list[_Detected]:
+    quoted = list(_QUOTED_PATTERN.finditer(text))
+    for address in _AGENT_ADDRESS.finditer(text):
+        if _inside_quoted_context(address.start(), address.end(), quoted):
+            continue
+        window_end = min(len(text), address.end() + _AGENT_SIGNAL_WINDOW)
+        window = text[address.start() : window_end]
+        for signal, pattern in _AGENT_SIGNALS.items():
+            hit = pattern.search(window)
+            if hit is None:
+                continue
+            if surface == "tool_description":
+                severity = "high"
+            elif surface == "tool_result":
+                severity = "medium"
+            else:
+                severity = "low"
+            end = address.start() + hit.end()
+            finding = _finding(
+                f"agent_directed_{signal}{suffix}",
+                severity,
+                surface,
+                path,
+                text[address.start() : end],
+            )
+            if suffix:
+                return [_Detected(finding)]
+            # Redact whole lines: the instruction usually continues past the
+            # matched signal.
+            line_start = text.rfind("\n", 0, address.start()) + 1
+            line_end = text.find("\n", end)
+            line_end = len(text) if line_end < 0 else line_end
+            return [_Detected(finding, offset + line_start, offset + line_end, exact=True)]
+    return []
 
 
 def _bounded_segments(value: Any, budget: int, surface: str) -> tuple[list[_Segment], bool]:
@@ -539,12 +716,24 @@ def _deduplicate(detected: list[_Detected]) -> list[_Detected]:
 
 def _redact_value(value: Any, detected: list[_Detected], path: str = "$") -> Any:
     if isinstance(value, str):
+        padding = 40
         ranges = [
-            (max(0, int(item.start) - 40), min(len(value), int(item.end) + 40), item.finding.id)
+            (
+                max(0, int(item.start) - (0 if item.exact else padding)),
+                min(len(value), int(item.end) + (0 if item.exact else padding)),
+                item.finding.id,
+            )
             for item in detected
             if item.finding.path == path and item.start is not None and item.end is not None
         ]
-        for start, end, finding_id in sorted(ranges, reverse=True):
+        merged: list[tuple[int, int, str]] = []
+        for start, end, finding_id in sorted(ranges):
+            if merged and start <= merged[-1][1]:
+                previous_start, previous_end, previous_id = merged[-1]
+                merged[-1] = (previous_start, max(previous_end, end), previous_id)
+            else:
+                merged.append((start, end, finding_id))
+        for start, end, finding_id in sorted(merged, reverse=True):
             marker = f"[judikt: suspected instruction removed, finding {finding_id}]"
             value = value[:start] + marker + value[end:]
         return value

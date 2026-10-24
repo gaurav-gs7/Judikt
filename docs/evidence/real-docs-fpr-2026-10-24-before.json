@@ -1,0 +1,188 @@
+{
+  "by_ecosystem": {
+    "npm": {
+      "chunks": 1328,
+      "flagged": 14,
+      "packages": 573
+    },
+    "pypi": {
+      "chunks": 198,
+      "flagged": 0,
+      "packages": 80
+    }
+  },
+  "chunk_bytes": 4096,
+  "chunks": 1526,
+  "content_guard_sha256": "3c8e945d03930f278f94e3fb32dcdac65bdb57be09f4fbd88f4cb988ae461ec1",
+  "environment": {
+    "cwd_independent": true,
+    "platform": "linux",
+    "python": "3.13.17"
+  },
+  "false_positive_rate": 0.009174,
+  "flagged": [
+    {
+      "action": "redact",
+      "chunk": 8,
+      "chunk_sha256": "781a7e71939820ebccd2a51787f3fbbfeeea2d5f71e1619c3a7595b81a9ef7d4",
+      "package": "npm:axios",
+      "rules": [
+        "secret_exfiltration",
+        "secret_exfiltration__evasion_normalized",
+        "secret_exfiltration__split_field"
+      ]
+    },
+    {
+      "action": "redact",
+      "chunk": 11,
+      "chunk_sha256": "28211445596d31dca2ba436546a06d491ace06f4bf1d17a49c648a2b6a58ab75",
+      "package": "npm:axios",
+      "rules": [
+        "secret_exfiltration",
+        "secret_exfiltration__evasion_normalized",
+        "secret_exfiltration__split_field"
+      ]
+    },
+    {
+      "action": "block",
+      "chunk": 1,
+      "chunk_sha256": "00a0aa457dcc335690cde322ed80b2f5dfa06f46d9b5c4e02eff7be4decc6b66",
+      "package": "npm:form-data",
+      "rules": [
+        "secret_exfiltration",
+        "secret_exfiltration__evasion_normalized",
+        "secret_exfiltration__split_field"
+      ]
+    },
+    {
+      "action": "redact",
+      "chunk": 5,
+      "chunk_sha256": "a08e69287cdea08af11ea31042e6cc675f009e6a0f23bc002994ddfdc52f4a10",
+      "package": "npm:yauzl",
+      "rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "action": "redact",
+      "chunk": 2,
+      "chunk_sha256": "b21d63752816e8adf0bd8b03e5e99128fe25209467b9351720cbbcf204cc165e",
+      "package": "npm:d3-hierarchy",
+      "rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "action": "redact",
+      "chunk": 6,
+      "chunk_sha256": "f0ce5b6b1e98d2f2b4afa5dc45bd887eaae1d76b89093649696b76b060716861",
+      "package": "npm:d3-hierarchy",
+      "rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "action": "redact",
+      "chunk": 9,
+      "chunk_sha256": "55ebc89fcdece0e1e75854927de83455ee476e05e96d7f195592fb242c8e3ff0",
+      "package": "npm:d3-hierarchy",
+      "rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "action": "redact",
+      "chunk": 10,
+      "chunk_sha256": "6467d103d1a403d084311baa2866b5a4003b30ad0195270f5f46a75725a1a870",
+      "package": "npm:d3-hierarchy",
+      "rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "action": "redact",
+      "chunk": 0,
+      "chunk_sha256": "e5616d7a2595593f0376ef4274b46078cfdfc9ae2c252d3a49e3b8d008786f3d",
+      "package": "npm:d3-polygon",
+      "rules": [
+        "invisible_unicode_control"
+      ]
+    },
+    {
+      "action": "block",
+      "chunk": 0,
+      "chunk_sha256": "58eaeff56f1e86b904f9e06f8218d561ef21a999fc564f54966505166fbd42bb",
+      "package": "npm:extsprintf",
+      "rules": [
+        "tool_coercion",
+        "tool_coercion__decoded_url",
+        "tool_coercion__decoded_url_evasion_normalized",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "action": "redact",
+      "chunk": 0,
+      "chunk_sha256": "59d409eebe2becb10f215ce220e13ca06f0bd84afbdfaed3e67c514809cb20a9",
+      "package": "npm:kew",
+      "rules": [
+        "tool_coercion",
+        "tool_coercion__evasion_normalized",
+        "tool_coercion__split_field"
+      ]
+    },
+    {
+      "action": "block",
+      "chunk": 0,
+      "chunk_sha256": "40c30319c6bd5ec23c724d1dd4cb36629e79fb9e807065d30e1bdec6d8bfb729",
+      "package": "npm:libnpmhook",
+      "rules": [
+        "secret_exfiltration",
+        "secret_exfiltration__evasion_normalized",
+        "secret_exfiltration__split_field"
+      ]
+    },
+    {
+      "action": "block",
+      "chunk": 1,
+      "chunk_sha256": "fbfc4b30e70ba76a28cde1a65da14e7c7c60726f1f85632bc5e3efd8d7fac5b7",
+      "package": "npm:libnpmhook",
+      "rules": [
+        "secret_exfiltration",
+        "secret_exfiltration__evasion_normalized",
+        "secret_exfiltration__split_field"
+      ]
+    },
+    {
+      "action": "redact",
+      "chunk": 0,
+      "chunk_sha256": "eee0ef012430f4e1c78d0760b4671e1a24076b32b8e9a0d523047a3e95f2bbd4",
+      "package": "npm:color-support",
+      "rules": [
+        "secret_exfiltration",
+        "secret_exfiltration__evasion_normalized",
+        "secret_exfiltration__split_field"
+      ]
+    }
+  ],
+  "flagged_chunks": 14,
+  "measurement": "content guard tool_result false-positive rate on real package documentation",
+  "note": "measured with the rules at commit af4ae25, before the recall changes",
+  "packages": 653,
+  "policy_sha256": "19caf9c0fcf0f473df531c794740a4a72b18388a7eb20c66da689ea02656772a",
+  "privacy": {
+    "third_party_text_in_report": false
+  },
+  "schema_version": 1
+}

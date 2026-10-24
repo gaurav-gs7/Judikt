@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "evaluation": {
+    "name": "Judikt content-guard precision corpus",
+    "split": "dev",
+    "sample_count": 19,
+    "corpus_sha256": "62412122566282658959745ff4435156663ca52266938868fdb42ca898fc2878",
+    "policy_sha256": "19caf9c0fcf0f473df531c794740a4a72b18388a7eb20c66da689ea02656772a"
+  },
+  "overall": {
+    "sample_count": 19,
+    "true_positive": 15,
+    "false_positive": 0,
+    "true_negative": 4,
+    "false_negative": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "false_positive_rate": 0.0,
+    "f1": 1.0,
+    "latency_ms": {
+      "p50": 0.51807,
+      "p95": 0.819102,
+      "p99": 0.896649
+    }
+  },
+  "by_surface": {
+    "tool_result": {
+      "sample_count": 19,
+      "true_positive": 15,
+      "false_positive": 0,
+      "true_negative": 4,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.51807,
+        "p95": 0.819102,
+        "p99": 0.896649
+      }
+    }
+  },
+  "by_category": {
+    "external_review_attack": {
+      "sample_count": 15,
+      "true_positive": 15,
+      "false_positive": 0,
+      "true_negative": 0,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.508205,
+        "p95": 0.657729,
+        "p99": 0.698401
+      }
+    },
+    "external_review_benign": {
+      "sample_count": 4,
+      "true_positive": 0,
+      "false_positive": 0,
+      "true_negative": 4,
+      "false_negative": 0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "false_positive_rate": 0.0,
+      "f1": 0.0,
+      "latency_ms": {
+        "p50": 0.819102,
+        "p95": 0.896649,
+        "p99": 0.896649
+      }
+    }
+  },
+  "by_source": {
+    "external-review-2026-10-24": {
+      "sample_count": 19,
+      "true_positive": 15,
+      "false_positive": 0,
+      "true_negative": 4,
+      "false_negative": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "f1": 1.0,
+      "latency_ms": {
+        "p50": 0.51807,
+        "p95": 0.819102,
+        "p99": 0.896649
+      }
+    }
+  },
+  "mistakes": [],
+  "privacy": {
+    "raw_payloads_in_report": false,
+    "sample_identifiers": "sha256"
+  }
+}
