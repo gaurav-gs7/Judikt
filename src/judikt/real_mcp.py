@@ -10,6 +10,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .approval import ApprovalAuthority
 from .auth import AuthError, Authenticator
 from .catalog import ToolCatalog, gateway_result
@@ -94,6 +95,9 @@ def serve_real_mcp(args: argparse.Namespace) -> None:
         json_response=True,
         stateless_http=False,
     )
+    # FastMCP does not take a version, so initialize would otherwise report the
+    # MCP SDK's own package version as Judikt's serverInfo.version.
+    mcp._mcp_server.version = __version__
 
     register_tools(mcp, runtime)
     register_native_tools(mcp, runtime, ToolCatalog(runtime))

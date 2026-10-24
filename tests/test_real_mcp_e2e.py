@@ -14,6 +14,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import judikt
 from judikt.auth import create_hs256_jwt
 from judikt.paths import DEFAULT_POLICY_PATH
 
@@ -203,6 +204,7 @@ class RealMCPStreamableHTTPEndToEndTest(unittest.TestCase):
                 async with ClientSession(read_stream, write_stream) as session:
                     initialized = await session.initialize()
                     self.assertTrue(initialized.protocolVersion)
+                    self.assertEqual(initialized.serverInfo.version, judikt.__version__)
                     listed = await session.list_tools()
                     names = {tool.name for tool in listed.tools}
                     expected = {
