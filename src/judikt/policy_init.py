@@ -62,15 +62,7 @@ def initialize_policy(
             f"refusing to overwrite existing policy: {output_path}; pass --force to replace it"
         )
 
-    client = StdioMCPClient(
-        normalized_name,
-        command=normalized_command,
-        inherit_environment=False,
-    )
-    try:
-        tools = client.list_tools()
-    finally:
-        client.close()
+    tools = discover_tools(normalized_command, normalized_name)
 
     return _write_starter_policy(
         tools,
@@ -79,6 +71,20 @@ def initialize_policy(
         identity=normalized_identity,
         profile=normalized_profile,
     )
+
+
+def discover_tools(command: Sequence[str], server_name: str) -> list[dict[str, Any]]:
+    """Run ``tools/list`` once against a stdio upstream."""
+
+    client = StdioMCPClient(
+        normalize_server_name(server_name),
+        command=normalize_command(command),
+        inherit_environment=False,
+    )
+    try:
+        return client.list_tools()
+    finally:
+        client.close()
 
 
 def initialize_policy_from_tools(

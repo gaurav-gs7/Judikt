@@ -67,6 +67,8 @@ For quick disposable evaluation, `judikt wrap -- <upstream command>` generates t
 
 Unless `--audit-db` or `JUDIKT_AUDIT_DB` is set, wrap state is isolated under `$XDG_STATE_HOME/judikt/upstreams/<display-name>-<fingerprint>/` or `~/.local/state/judikt/upstreams/...`. The private directory contains the audit database, findings database, and schema-v2 tool pins for that exact resolved command, working directory, and set of configured environment-variable names. Environment values are not fingerprinted or stored in the pin metadata.
 
+With `approve-writes`, gating has two separate steps. First, each write or destructive tool definition must be accepted once: until then it is pin-pending, hidden from `tools/list`, and the gateway prints one stderr line naming the hidden tools and the exact `judikt pins accept <state-key> --tool <name> ...` command. Second, every call to an accepted gated tool still needs its own signed approval token. `judikt init --accept-pins` performs the first step for the whole classified catalog after showing the classification and asking for confirmation; use it only after the user has reviewed the tool list, and pass `--yes` only when that consent was already given.
+
 Treat a startup exit code of `3` as a tool-integrity failure. Do not set refresh mode or accept a pin merely to continue setup. Follow [troubleshooting.md](troubleshooting.md), review the named tools and fields, and obtain explicit consent before `judikt pins accept`.
 
 ## 4. Connect And Smoke-Test

@@ -269,6 +269,118 @@ class WrapProfileEndToEndTest(unittest.TestCase):
             self.assertEqual(calls[0]["tool"], "update_issue")
             self.assertIn("Approval-gated tools: update_issue, delete_repo, list_things, delete_cache", initialized.stderr)
 
+    def test_approve_writes_startup_explains_hidden_gated_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            call_log = root / "calls.jsonl"
+            process = self._start_wrap(root, call_log, "approve-writes")
+            try:
+                self._request(process, "initialize", {})
+                tools = self._request(process, "tools/list", {})["tools"]
+            finally:
+                stderr = self._stop(process)
+
+        self.assertEqual([tool["name"] for tool in tools], ["read_file"])
+        summary = next(
+            line for line in stderr.splitlines() if "approval-gated tools are hidden" in line
+        )
+        self.assertTrue(
+            summary.startswith(
+                "4 approval-gated tools are hidden until their definitions are accepted: "
+                "judikt pins accept profile-tools-"
+            ),
+            summary,
+        )
+        for tool in ("update_issue", "delete_repo", "list_things", "delete_cache"):
+            self.assertIn(f"--tool {tool}", summary)
+        self.assertNotIn("--tool read_file", summary)
+
+    def test_init_accept_pins_advertises_gated_tools_that_still_need_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            call_log = root / "calls.jsonl"
+            policy_path = root / "policy.json"
+            environment = self._environment(root)
+            initialized = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "judikt.cli",
+                    "init",
+                    "--profile",
+                    "approve-writes",
+                    "--name",
+                    "profile-tools",
+                    "--output",
+                    str(policy_path),
+                    "--accept-pins",
+                    "--yes",
+                    "--",
+                    sys.executable,
+                    str(FIXTURE),
+                    "policy-profiles",
+                    str(call_log),
+                ],
+                cwd=PROJECT_ROOT,
+                env={**os.environ, **environment},
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(initialized.returncode, 0, initialized.stderr)
+            report = json.loads(initialized.stdout)
+            self.assertEqual(report["accepted_pins"]["pending_count"], 0)
+            self.assertEqual(report["accepted_pins"]["pinned_count"], 5)
+            self.assertIn("Pin 5 tool definitions for profile-tools", initialized.stderr)
+
+            client = self._explicit_policy_client(root, call_log, policy_path)
+            try:
+                names = {tool["name"] for tool in client.list_tools()}
+                denied = client.call_tool("update_issue", {"target": "INC-1"})
+            finally:
+                client.close()
+            calls = call_log.read_text().splitlines() if call_log.exists() else []
+
+        self.assertIn("update_issue", names)
+        self.assertIn("delete_repo", names)
+        self.assertTrue(denied["isError"])
+        self.assertEqual(denied["_meta"]["io.judikt/decision"]["rule"], "approval_required")
+        self.assertEqual(calls, [])
+
+    def test_init_accept_pins_without_yes_requires_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            policy_path = root / "policy.json"
+            declined = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "judikt.cli",
+                    "init",
+                    "--profile",
+                    "approve-writes",
+                    "--name",
+                    "profile-tools",
+                    "--output",
+                    str(policy_path),
+                    "--accept-pins",
+                    "--",
+                    sys.executable,
+                    str(FIXTURE),
+                    "policy-profiles",
+                ],
+                cwd=PROJECT_ROOT,
+                env={**os.environ, **self._environment(root)},
+                input="n\n",
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(declined.returncode, 3)
+        self.assertIn("pin acceptance cancelled", declined.stderr)
+
     def test_permissive_still_requires_first_use_approval_for_write_tools(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

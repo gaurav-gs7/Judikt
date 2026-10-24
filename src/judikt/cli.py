@@ -4,9 +4,11 @@ import argparse
 import json
 import os
 import secrets
+import shlex
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from .approval import ApprovalAuthority, ApprovalConfigurationError
 from .attackbench import (
@@ -17,6 +19,7 @@ from .attackbench import (
 from .auth import AuthError
 from .audit import AuditConfigurationError, AuditStore, load_checkpoint, write_checkpoint
 from .backends import run_backend
+from .content_guard import ContentGuard
 from .content_eval import ContentEvaluationError, run_content_evaluation
 from .demo import run_demo
 from .evals import print_evals
@@ -38,12 +41,13 @@ from .paths import (
     ensure_private_directory,
     upstream_state,
 )
-from .pins import run_pins_command
+from .pins import accept_summary, run_pins_command
 from .policy_init import (
     STARTER_PROFILES,
     PolicyInitializationError,
     derive_remote_server_name,
     derive_server_name,
+    discover_tools,
     initialize_policy,
     initialize_policy_from_tools,
     normalize_server_name,
@@ -52,7 +56,7 @@ from .diagnostics import redact_diagnostic
 from .protocol import MCPProtocolError
 from .real_mcp import serve_real_mcp
 from .runtime import JudiktRuntime
-from .tool_integrity import ToolIntegrityError
+from .tool_integrity import ToolIntegrityError, ToolIntegrityStore, ToolPinMetadata
 from .upstreams import (
     UpstreamConfigError,
     UpstreamServer,
@@ -186,6 +190,16 @@ def parser() -> argparse.ArgumentParser:
     init.add_argument("--profile", choices=STARTER_PROFILES, default="read-only")
     init.add_argument("--output", type=Path, default=Path("judikt-policy.json"))
     init.add_argument("--force", action="store_true")
+    init.add_argument(
+        "--accept-pins",
+        action="store_true",
+        help="after showing the classification, pin every discovered tool definition",
+    )
+    init.add_argument(
+        "--yes",
+        action="store_true",
+        help="with --accept-pins, skip the confirmation prompt",
+    )
     init.add_argument("upstream_command", nargs=argparse.REMAINDER)
     wrap = subparsers.add_parser(
         "wrap",
@@ -277,17 +291,41 @@ def main() -> None:
         if upstream_command and upstream_command[0] == "--":
             upstream_command = upstream_command[1:]
         try:
-            report = initialize_policy(
-                upstream_command,
-                server_name=args.name or derive_server_name(upstream_command),
-                output_path=args.output,
-                identity=args.identity,
-                profile=args.profile,
-                force=args.force,
+            server_name = normalize_server_name(
+                args.name or derive_server_name(upstream_command)
             )
+            if args.accept_pins:
+                tools = discover_tools(upstream_command, server_name)
+                report = initialize_policy_from_tools(
+                    tools,
+                    server_name=server_name,
+                    output_path=args.output,
+                    identity=args.identity,
+                    profile=args.profile,
+                    force=args.force,
+                )
+            else:
+                report = initialize_policy(
+                    upstream_command,
+                    server_name=server_name,
+                    output_path=args.output,
+                    identity=args.identity,
+                    profile=args.profile,
+                    force=args.force,
+                )
+            _print_classification_summary(report)
+            if args.accept_pins:
+                report["accepted_pins"] = _accept_initial_pins(
+                    tools,
+                    server_name=server_name,
+                    upstream_command=upstream_command,
+                    policy_path=args.output,
+                    assume_yes=args.yes,
+                )
+        except ToolIntegrityError as exc:
+            _exit_tool_integrity("init", exc)
         except (PolicyInitializationError, MCPProtocolError, OSError, json.JSONDecodeError) as exc:
             raise SystemExit(f"init: {_operator_error(exc)}") from None
-        _print_classification_summary(report)
         print(json.dumps(report, indent=2))
         return
     if args.command == "wrap":
@@ -545,6 +583,7 @@ def _run_wrap(args: argparse.Namespace) -> None:
                 audit_path,
                 upstream_servers=[upstream],
             )
+            _print_hidden_gated_tools(runtime, server_name, state.state_key)
             serve_gateway(runtime)
             return
         with tempfile.TemporaryDirectory(prefix="judikt-wrap-") as directory:
@@ -575,6 +614,7 @@ def _run_wrap(args: argparse.Namespace) -> None:
                 audit_path,
                 upstream_servers=[upstream],
             )
+            _print_hidden_gated_tools(runtime, server_name, state.state_key)
             serve_gateway(runtime)
     except ToolIntegrityError as exc:
         _exit_tool_integrity("wrap", exc)
@@ -588,6 +628,77 @@ def _run_wrap(args: argparse.Namespace) -> None:
         json.JSONDecodeError,
     ) as exc:
         raise SystemExit(f"wrap: {_operator_error(exc)}") from None
+
+
+def _print_hidden_gated_tools(runtime: Any, server: str, state_key: str) -> None:
+    """Explain why approval-gated tools are missing on a first run.
+
+    Approval-gated (write and destructive) tools start pin-pending and stay
+    unadvertised until their definitions are accepted once; every call then
+    still needs its own approval token.
+    """
+
+    config = getattr(runtime.policy, "config", None)
+    gated = config.get("approval_required", []) if isinstance(config, dict) else []
+    pending = runtime.tool_integrity.pending_tools(server)
+    if not isinstance(gated, list) or not isinstance(pending, list):
+        return
+    hidden = [tool for tool in pending if tool in set(gated)]
+    if not hidden:
+        return
+    selection = " ".join(f"--tool {shlex.quote(tool)}" for tool in hidden)
+    print(
+        f"{len(hidden)} approval-gated tools are hidden until their definitions are "
+        f"accepted: judikt pins accept {shlex.quote(state_key)} {selection}",
+        file=sys.stderr,
+    )
+
+
+def _accept_initial_pins(
+    tools: list[dict[str, Any]],
+    *,
+    server_name: str,
+    upstream_command: list[str],
+    policy_path: Path,
+    assume_yes: bool,
+) -> dict[str, Any]:
+    """Pin every discovered definition into the state judikt wrap will use."""
+
+    state = upstream_state(server_name, tuple(upstream_command))
+    explicit_pins = os.getenv("JUDIKT_TOOL_PIN_PATH")
+    explicit_audit = os.getenv("JUDIKT_AUDIT_DB")
+    if explicit_pins:
+        pin_path = Path(explicit_pins)
+    elif explicit_audit:
+        pin_path = Path(explicit_audit).expanduser().with_suffix(".tool-pins.json")
+    else:
+        ensure_private_directory(state.directory)
+        pin_path = state.pin_path
+    names = sorted(str(tool.get("name", "")) for tool in tools if tool.get("name"))
+    print(
+        f"Pin {len(names)} tool definitions for {server_name} ({state.state_key}) "
+        f"in {pin_path}: {', '.join(names) or 'none'}",
+        file=sys.stderr,
+    )
+    if not assume_yes:
+        print("Accept these tool definitions? [y/N]", file=sys.stderr)
+        if sys.stdin.readline().strip().lower() not in {"y", "yes"}:
+            raise ToolIntegrityError("pin acceptance cancelled")
+    policy = json.loads(policy_path.read_text())
+    store = ToolIntegrityStore(
+        pin_path,
+        ContentGuard.from_policy(policy),
+        metadata={
+            server_name: ToolPinMetadata(
+                state_key=state.state_key,
+                fingerprint=state.fingerprint,
+                command=state.command,
+                cwd=str(state.cwd),
+            )
+        },
+        policy=policy,
+    )
+    return accept_summary(store.accept(server_name, tools))
 
 
 def _operator_error(exc: BaseException) -> str:
