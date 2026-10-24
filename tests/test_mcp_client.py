@@ -8,14 +8,19 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from judikt.mcp_client import (
     MCPClientError,
+    _assign,
+    _assignments,
     _load_arguments,
+    _lookup,
     _print_response,
     _redact,
     _result_summary,
     _write_secret,
+    main,
     parser,
 )
 
@@ -132,6 +137,62 @@ class MCPClientTest(unittest.TestCase):
     def test_selected_missing_response_path_fails_closed(self) -> None:
         with self.assertRaisesRegex(MCPClientError, "field path not found"):
             _print_response({"audit_integrity": {}}, ["audit_integrity.valid"])
+
+    def test_selected_response_path_prints_the_resolved_value(self) -> None:
+        payload = {"audit_integrity": {"valid": True, "api_key": "sk-sensitive"}}
+        with redirect_stdout(io.StringIO()) as output:
+            _print_response(payload, ["audit_integrity.valid"])
+
+        self.assertEqual(output.getvalue(), "response.audit_integrity.valid=true\n")
+
+    def test_response_without_verdict_shape_falls_back_to_raw_redacted_dump(self) -> None:
+        payload = {"service": "payments-api", "token": "sk-sensitive"}
+        with redirect_stdout(io.StringIO()) as output:
+            _print_response(payload, [])
+
+        rendered = output.getvalue()
+        self.assertTrue(rendered.startswith("response="))
+        self.assertIn('"token":"[REDACTED]"', rendered)
+
+    def test_arguments_must_decode_to_a_json_object(self) -> None:
+        args = argparse.Namespace(arguments_file=None, arguments="[1, 2, 3]", load_secret=[])
+
+        with self.assertRaisesRegex(MCPClientError, "must decode to a JSON object"):
+            _load_arguments(args)
+
+    def test_malformed_secret_mapping_is_rejected(self) -> None:
+        with self.assertRaisesRegex(MCPClientError, "FIELD=PATH"):
+            _assignments(["not-a-mapping"])
+
+    def test_lookup_resolves_a_nested_dotted_path(self) -> None:
+        self.assertEqual(_lookup({"a": {"b": {"c": 1}}}, "a.b.c"), 1)
+
+    def test_assign_creates_nested_objects_along_the_path(self) -> None:
+        target: dict[str, object] = {}
+        _assign(target, "a.b.c", "value")
+        self.assertEqual(target, {"a": {"b": {"c": "value"}}})
+
+    def test_assign_rejects_a_path_through_a_non_object(self) -> None:
+        with self.assertRaisesRegex(MCPClientError, "non-object"):
+            _assign({"a": "not-a-dict"}, "a.b", "value")
+
+    def test_redact_recurses_into_lists(self) -> None:
+        redacted = _redact([{"api_key": "sk-sensitive"}, {"service": "payments-api"}])
+        self.assertEqual(redacted, [{"api_key": "[REDACTED]"}, {"service": "payments-api"}])
+
+    def test_main_exits_zero_and_returns_run_result(self) -> None:
+        with patch("judikt.mcp_client._run", return_value=0):
+            with self.assertRaises(SystemExit) as raised:
+                with patch("sys.argv", ["judikt-mcp-client", "list"]):
+                    main()
+        self.assertEqual(raised.exception.code, 0)
+
+    def test_main_wraps_client_errors_without_a_traceback(self) -> None:
+        with patch("judikt.mcp_client._run", side_effect=MCPClientError("boom")):
+            with self.assertRaises(SystemExit) as raised:
+                with patch("sys.argv", ["judikt-mcp-client", "list"]):
+                    main()
+        self.assertEqual(str(raised.exception), "mcp-client: boom")
 
 
 if __name__ == "__main__":
