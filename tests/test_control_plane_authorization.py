@@ -7,7 +7,7 @@ from pathlib import Path
 from judikt.approval import ApprovalAuthority
 from judikt.auth import AuthConfig, Authenticator
 from judikt.ops_runtime import JudiktOpsRuntime
-from judikt.real_mcp import register_tools
+from judikt.real_mcp import _static_denial_as_error, register_tools
 from judikt.request_context import bind_authenticated_subject, reset_authenticated_subject
 
 
@@ -157,6 +157,33 @@ class ControlPlaneAuthorizationTest(unittest.TestCase):
         self.assertEqual(denied["rule"], "execute_authorization")
         self.assertEqual(passed_auth["status"], "ERROR")
         self.assertIn("Slack approvals require", passed_auth["reason"])
+
+
+class StaticDenialAsErrorTest(unittest.TestCase):
+    def setUp(self) -> None:
+        from mcp import types
+
+        self.types = types
+
+    def test_refusals_become_mcp_tool_errors(self) -> None:
+        refusal = {"allowed": False, "rule": "admin_authorization", "reason": "denied"}
+        for result in (refusal, ([], refusal), ([self.types.TextContent(type="text", text="x")], refusal)):
+            with self.subTest(result=type(result).__name__):
+                converted = _static_denial_as_error(result, self.types)
+                self.assertIsInstance(converted, self.types.CallToolResult)
+                self.assertTrue(converted.isError)
+                self.assertEqual(converted.structuredContent, refusal)
+                self.assertTrue(converted.content)
+        errored = _static_denial_as_error({"status": "ERROR", "reason": "slack"}, self.types)
+        self.assertTrue(errored.isError)
+
+    def test_successful_and_non_dict_results_pass_through_unchanged(self) -> None:
+        allowed = {"allowed": True, "result": {}}
+        self.assertIs(_static_denial_as_error(allowed, self.types), allowed)
+        pair = ([], {"disabled_tools": []})
+        self.assertIs(_static_denial_as_error(pair, self.types), pair)
+        content = [self.types.TextContent(type="text", text="ok")]
+        self.assertIs(_static_denial_as_error(content, self.types), content)
 
 
 if __name__ == "__main__":

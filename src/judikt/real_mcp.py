@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import dataclasses
+import json
 import os
 import sys
 import threading
@@ -581,7 +582,9 @@ def register_native_tools(
     async def call_tool(name: str, arguments: dict[str, Any]) -> Any:
         static_names = {tool.name for tool in await original_list_tools()}
         if name in static_names:
-            return await original_call_tool(name, arguments)
+            return _static_denial_as_error(
+                await original_call_tool(name, arguments), types
+            )
         server = catalog.server_for(name)
         if server is None:
             raise ValueError(f"unknown proxied tool: {name}")
@@ -589,6 +592,39 @@ def register_native_tools(
         return types.CallToolResult.model_validate(gateway_result(guarded))
 
     catalog.subscribe(notifier.emit)
+
+
+def _is_refusal(payload: dict[str, Any]) -> bool:
+    return payload.get("allowed") is False or payload.get("status") == "ERROR"
+
+
+def _static_denial_as_error(result: Any, types: Any) -> Any:
+    """Mark refused built-in tool calls as MCP tool errors.
+
+    Built-in and control-plane tools return plain dicts so they stay easy to
+    call directly. Over MCP, a refusal (``"allowed": false`` or
+    ``"status": "ERROR"``) must still reach the client as ``isError: true``,
+    so an agent cannot mistake it for success.
+    """
+    content: Any = None
+    structured: Any = None
+    if isinstance(result, tuple) and len(result) == 2:
+        content, structured = result
+    elif isinstance(result, dict):
+        structured = result
+    else:
+        return result
+    if not isinstance(structured, dict) or not _is_refusal(structured):
+        return result
+    if not content:
+        content = [
+            types.TextContent(
+                type="text", text=json.dumps(structured, indent=2, sort_keys=True)
+            )
+        ]
+    return types.CallToolResult(
+        content=list(content), structuredContent=structured, isError=True
+    )
 
 
 class _HTTPToolListNotifier:

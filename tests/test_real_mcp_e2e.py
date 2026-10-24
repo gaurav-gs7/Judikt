@@ -230,9 +230,11 @@ class RealMCPStreamableHTTPEndToEndTest(unittest.TestCase):
 
                     async def call(name: str, arguments: dict[str, object]) -> dict[str, object]:
                         response = await session.call_tool(name, arguments)
-                        self.assertFalse(response.isError, f"{name}: {response}")
                         payload = response.structuredContent
                         self.assertIsInstance(payload, dict, f"{name}: {response}")
+                        refused = payload.get("allowed") is False or payload.get("status") == "ERROR"
+                        # A refusal must reach MCP clients as a tool error.
+                        self.assertEqual(response.isError, refused, f"{name}: {response}")
                         return payload
 
                     results["health"] = await call("platform.health", {"service": "payments-api"})
@@ -567,8 +569,13 @@ class RealMCPJWTAuthorizationEndToEndTest(unittest.TestCase):
                     await session.initialize()
                     for key, name, arguments in calls:
                         response = await session.call_tool(name, arguments)
-                        self.assertFalse(response.isError, f"{name}: {response}")
                         self.assertIsInstance(response.structuredContent, dict)
+                        refused = (
+                            response.structuredContent.get("allowed") is False
+                            or response.structuredContent.get("status") == "ERROR"
+                        )
+                        # A refusal must reach MCP clients as a tool error.
+                        self.assertEqual(response.isError, refused, f"{name}: {response}")
                         results[key] = response.structuredContent
         return results
 
