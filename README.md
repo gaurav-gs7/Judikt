@@ -8,7 +8,7 @@ judikt wrap -- npx -y @modelcontextprotocol/server-filesystem /absolute/safe/pat
 
 ![Two-minute Judikt explainer: why AI agents with production tool access need controls, then judikt 0.3.0 from PyPI wrapping a GitHub-style MCP server. Reads are allowed and deletes denied; a human-signed approval token works once and only for its exact arguments; a hung server that logged a token leaks nothing to the agent; a kill switch stops a tool mid-session; a changed tool definition stops startup; a prompt injection is quarantined; and a tampered audit row fails verification.](docs/assets/judikt-demo.gif)
 
-Every terminal line in this two-minute walkthrough comes from a real run of `judikt 0.3.0` installed from PyPI. Watch the [full-quality video](docs/assets/judikt-explainer.mp4) or see [how it was recorded](scripts/explainer/).
+Every terminal line in this two-minute walkthrough comes from a real run of `judikt 0.3.0` installed from PyPI. Watch the [full-quality video](docs/assets/judikt-explainer.mp4).
 
 ## Why Judikt
 
