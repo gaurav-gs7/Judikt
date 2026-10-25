@@ -680,6 +680,7 @@ def _run_wrap(args: argparse.Namespace) -> None:
                 audit_path,
                 upstream_servers=[upstream],
             )
+            _warn_unmatched_policy_server(runtime, server_name, args.policy)
             _print_hidden_gated_tools(runtime, server_name, state.state_key)
             serve_gateway(runtime)
             return
@@ -726,6 +727,29 @@ def _run_wrap(args: argparse.Namespace) -> None:
         json.JSONDecodeError,
     ) as exc:
         raise SystemExit(f"wrap: {_operator_error(exc)}") from None
+
+
+def _warn_unmatched_policy_server(runtime: Any, server: str, policy_path: Path) -> None:
+    """Say why every tool is hidden when an explicit policy names another server.
+
+    ``judikt init --name X`` keys the allowlist to ``X``, while ``wrap`` without
+    ``--name`` derives the server name from the command. The gateway then fails
+    closed and exposes nothing, which looks like a broken server.
+    """
+
+    config = getattr(runtime.policy, "config", None)
+    allowed = config.get("allowed_tools") if isinstance(config, dict) else None
+    if not isinstance(allowed, dict) or server in allowed:
+        return
+    listed = sorted(name for name, tools in allowed.items() if tools)
+    if not listed:
+        return
+    hint = f" Pass --name {shlex.quote(listed[0])} to use it." if len(listed) == 1 else " Pass --name to match one."
+    print(
+        f"wrap: {policy_path} allows no tools for server '{server}' "
+        f"(it allowlists: {', '.join(listed)}), so every tool is hidden.{hint}",
+        file=sys.stderr,
+    )
 
 
 def _print_hidden_gated_tools(runtime: Any, server: str, state_key: str) -> None:

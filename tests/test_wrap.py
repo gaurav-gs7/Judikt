@@ -295,6 +295,45 @@ class WrapProfileEndToEndTest(unittest.TestCase):
             self.assertIn(f"--tool {tool}", summary)
         self.assertNotIn("--tool read_file", summary)
 
+    def test_explicit_policy_for_another_server_name_is_explained(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            call_log = root / "calls.jsonl"
+            policy_path = root / "policy.json"
+            environment = {**os.environ, **self._environment(root)}
+            upstream = ["--", sys.executable, str(FIXTURE), "policy-profiles", str(call_log)]
+            initialized = subprocess.run(
+                [sys.executable, "-m", "judikt.cli", "init", "--name", "profile-tools",
+                 "--output", str(policy_path), *upstream],
+                cwd=PROJECT_ROOT, env=environment, stdin=subprocess.DEVNULL,
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(initialized.returncode, 0, initialized.stderr)
+
+            results: dict[str, tuple[list[str], str]] = {}
+            for label, name in (("mismatched", []), ("matching", ["--name", "profile-tools"])):
+                process = subprocess.Popen(
+                    [sys.executable, "-m", "judikt.cli", "--audit-db", str(root / f"{label}.db"),
+                     "wrap", "--policy", str(policy_path), *name, *upstream],
+                    cwd=PROJECT_ROOT, env=self._environment(root), stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                )
+                try:
+                    self._request(process, "initialize", {})
+                    tools = [tool["name"] for tool in self._request(process, "tools/list", {})["tools"]]
+                finally:
+                    stderr = self._stop(process)
+                results[label] = (tools, stderr)
+
+        tools, stderr = results["mismatched"]
+        self.assertEqual(tools, [])
+        self.assertIn("allows no tools for server 'external_mcp_server'", stderr)
+        self.assertIn("(it allowlists: profile-tools), so every tool is hidden.", stderr)
+        self.assertIn("Pass --name profile-tools to use it.", stderr)
+        tools, stderr = results["matching"]
+        self.assertEqual(tools, ["read_file"])
+        self.assertNotIn("allows no tools for server", stderr)
+
     def test_init_accept_pins_advertises_gated_tools_that_still_need_approval(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
