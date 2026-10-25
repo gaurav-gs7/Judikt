@@ -319,7 +319,7 @@ Judikt includes:
 - Circuit breakers for repeated upstream tool failures
 - Concurrent stdio and remote upstream requests with deadlines and cancellation, plus bounded stderr capture, restart budgets, and post-restart pin verification for subprocesses
 - Native MCP result passthrough, metadata preservation, protocol-version negotiation, and live `tools/listChanged` pin enforcement
-- Hash-chained and optionally HMAC-signed local audit evidence
+- Hash-chained, HMAC-signed local audit evidence (signed by default; local mode creates a private key on first use)
 - Fail-closed audit signing and full-chain startup verification for production mode
 - JSONL, S3, generic HTTPS SIEM, or Splunk HEC audit shipping plus individually signed DynamoDB serverless events
 - Reusable AWS Secrets Manager and Vault KV secret brokerage across runtime credentials
