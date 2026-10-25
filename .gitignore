@@ -16,3 +16,6 @@ dist/
 *.tfplan
 terraform.tfvars
 *.auto.tfvars
+
+# Generated on demand by `make demo-recording`; the README uses the committed explainer.
+docs/assets/judikt-walkthrough*

@@ -34,9 +34,9 @@ Response inspection is deterministic and narrow. On an external prompt-injection
 
 ### Product And Runtime Walkthrough
 
-![Judikt product and live terminal walkthrough](assets/judikt-demo.gif)
+![Two-minute Judikt explainer with live terminal output](assets/judikt-demo.gif)
 
-The walkthrough combines architecture context with captured commands, guarded MCP calls, policy outcomes, backend results, quarantine, metrics, and signed audit verification.
+The two-minute explainer covers why agent tool access needs controls, then shows real judikt 0.3.0 output: read-only wrapping, single-use argument-bound approvals, a leak-free upstream timeout, a live kill switch, tool-definition drift, injection quarantine, and tamper detection in the signed audit chain.
 
 ### Control-Plane Overview
 

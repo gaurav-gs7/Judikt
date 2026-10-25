@@ -1,15 +1,60 @@
-# Judikt 150-Second Hybrid Demo
+# Judikt Demo Recordings
 
-The README recording deliberately uses two visual modes:
+The repository ships two recordings with different jobs:
+
+- **The two-minute explainer** in the README is for someone deciding whether Judikt matters to them. It runs the published package against a deliberately misbehaving MCP server.
+- **The 150-second hybrid walkthrough** is the deep tour of the remote deployment: the Streamable HTTP server, bearer auth, incidents, metrics and qualification suites.
+
+## Two-minute explainer (README)
+
+![Judikt explainer poster](assets/judikt-demo-poster.png)
+
+| File | What it is |
+| --- | --- |
+| `docs/assets/judikt-demo.gif` | README loop, 960 px wide, 8 fps |
+| `docs/assets/judikt-explainer.mp4` | Full quality, 1920 x 1080, 30 fps, about two minutes |
+| `docs/assets/judikt-demo-poster.png` | 1280 x 720 still of the control-plane scene |
+| `docs/assets/judikt-demo-short.mp4` | 37-second cut for social posts, from an earlier capture of the same package. `make demo-explainer` does not regenerate it. |
+
+### Structure
+
+1. **Introduction:** what Judikt is, then agents moving from answering to acting, then the question: who decides what an agent with production access may do?
+2. **Why it matters:** how MCP connects agents to tool servers; three failure modes: excessive agency (OWASP LLM06:2025), prompt injection (OWASP LLM01:2025), and missing accountability; and where Judikt sits.
+3. **Live demo, nine steps:** read-only wrapping; reads allowed and deletes denied; human-signed approval tokens bound to their exact arguments; single use; an upstream that hangs after logging a token leaks nothing to the agent (OWASP LLM02); a live kill switch; tool-definition drift stopping startup; injection quarantine, framed as a tripwire; and signed audit verification catching a tampered row.
+4. **Honest limits:** detection rates on independent benchmarks (0.8% BIPIA, 0% InjecAgent), where the guarantees really come from, and that this is a reference implementation.
+
+### How it is made honest
+
+`scripts/explainer/capture.py` drives `judikt wrap` over stdio against `scripts/explainer/github_mcp_fixture.py`. That is a scripted GitHub-like server which returns an injected README, logs a fake token and then hangs, and can change a tool description on request. Every Judikt component in the run is the real package; the fixture is the only scripted part. The script records each decision, along with the drift report and both audit verifications, in `scripts/explainer/capture.json`.
+
+`scripts/explainer/render.py` draws the video from that file. Every terminal result line (rule names, results, error text, exit codes, verification output) is read from `capture.json`. The explanatory side panels, the `#` comment lines, timing, and the trimming of long strings are editorial. The committed capture came from `judikt 0.3.0` installed from PyPI. Correlation IDs aside, a capture from the source tree matches it exactly.
+
+### Reproduce it
+
+```bash
+python3 -m pip install -e '.[media]'      # Pillow; also needs ffmpeg, fonts-inter and fonts-dejavu-core
+make demo-explainer                        # capture from the source tree, then render into docs/assets
+```
+
+To film a published release instead, capture with that build and label it:
+
+```bash
+python3 scripts/explainer/capture.py --judikt "$(command -v judikt)" --source PyPI
+python3 scripts/explainer/render.py
+```
+
+The capture uses a throwaway home directory and touches no network service. A full render takes about two minutes.
+
+## Full 150-second hybrid walkthrough
+
+The full walkthrough deliberately uses two visual modes:
 
 - Polished product slides explain the problem, purpose, control model, trust boundaries, production operability, and conceptual architecture.
 - Terminal slides are mandatory whenever real input, processing, backend execution, output, metrics, or audit evidence is shown.
 
 This keeps the story understandable without disguising runtime behavior as a product mockup.
 
-![Judikt hybrid demo poster](assets/judikt-demo-poster.png)
-
-## Timeline
+### Timeline
 
 The generated GIF is exactly 150 seconds and loops automatically.
 
@@ -31,7 +76,7 @@ The generated GIF is exactly 150 seconds and loops automatically.
 
 Major outcomes remain visible for at least five seconds.
 
-## Terminal proof
+### Terminal proof
 
 `scripts/record_demo.py` starts the production-facing MCP server as a real process:
 
@@ -76,7 +121,7 @@ Each command and its combined stdout/stderr are captured as a pair. The renderer
 17. The guarded performance smoke threshold passed with a valid signed audit chain.
 18. The complete Streamable HTTP and JWT authorization end-to-end suites passed.
 
-## Reproduce it
+### Reproduce it
 
 Run the compact local walkthrough directly:
 
@@ -84,7 +129,7 @@ Run the compact local walkthrough directly:
 ./scripts/run_demo.sh --audit-db /tmp/judikt-demo.db
 ```
 
-Regenerate the complete 150-second hybrid media artifact:
+Regenerate the complete 150-second hybrid walkthrough:
 
 ```bash
 python3 -m pip install -e '.[mcp,media]'
@@ -93,17 +138,19 @@ make demo-recording
 
 This writes:
 
-- `docs/assets/judikt-demo.gif`: looping 1280 x 720 hybrid walkthrough.
-- `docs/assets/judikt-demo-poster.png`: static 1280 x 720 product cover.
+- `docs/assets/judikt-walkthrough.gif`: looping 1280 x 720 hybrid walkthrough.
+- `docs/assets/judikt-walkthrough-poster.png`: static 1280 x 720 product cover.
+
+These files are generated on demand and are not committed; the README uses the explainer above.
 
 The renderer enforces an exact 150,000 ms duration and fails if the terminal sequence leaves insufficient room for the final five-second close.
 
-## Safety and accuracy
+### Safety and accuracy
 
 The recorder creates a temporary policy, SQLite audit database, tool-definition pin store, bearer token, approval secret, independent audit-signing secret, and mode-`0600` approval-token file. The poisoned response comes from `tests/fixtures/external_mcp_server.py`, which runs as a separate JSON-RPC stdio process behind the real HTTP MCP server. No cloud, LLM API, or production endpoint is contacted, and all temporary state is deleted after capture.
 
 The platform and Kubernetes operations use deterministic local adapters; Kubernetes remains non-mutating unless explicitly switched to `kubectl` mode. The official MCP transport, bearer boundary, policy outcomes, approval verification, external subprocess call, response inspection, redaction, kill switch, metrics, and signed audit path shown in the terminal are the real project implementation.
 
-## Publishing caption
+### Publishing caption
 
 > Judikt in 150 seconds: product context and architecture first, followed by actual commands against a live Streamable HTTP MCP server, deterministic verdicts, backend results, poisoned-response quarantine, failure drills, metrics, and signed audit verification.

@@ -1,4 +1,4 @@
-.PHONY: test skill-acceptance skill-package demo demo-recording eval attackbench-smoke performance-smoke failure-test interop-community dashboard real-mcp trace docker-build observability-up observability-down helm-template aws-build-push aws-deploy aws-delete terraform-deploy terraform-destroy terraform-fmt serverless-package serverless-deploy serverless-destroy serverless-fmt
+.PHONY: test skill-acceptance skill-package demo demo-explainer demo-recording eval attackbench-smoke performance-smoke failure-test interop-community dashboard real-mcp trace docker-build observability-up observability-down helm-template aws-build-push aws-deploy aws-delete terraform-deploy terraform-destroy terraform-fmt serverless-package serverless-deploy serverless-destroy serverless-fmt
 
 test:
 	./scripts/run_release_tests.sh
@@ -11,6 +11,10 @@ skill-package:
 
 demo:
 	./scripts/run_demo.sh --audit-db /tmp/judikt-demo.db
+
+demo-explainer:
+	./scripts/python.sh scripts/explainer/capture.py
+	./scripts/python.sh scripts/explainer/render.py
 
 demo-recording:
 	PYTHONPATH=src ./scripts/python.sh scripts/record_demo.py

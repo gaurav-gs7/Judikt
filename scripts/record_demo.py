@@ -1073,8 +1073,8 @@ def _load_fonts() -> dict[str, ImageFont.FreeTypeFont]:
 def main() -> None:
     captures = capture_live_demo()
     pages = transcript_pages(captures)
-    output = ROOT / "docs" / "assets" / "judikt-demo.gif"
-    poster = ROOT / "docs" / "assets" / "judikt-demo-poster.png"
+    output = ROOT / "docs" / "assets" / "judikt-walkthrough.gif"
+    poster = ROOT / "docs" / "assets" / "judikt-walkthrough-poster.png"
     duration_ms = render_recording(pages, output, poster)
     print(
         json.dumps(
