@@ -61,7 +61,7 @@ The two-minute explainer covers why agent tool access needs controls, then shows
 - Destructive, privileged, billable, or externally visible actions require explicit authorization.
 - The skill never asks an agent to fabricate approval tokens, disable authentication, or broaden policy to make a test pass.
 - The bundled diagnostic reads executable/version metadata only. It does not make network calls, launch the upstream, read environment values or client configuration contents, or modify files.
-- The separate runtime may contact the chosen upstream and, only when configured, Groq, Slack, AWS, SIEM/Splunk, Redis, Vault, an OIDC/JWKS provider, an OTLP collector, or an incident-management endpoint.
+- The separate runtime may contact the chosen upstream and, only when configured, an LLM provider for incident summaries (Groq, OpenAI, Anthropic, Gemini, or an OpenAI-compatible endpoint), Slack, AWS, SIEM/Splunk, Redis, Vault, an OIDC/JWKS provider, an OTLP collector, or an incident-management endpoint.
 
 ## Verification
 

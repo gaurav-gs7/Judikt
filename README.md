@@ -326,7 +326,7 @@ Judikt includes:
 - Correlation IDs, Prometheus metrics, OpenInference/OpenTelemetry traces, and AWS X-Ray
 - Docker Compose observability stack with Prometheus, Grafana, Tempo, Jaeger, and Redis
 - Helm chart for Kubernetes deployment
-- Optional Groq incident analysis with an offline fallback
+- Optional LLM incident summaries from Groq, OpenAI, Anthropic, Gemini, or any OpenAI-compatible endpoint, with an offline fallback
 - Optional OpenInference-compatible traces exported through OpenTelemetry
 - MCP-38 coverage matrix and adversarial policy regression suite
 - MCP-AttackBench-compatible dataset adapter with per-category metrics and privacy-safe reports
@@ -365,17 +365,32 @@ Configure `rate_limits.backend` as `local`, `redis`, or `redis_required`; `rate_
 
 Each `rate_limits_per_minute` value may be a number, where burst defaults to that rate, or an object such as `{"rate": 60, "burst": 5}`. Redis evaluates every hashed logical key in one Lua script; local mode uses one lock and a two-phase decision. Local state evicts fully refilled idle keys and applies an LRU hard cap.
 
-## Optional Groq Integration
+## Optional LLM Incident Summaries
 
-The demo produces a deterministic local incident summary by default. To add a hosted LLM summary:
+The dashboard's incident summary is deterministic and local by default. To have a model write it instead, choose a provider explicitly:
 
 ```bash
-export GROQ_API_KEY="your-key"
-export GROQ_MODEL="openai/gpt-oss-20b"
+export JUDIKT_LLM_PROVIDER=anthropic        # groq | openai | anthropic | gemini | openai-compatible | none
+export ANTHROPIC_API_KEY="your-key"
 ./scripts/run_demo.sh
 ```
 
-The gateway keeps working if Groq is unavailable. Policy evaluation never depends on the model.
+| Provider | `JUDIKT_LLM_PROVIDER` | Key variable | Default model |
+| --- | --- | --- | --- |
+| Groq | `groq` | `GROQ_API_KEY` | `openai/gpt-oss-20b` |
+| OpenAI | `openai` (or `chatgpt`) | `OPENAI_API_KEY` | `gpt-6-luna` |
+| Anthropic | `anthropic` (or `claude`) | `ANTHROPIC_API_KEY` | `claude-haiku-5-5` |
+| Google Gemini | `gemini` | `GEMINI_API_KEY` | `gemini-3.5-flash-lite` |
+| Ollama, vLLM, LM Studio, LiteLLM and other OpenAI-compatible servers | `openai-compatible` | `JUDIKT_LLM_API_KEY` (optional) | none; set `JUDIKT_LLM_MODEL` |
+
+- `JUDIKT_LLM_MODEL` overrides the default model, and `GROQ_MODEL` still works for Groq.
+- `JUDIKT_LLM_API_KEY` overrides the provider's own key variable. Every key variable also accepts the `_SECRET_ARN`, `_VAULT_PATH`, and `_JSON_KEY` forms used elsewhere in Judikt, for example `ANTHROPIC_API_KEY_SECRET_ARN`.
+- For `openai-compatible`, set `JUDIKT_LLM_BASE_URL` to the server's API root, for example `http://localhost:11434/v1` for Ollama. It must use HTTPS unless the host is loopback or `JUDIKT_LLM_ALLOW_INSECURE_HTTP=true` is set, and it must not contain credentials or a query string.
+- `JUDIKT_LLM_TIMEOUT_SECONDS` (default `15`, at most `300`) gives slower self-hosted models more time.
+
+Providers are opt-in. When `JUDIKT_LLM_PROVIDER` is unset, Judikt uses Groq only if a Groq key is configured, which was the behaviour before multi-provider support. An `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` already present in your shell never starts sending audit data on its own. Setting a provider explicitly without its key, naming an unknown provider, or giving an unsafe base URL stops startup with a one-line error. `JUDIKT_LLM_PROVIDER=none` turns summaries off even when a Groq key is present.
+
+What is sent: at most 30 recent audit events and 256 KB, with secret-like keys and values redacted and operator diagnostics, which can contain upstream-controlled text, removed. Groq, OpenAI, Anthropic, and Gemini use fixed HTTPS endpoints. Any request failure, timeout, oversized response, or empty answer returns the local summary with a warning. The gateway keeps working if the provider is unavailable, and policy evaluation never depends on the model.
 
 ## Dashboard API
 
@@ -633,7 +648,7 @@ The trace hierarchy is intentionally security-aware:
 judikt.call_tool                 CHAIN
   judikt.policy.evaluate         GUARDRAIL
   mcp.platform.health               TOOL       # only created for forwarded calls
-groq.incident_summary               LLM        # only created when Groq is called
+llm.incident_summary                LLM        # only created when an LLM provider is called
 ```
 
 Arguments and outputs are redacted before they are attached to spans. The remote server uses the official MCP Python SDK, while Judikt emits explicit policy, tool, and LLM spans so security decisions have stable attributes independent of auto-instrumentation. External stdio upstreams remain separate processes and do not yet propagate trace context across that process boundary.

@@ -124,6 +124,11 @@ class CLITest(unittest.TestCase):
             env_cases = [
                 ({"JUDIKT_UPSTREAM_CONFIG": str(bad_upstreams)}, "command must be a non-empty string array"),
                 ({"JUDIKT_KILL_SWITCH_BACKEND": "bogus"}, "kill_switches.backend must be"),
+                ({"JUDIKT_LLM_PROVIDER": "bogus"}, "JUDIKT_LLM_PROVIDER='bogus' is not supported"),
+                (
+                    {"JUDIKT_LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "", "JUDIKT_LLM_API_KEY": ""},
+                    "Anthropic API key",
+                ),
                 (
                     {"JUDIKT_REDIS_URL": "redis://127.0.0.1:1/0", "JUDIKT_REDIS_REQUIRED": "true"},
                     "Redis rate limiting backend is unavailable",

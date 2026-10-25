@@ -41,7 +41,7 @@ Stop and ask when the upstream command, client configuration location, intended 
 
 The bundled diagnostic script is read-only and makes no network or socket calls. It does not invoke Judikt, launch an upstream, inspect environment-variable values, or modify client configuration.
 
-The separately installed Judikt runtime communicates with the selected MCP upstream. When explicitly configured, it may also contact Groq, Slack, AWS services, SIEM/webhook or Splunk endpoints, Redis, Vault, an OIDC/JWKS provider, an OTLP collector, or an incident-management endpoint. These integrations are optional and inactive until configured. Read [references/security.md](references/security.md) before enabling any of them.
+The separately installed Judikt runtime communicates with the selected MCP upstream. When explicitly configured, it may also contact an LLM provider for incident summaries (Groq, OpenAI, Anthropic, Gemini, or an OpenAI-compatible endpoint), Slack, AWS services, SIEM/webhook or Splunk endpoints, Redis, Vault, an OIDC/JWKS provider, an OTLP collector, or an incident-management endpoint. These integrations are optional and inactive until configured. Read [references/security.md](references/security.md) before enabling any of them.
 
 ## Assessment Format
 

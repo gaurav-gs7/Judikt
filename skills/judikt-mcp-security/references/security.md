@@ -12,7 +12,7 @@ Judikt always communicates with the MCP upstream selected by the operator. Depen
 
 Judikt can make these additional outbound calls only when their corresponding integration is configured:
 
-- Groq for optional incident summaries;
+- an LLM provider for optional incident summaries: Groq, OpenAI, Anthropic, Gemini, or an operator-specified OpenAI-compatible endpoint, selected explicitly with `JUDIKT_LLM_PROVIDER` (a Groq key alone keeps the original Groq behaviour);
 - Slack for approval requests and signed action callbacks;
 - AWS services, including Secrets Manager, S3, DynamoDB, EventBridge, CloudWatch, and X-Ray;
 - HTTPS SIEM/webhook or Splunk HEC audit destinations;

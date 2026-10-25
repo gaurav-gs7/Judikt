@@ -280,7 +280,7 @@ class RemoteUpstreamErrorCategoryTest(unittest.TestCase):
 
 class DiagnosticConsumersTest(unittest.TestCase):
     def test_incident_analyst_never_receives_diagnostics(self) -> None:
-        from judikt.groq import _bounded_events
+        from judikt.llm import _bounded_events
 
         events = _bounded_events(
             [{"rule": "upstream_timeout", "diagnostic": STDERR_INJECTION}]

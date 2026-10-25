@@ -10,7 +10,7 @@ from .approval_replay import build_approval_replay_store
 from .audit import AuditConfigurationError, AuditStore, ensure_independent_audit_key
 from .content_guard import ContentGuard
 from .findings import FindingDispatcher, build_finding_event
-from .groq import IncidentAnalyst
+from .llm import IncidentAnalyst
 from .kill_switch import build_kill_switch_store
 from .metrics import Metrics
 from .models import ToolCallResult

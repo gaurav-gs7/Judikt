@@ -57,6 +57,7 @@ from .policy_init import (
     normalize_server_name,
 )
 from .diagnostics import redact_diagnostic
+from .llm import LLMConfigurationError
 from .protocol import MCPProtocolError
 from .real_mcp import serve_real_mcp
 from .rate_limiter import RateLimiterUnavailable
@@ -82,6 +83,7 @@ STARTUP_CONFIGURATION_ERRORS: tuple[type[BaseException], ...] = (
     UpstreamConfigError,
     SecretBrokerError,
     KillSwitchStoreError,
+    LLMConfigurationError,
     RateLimiterUnavailable,
 )
 

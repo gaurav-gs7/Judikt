@@ -27,7 +27,7 @@ Important spans:
 - `judikt.real_mcp.call_tool`
 - `judikt.policy.evaluate`
 - `mcp.<tool_name>`
-- `groq.incident_summary`
+- `llm.incident_summary` (attributes `llm.provider` and `llm.model_name`)
 
 ## AWS Serverless Tracing
 
