@@ -8,6 +8,8 @@ from typing import Any, Callable, Protocol
 from .approval_replay import ApprovalReplayStore, ApprovalReplayUnavailable, approval_jti_digest
 from .audit import AuditStore
 from .content_guard import ContentGuard, quarantine_result
+from .pending_approvals import PendingApprovalStore
+from .pending_approvals import enabled as pending_approvals_enabled
 from .provenance import ProvenanceTracker
 from .task_scope import TaskScopeConfig, TaskScopeStore
 from .diagnostics import (
@@ -19,6 +21,7 @@ from .findings import FindingDispatcher, build_finding_event, should_emit_findin
 from .kill_switch import KillSwitchStore, KillSwitchUnavailable
 from .metrics import Metrics
 from .models import (
+    APPROVAL_TOKEN_ARGUMENT,
     JUDIKT_CONTROL_ARGUMENTS,
     PolicyDecision,
     ToolCallResult,
@@ -142,6 +145,7 @@ class GuardedCallPipeline:
         approval_workflow: ApprovalWorkflow | None = None,
         provenance: ProvenanceTracker | None = None,
         task_scope: TaskScopeStore | None = None,
+        pending_approvals: PendingApprovalStore | None = None,
     ) -> None:
         self.policy = policy
         self.identity_provider = identity_provider
@@ -159,6 +163,9 @@ class GuardedCallPipeline:
         self.approval_workflow = approval_workflow
         self.provenance = provenance or ProvenanceTracker(
             getattr(policy, "provenance", None)
+        )
+        self.pending_approvals = pending_approvals or (
+            PendingApprovalStore() if pending_approvals_enabled() else None
         )
         self.task_scope = task_scope or TaskScopeStore(
             getattr(policy, "task_scope", None) or TaskScopeConfig(mode="off")
@@ -183,8 +190,9 @@ class GuardedCallPipeline:
     ) -> ToolCallResult:
         correlation_id = correlation_id or str(uuid.uuid4())
         started = time.perf_counter()
-        safe_arguments = self.policy.redact(arguments)
         actor = self.identity_provider.resolve(trusted_actor)
+        arguments = self._attach_stored_approval(actor, server, tool, arguments)
+        safe_arguments = self.policy.redact(arguments)
         decision, definitions, diagnostic = self._pre_execution_decision(
             server, tool, arguments, actor
         )
@@ -275,6 +283,10 @@ class GuardedCallPipeline:
 
         duration_ms = (time.perf_counter() - started) * 1000
         action = decision.action if allowed else _refusal_action(rule, decision)
+        if action == "REQUIRE_APPROVAL" and self.pending_approvals is not None:
+            approval_id = self._hold_for_approval(actor, server, tool, arguments, rule, reason)
+            if approval_id:
+                evidence.append(f"pending_approval:{approval_id}")
         self._record_outcome(
             correlation_id=correlation_id,
             server=server,
@@ -483,6 +495,38 @@ class GuardedCallPipeline:
             )
             policy_span.set_attribute("judikt.policy.action", decision.action)
             return decision, definitions, ""
+
+    def _attach_stored_approval(
+        self, actor: str, server: str, tool: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Add the token a human issued with ``judikt approve`` for this exact call."""
+
+        if self.pending_approvals is None or APPROVAL_TOKEN_ARGUMENT in arguments:
+            return arguments
+        try:
+            token = self.pending_approvals.take_approved(
+                actor=actor, server=server, tool=tool, arguments=arguments
+            )
+        except OSError:
+            return arguments
+        return {**arguments, APPROVAL_TOKEN_ARGUMENT: token} if token else arguments
+
+    def _hold_for_approval(
+        self,
+        actor: str,
+        server: str,
+        tool: str,
+        arguments: dict[str, Any],
+        rule: str,
+        reason: str,
+    ) -> str:
+        assert self.pending_approvals is not None
+        try:
+            return self.pending_approvals.hold(
+                actor=actor, server=server, tool=tool, arguments=arguments, rule=rule, reason=reason
+            )
+        except OSError:
+            return ""
 
     def declare_task(
         self, arguments: dict[str, Any], *, trusted_actor: str = ""

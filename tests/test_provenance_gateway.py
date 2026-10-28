@@ -178,5 +178,36 @@ class GatewayTaskScopeTest(MailFixture):
             self.assertEqual(catalog.server_for("judikt_declare_task"), "judikt")
 
 
+class GatewayHeldCallApprovalTest(MailFixture):
+    def test_judikt_approve_lets_the_identical_retry_run_once(self) -> None:
+        import argparse
+        import io
+
+        from judikt import approve_command
+        from judikt.pending_approvals import PendingApprovalStore
+
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state"
+            runtime = self._runtime(directory, None, {"JUDIKT_TASK_WRITES": "none", "XDG_STATE_HOME": str(state)})
+            call = {"to": "boss@corp.example", "body": "hi"}
+            held = runtime.call_tool("mail", "send_email", call)
+            self.assertEqual(held.action, "REQUIRE_APPROVAL")
+            [marker] = [item for item in held.evidence if item.startswith("pending_approval:")]
+            identifier = marker.split(":", 1)[1]
+            from judikt.catalog import gateway_result
+
+            message = gateway_result(held)["content"][0]["text"]
+            self.assertIn(f"judikt approve {identifier}", message)
+            self.assertEqual(runtime.call_tool("mail", "send_email", call).evidence[-1], marker)
+
+            arguments = argparse.Namespace(id=identifier, yes=True, deny=False, reason="ok")
+            store = PendingApprovalStore(state / "judikt" / "pending-approvals")
+            self.assertEqual(approve_command.run(arguments, store=store, out=io.StringIO()), 0)
+            self.assertFalse(runtime.call_tool("mail", "send_email", {**call, "body": "changed"}).allowed)
+            approved = runtime.call_tool("mail", "send_email", call)
+            self.assertTrue(approved.allowed, approved.reason)
+            self.assertFalse(runtime.call_tool("mail", "send_email", call).allowed)
+
+
 if __name__ == "__main__":
     unittest.main()

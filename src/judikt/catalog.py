@@ -317,7 +317,13 @@ def gateway_result(guarded: ToolCallResult) -> dict[str, Any]:
         f"Judikt blocked this call: {guarded.reason} "
         f"(rule: {guarded.rule}, correlation: {guarded.correlation_id})"
     )
-    if guarded.action == "REQUIRE_APPROVAL":
+    pending = [item.split(":", 1)[1] for item in guarded.evidence if item.startswith("pending_approval:")]
+    if guarded.action == "REQUIRE_APPROVAL" and pending:
+        message += (
+            f" To approve, a human runs `judikt approve {pending[0]}` in a terminal; "
+            "then retry this exact call unchanged."
+        )
+    elif guarded.action == "REQUIRE_APPROVAL":
         message += (
             " A human must obtain approval through the configured Judikt "
             "approval workflow."

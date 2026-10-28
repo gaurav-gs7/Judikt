@@ -204,6 +204,21 @@ Generated-policy profiles:
 
 `approve-writes` gates write and destructive tools in two steps. Accepting a tool's definition is a one-time pin decision: until then the tool is pin-pending and hidden, so a first run looks read-only, and the gateway prints one line such as `4 approval-gated tools are hidden until their definitions are accepted: judikt pins accept <state-key> --tool update_issue --tool delete_repo ...`. After that, every call still requires its own signed approval token. To pin the reviewed catalog while generating a persistent policy, run `judikt init --profile approve-writes --accept-pins -- <upstream command>`; it shows the classification, asks for confirmation (`--yes` skips the prompt), and pins every discovered definition in the state that `judikt wrap` with the same command uses.
 
+Approving a held call takes one command. When a call needs approval (rule `approval_required`, `untrusted_provenance` or `task_scope`), the local gateway records it and the agent's error says which id to approve:
+
+```text
+Judikt blocked this call: 'send_email' is not one of the writes declared for this task; a human must approve
+this exact call (rule: task_scope, correlation: ...) To approve, a human runs `judikt approve af409cb1` in a
+terminal; then retry this exact call unchanged.
+```
+
+```bash
+judikt approve            # list calls waiting for approval
+judikt approve af409cb1   # show the exact call and approve it once (--yes skips the prompt, --deny discards it)
+```
+
+`judikt approve` signs an ordinary single-use approval token bound to that call's exact arguments and stores it for five minutes. When the agent retries the same call unchanged, the gateway attaches the token itself; a changed argument is held again. Held calls live under `$XDG_STATE_HOME/judikt/pending-approvals/` (mode `0600`, expiring after 15 minutes) and contain the call's arguments, so treat that directory like `approval.key`. Run `judikt approve` as the same OS user, with the same `XDG_STATE_HOME` and `JUDIKT_APPROVAL_SECRET`, as the gateway. Production mode and `JUDIKT_PENDING_APPROVALS=off` disable the store; remote deployments use their configured approval workflow. `judikt issue-approval` remains for scripted approvals. As with `approval.key`, this protects against injected calls arriving through MCP, not against an agent that can run shell commands as the same OS user: such an agent could run `judikt approve` itself, so give agents with shell access a separate OS user or a remote approval workflow.
+
 Tools without annotations are destructive by default. A read-only annotation that conflicts with a mutation-like name such as `delete_cache` is also classified as destructive. The generated policy records every decision under `tool_classification`; tool pinning uses that tier for first-use approval. Pass `--profile` to `judikt init` or policy-free `judikt wrap`. When `judikt wrap --policy ...` is used, Judikt uses that explicit policy as-is and does not reclassify it.
 
 Risk is deterministic and policy-driven under the `risk` key. `tier_scores` sets the read, write, and destructive baselines; `annotation_modifiers` may only add risk; `tool_rules` supports glob and regex matches; and `argument_rules` supports `in`, `prefix`, and `regex` conditions. `levels` maps scores to severity, while optional `risk_actions` can require approval for a severity such as `high` or `critical`. Live MCP annotations can raise a tool's tier but cannot lower the tier implied by reviewed `tool_classification` data or a mutation-like tool name. Every matched rule's evidence is retained in the decision and audit event.

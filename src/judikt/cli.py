@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from . import approve_command
 from . import __version__
 from .approval import ApprovalAuthority, ApprovalConfigurationError
 from .approval_replay import ApprovalReplayConfigurationError
@@ -144,6 +145,7 @@ def parser() -> argparse.ArgumentParser:
     real_mcp.add_argument("--port", default=8080, type=int)
     real_mcp.add_argument("--mcp-path", default="/mcp")
     real_mcp.add_argument("--log-level", default="info")
+    approve_command.add_parser(subparsers)
     approval = subparsers.add_parser("issue-approval", help="issue a signed approval token")
     _add_runtime_options(approval)
     approval.add_argument("--actor", required=True)
@@ -406,6 +408,8 @@ def main() -> None:
             raise SystemExit(f"init: {_operator_error(exc)}") from None
         print(json.dumps(report, indent=2))
         return
+    if args.command == "approve":
+        raise SystemExit(approve_command.run(args))
     if args.command == "wrap":
         _run_wrap(args)
         return

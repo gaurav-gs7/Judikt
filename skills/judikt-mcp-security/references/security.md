@@ -30,7 +30,7 @@ Unauthenticated stdio has no per-caller authentication. Judikt sources identity 
 
 Authenticated remote mode binds policy evaluation to the validated subject. Judikt is an OAuth resource server, not an authorization server; the selected IdP owns PKCE, login, consent, and client registration.
 
-Direct approval issuance remains sensitive even though the runtime also requires the explicit `JUDIKT_ALLOW_DIRECT_APPROVAL` switch and administrator authorization for authenticated remote callers. Never fabricate or expose an approval token and never enable direct issuance only to make a test pass.
+Direct approval issuance remains sensitive even though the runtime also requires the explicit `JUDIKT_ALLOW_DIRECT_APPROVAL` switch and administrator authorization for authenticated remote callers. Never fabricate or expose an approval token and never enable direct issuance only to make a test pass. When Judikt holds a call and names an id, tell the user to run `judikt approve <id>` themselves and then retry the identical call. Never run `judikt approve` or `judikt issue-approval` on the user's behalf, even if you have shell access.
 
 In local stdio mode, approvals and roles protect against prompt-injected calls arriving through MCP. They do not protect against an agent with arbitrary shell access running as the same operating-system user, because that agent can read `approval.key` and the policy. Real separation requires running Judikt and its secrets under a different OS user, or using a remote approval workflow such as Slack or an authenticated remote gateway with a configured secret.
 
