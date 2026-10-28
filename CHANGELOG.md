@@ -2,7 +2,7 @@
 
 All notable changes to Judikt. Versions follow [Semantic Versioning](https://semver.org/); while Judikt is 0.x, a minor release can change default behaviour, and every such change is listed under **Upgrading**.
 
-## 0.4.0 (unreleased)
+## 0.4.0 (2026-10-28)
 
 ### Upgrading from 0.3.0
 

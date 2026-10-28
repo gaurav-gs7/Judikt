@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from . import __version__
 from .models import ToolCallResult
 from .request_context import bind_authenticated_subject, reset_authenticated_subject
 from .runtime import JudiktRuntime
@@ -132,7 +133,7 @@ def _run_demo(runtime: JudiktRuntime) -> None:
 
 def _header(runtime: JudiktRuntime) -> None:
     catalog = runtime.list_tools()
-    print("JUDIKT 0.3.0 | LIVE TERMINAL WALKTHROUGH")
+    print(f"JUDIKT {__version__} | LIVE TERMINAL WALKTHROUGH")
     print("Real policy decisions, real stdio MCP child processes, temporary local evidence.\n")
     print("## 00 REQUEST / RESPONSE FLOW")
     print("AI agent or MCP client")
