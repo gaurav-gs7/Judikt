@@ -14,7 +14,10 @@ from .models import (
     ToolCallResult,
     declared_control_arguments,
 )
+from .task_scope import DECLARE_TOOL, declare_tool_definition
 from .tool_integrity import ToolDriftError, ToolIntegrityError
+
+JUDIKT_SERVER = "judikt"
 
 
 class ToolCatalog:
@@ -35,19 +38,41 @@ class ToolCatalog:
     def tools(self, actor: str | None = None) -> list[Tool]:
         actual_actor = self.local_identity if actor is None else actor
         with self._lock:
-            return [
+            proxied = [
                 tool
                 for tool in self._tools
                 if self.runtime.policy.actor_can_call(actual_actor, tool.name)
             ]
+        return [*proxied, *self._judikt_tools()]
 
     def names(self) -> set[str]:
         with self._lock:
-            return set(self._call_servers)
+            names = set(self._call_servers)
+        return names | {tool.name for tool in self._judikt_tools()}
 
     def server_for(self, tool: str) -> str | None:
         with self._lock:
-            return self._call_servers.get(tool)
+            server = self._call_servers.get(tool)
+        if server is None and tool in {item.name for item in self._judikt_tools()}:
+            return JUDIKT_SERVER
+        return server
+
+    def _judikt_tools(self) -> list[Tool]:
+        """Judikt's own tools: the task declaration, when task_scope.mode is agent."""
+
+        pipeline = getattr(self.runtime, "pipeline", None)
+        scope = getattr(pipeline, "task_scope", None)
+        if scope is None or not scope.agent_declarations or DECLARE_TOOL in self._call_servers:
+            return []
+        definition = declare_tool_definition()
+        return [
+            Tool(
+                name=definition["name"],
+                description=definition["description"],
+                input_schema=definition["inputSchema"],
+                annotations=definition["annotations"],
+            )
+        ]
 
     def subscribe(self, emit: Callable[[], None]) -> None:
         clients = getattr(

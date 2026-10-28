@@ -11,6 +11,7 @@ from .content_guard import ContentGuard
 from .diagnostics import redact_diagnostic
 from .metrics import Metrics
 from .provenance import ProvenanceConfig
+from .task_scope import TaskScopeConfig
 from .models import (
     APPROVAL_TOKEN_ARGUMENT,
     DEMO_APPROVAL_ARGUMENT,
@@ -115,6 +116,7 @@ def validate_policy_config(config: Any, *, source: str = "policy") -> None:
         fail("'allow_demo_boolean_approval'", "must be true or false")
     try:
         ProvenanceConfig.from_policy(config)
+        TaskScopeConfig.from_policy(config, environment={})
     except ValueError as exc:
         raise PolicyConfigurationError(f"{source}: {exc}") from None
 
@@ -134,6 +136,7 @@ class PolicyEngine:
         self.argument_guard = ContentGuard.from_policy(self.config)
         self.risk = RiskEngine(self.config)
         self.provenance = ProvenanceConfig.from_policy(self.config)
+        self.task_scope = TaskScopeConfig.from_policy(self.config)
         self._blocked = [re.compile(pattern, re.IGNORECASE) for pattern in self.config["blocked_argument_patterns"]]
         self._redacted_keys = [
             re.compile(pattern, re.IGNORECASE) for pattern in self.config["redacted_key_patterns"]
@@ -489,7 +492,9 @@ class PolicyEngine:
 
         if tool in self.config.get("approval_required", []):
             return True
-        if self.provenance.mode == "require_approval" and self.risk.tier(tool, tool_definition) != "read":
+        if self.risk.tier(tool, tool_definition) != "read" and (
+            self.provenance.mode == "require_approval" or self.task_scope.can_limit
+        ):
             return True
         return self.risk.may_require_approval(tool, tool_definition)
 

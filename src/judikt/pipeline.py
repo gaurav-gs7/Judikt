@@ -9,6 +9,7 @@ from .approval_replay import ApprovalReplayStore, ApprovalReplayUnavailable, app
 from .audit import AuditStore
 from .content_guard import ContentGuard, quarantine_result
 from .provenance import ProvenanceTracker
+from .task_scope import TaskScopeConfig, TaskScopeStore
 from .diagnostics import (
     MAX_EXPOSED_MESSAGE_CHARS,
     emit_operator_diagnostic,
@@ -140,6 +141,7 @@ class GuardedCallPipeline:
         telemetry: Telemetry,
         approval_workflow: ApprovalWorkflow | None = None,
         provenance: ProvenanceTracker | None = None,
+        task_scope: TaskScopeStore | None = None,
     ) -> None:
         self.policy = policy
         self.identity_provider = identity_provider
@@ -157,6 +159,9 @@ class GuardedCallPipeline:
         self.approval_workflow = approval_workflow
         self.provenance = provenance or ProvenanceTracker(
             getattr(policy, "provenance", None)
+        )
+        self.task_scope = task_scope or TaskScopeStore(
+            getattr(policy, "task_scope", None) or TaskScopeConfig(mode="off")
         )
 
     def list_tools(self) -> dict[str, list[dict[str, Any]]]:
@@ -258,6 +263,7 @@ class GuardedCallPipeline:
                     executed = True
             if executed and result is not None:
                 self.provenance.observe_result(actor, server, tool, result)
+                self.task_scope.seal(actor)
             if allowed and result is not None:
                 result = self._maybe_annotate_incident(
                     arguments, server, tool, correlation_id, decision, result
@@ -464,6 +470,9 @@ class GuardedCallPipeline:
             )
             policy_span.set_attribute("judikt.risk.score", decision.risk_score)
             policy_span.set_attribute("judikt.risk.level", decision.risk_level)
+            decision = self._task_scope_gate(
+                decision, server, tool, arguments, actor, tool_definition
+            )
             decision = self._provenance_gate(
                 decision, server, tool, arguments, actor, tool_definition
             )
@@ -474,6 +483,63 @@ class GuardedCallPipeline:
             )
             policy_span.set_attribute("judikt.policy.action", decision.action)
             return decision, definitions, ""
+
+    def declare_task(
+        self, arguments: dict[str, Any], *, trusted_actor: str = ""
+    ) -> dict[str, Any]:
+        """Handle ``judikt_declare_task``: record the task's write scope once."""
+
+        actor = self.identity_provider.resolve(trusted_actor)
+        accepted, message = self.task_scope.declare(actor, arguments)
+        correlation_id = str(uuid.uuid4())
+        self.audit.record(
+            correlation_id=correlation_id,
+            server="judikt",
+            tool="judikt_declare_task",
+            allowed=accepted,
+            rule="task_declared" if accepted else "task_scope",
+            action="ALLOW" if accepted else "DENY",
+            reason=message,
+            arguments=self.policy.redact(arguments),
+            result=None,
+            duration_ms=0.0,
+            evidence=[],
+        )
+        return {
+            "content": [{"type": "text", "text": message}],
+            "structuredContent": {"accepted": accepted, "message": message},
+            "isError": not accepted,
+        }
+
+    def _task_scope_gate(
+        self,
+        decision: PolicyDecision,
+        server: str,
+        tool: str,
+        arguments: dict[str, Any],
+        actor: str,
+        tool_definition: dict[str, Any] | None,
+    ) -> PolicyDecision:
+        """Hold a write the declared task scope does not include."""
+
+        if not self.task_scope.config.enabled or not decision.allowed or decision.action != "ALLOW":
+            return decision
+        risk = getattr(self.policy, "risk", None)
+        if risk is None or risk.tier(tool, tool_definition) == "read":
+            return decision
+        if self.task_scope.permits(actor, server, tool) or self.policy.has_approval(server, tool, arguments):
+            return decision
+        return replace(
+            decision,
+            allowed=False,
+            reason=(
+                f"{tool!r} is not one of the writes declared for this task; "
+                "a human must approve this exact call"
+            ),
+            rule="task_scope",
+            action="REQUIRE_APPROVAL",
+            evidence=[*decision.evidence, f"task_scope:{server}/{tool}"],
+        )
 
     def _provenance_gate(
         self,
@@ -795,7 +861,7 @@ class GuardedCallPipeline:
 def _refusal_action(rule: str, decision: PolicyDecision) -> str:
     if rule == "approval_required":
         return "REQUIRE_APPROVAL"
-    if rule == "untrusted_provenance" and rule == decision.rule:
+    if rule in {"untrusted_provenance", "task_scope"} and rule == decision.rule:
         return decision.action
     return "DENY"
 

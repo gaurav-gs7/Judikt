@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .catalog import (
+    JUDIKT_SERVER,
     ToolCatalog as _GatewayCatalog,
     gateway_result as _gateway_result,
     proxy_tool,
@@ -24,6 +25,8 @@ def serve_gateway(runtime: JudiktRuntime) -> None:
             server = catalog.server_for(tool)
             if server is None:
                 raise ValueError(f"unknown proxied tool: {tool}")
+            if server == JUDIKT_SERVER:
+                return runtime.pipeline.declare_task(arguments, trusted_actor=local_identity)
             guarded = runtime.call_tool(
                 server,
                 tool,

@@ -13,7 +13,7 @@ from typing import Any
 from . import __version__
 from .approval import ApprovalAuthority
 from .auth import AuthError, Authenticator
-from .catalog import ToolCatalog, gateway_result
+from .catalog import JUDIKT_SERVER, ToolCatalog, gateway_result
 from .ops_runtime import JudiktOpsRuntime
 from .request_context import (
     bind_authenticated_subject,
@@ -592,6 +592,8 @@ def register_native_tools(
         server = catalog.server_for(name)
         if server is None:
             raise ValueError(f"unknown proxied tool: {name}")
+        if server == JUDIKT_SERVER:
+            return types.CallToolResult.model_validate(runtime.pipeline.declare_task(arguments))
         guarded = runtime.call_tool(server, name, arguments)
         return types.CallToolResult.model_validate(gateway_result(guarded))
 

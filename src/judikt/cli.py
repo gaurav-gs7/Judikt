@@ -256,6 +256,16 @@ def parser() -> argparse.ArgumentParser:
     )
     wrap.add_argument("--identity", default="local-operator")
     wrap.add_argument("--profile", choices=STARTER_PROFILES, default="read-only")
+    wrap.add_argument(
+        "--task-writes",
+        action="append",
+        default=None,
+        metavar="TOOL[,TOOL]",
+        help=(
+            "limit this session to these write or destructive tools; any other write "
+            "needs approval (rule task_scope). Repeatable; 'none' allows no writes"
+        ),
+    )
     wrap.add_argument("--url", default="", help="remote Streamable HTTP MCP endpoint")
     wrap.add_argument(
         "--allow-private-network",
@@ -626,6 +636,9 @@ def _os_error(exc: OSError) -> str:
 
 
 def _run_wrap(args: argparse.Namespace) -> None:
+    task_writes = getattr(args, "task_writes", None)
+    if task_writes is not None:
+        os.environ["JUDIKT_TASK_WRITES"] = ",".join(task_writes)
     upstream_command = list(args.upstream_command)
     if upstream_command and upstream_command[0] == "--":
         upstream_command = upstream_command[1:]
