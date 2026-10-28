@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 REQUIRED_RESOURCES = {
     "judikt/resources/default-policy.json",
     "judikt/resources/demo-policy.json",
+    "judikt/resources/injection_classifier.json.gz",
     "judikt/resources/interop-profiles.json",
     "judikt/resources/mcp38-coverage.json",
 }

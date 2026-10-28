@@ -78,7 +78,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-"judikt.resources" = ["*.json"]
+"judikt.resources" = ["*.json", "*.json.gz"]
 
 [tool.coverage.run]
 branch = true

@@ -1,0 +1,156 @@
+{
+  "seed": 20261028,
+  "target_cv_fpr": 0.005,
+  "sklearn": "1.7.2",
+  "examples": 21717,
+  "labels": {
+    "benign": 20780,
+    "attack": 937
+  },
+  "by_source": {
+    "agentdojo_environment": 368,
+    "agentdojo_goal": 164,
+    "agentdojo_injected_environment": 182,
+    "bipia_train": 125,
+    "bipia_train_embedded": 458,
+    "bipia_email_train": 64,
+    "judikt_corpus": 253,
+    "judikt_external_review_entry": 15,
+    "judikt_counterfactual_wrapper": 45,
+    "judikt_external_review_dev": 4,
+    "python_stdlib_docstrings": 3069,
+    "pypi_readme": 9565,
+    "pypi_readme_sentence": 7143,
+    "mcp_servers_descriptions": 130,
+    "mcp_servers_readmes": 132
+  },
+  "sources": {
+    "bipia": {
+      "commit": "a004b69ec0dd446e0afd461d98cb5e96e120a5d0",
+      "sha256": {
+        "text_attack_train.json": "63f95d3e67eac4178cdabdbdaf192cd05f2b6ed0702b578f1d30d556e5155670",
+        "code_attack_train.json": "fe515080b6da2b5c0b67ca7ba2a3b3c2ce57c48f45733c475ebc813cba118484",
+        "email/train.jsonl": "82207193cb8ce06713eeb7c33ca0716446613512e2ad9303b302ba14d425ddd4"
+      }
+    },
+    "agentdojo": {
+      "version": "0.1.35",
+      "benign": 323,
+      "attack": 162,
+      "attack_in_environment": 162
+    },
+    "garak": {
+      "version": "0.17.1",
+      "wheel_sha256": "cef78a79291e73e90e7f89522f363ec9344bfb1e0ede68362d7a2379ba5cfda8",
+      "instruction_templates": 0,
+      "examples": 0
+    },
+    "judikt_corpus_dev": {
+      "benign": 160,
+      "attack": 113,
+      "counterfactual_benign": 45
+    },
+    "python_stdlib_docstrings": 2500,
+    "pypi_readmes": {
+      "packages": 1200,
+      "manifest_sha256": "1c67c406977b21f567028def38bb1b8ca6e58ad2779a46352ec258025eb6365f",
+      "seeds": [
+        "django",
+        "apache-airflow",
+        "jupyter",
+        "ansible",
+        "scrapy",
+        "sphinx",
+        "dask",
+        "mlflow",
+        "streamlit",
+        "fastapi",
+        "celery",
+        "pandas",
+        "boto3",
+        "homeassistant",
+        "langchain",
+        "llama-index",
+        "crewai",
+        "autogen-agentchat",
+        "pydantic-ai",
+        "smolagents",
+        "haystack-ai",
+        "dspy",
+        "semantic-kernel",
+        "fastmcp",
+        "mcp",
+        "openai-agents",
+        "litellm",
+        "instructor"
+      ],
+      "sentences": 7143,
+      "agent_sentences": 41
+    },
+    "mcp_servers": {
+      "commit": "ef9808f71090d0db3eda99e2af2ba78f1086f4fb",
+      "examples": 136
+    }
+  },
+  "excluded": [
+    "tests/fixtures/content_guard/external/holdout.jsonl (BIPIA test files, InjecAgent)",
+    "tests/fixtures/content_guard/corpus.jsonl split=test",
+    "installed third-party package READMEs (real-documentation false-positive measurement)"
+  ],
+  "c_search": {
+    "1.0": {
+      "0.01": {
+        "cv_recall": 0.9232,
+        "cv_fpr": 0.01,
+        "threshold": 0.024161348587540488
+      },
+      "0.005": {
+        "cv_recall": 0.8794,
+        "cv_fpr": 0.005,
+        "threshold": 0.8330581300188982
+      },
+      "0.0025": {
+        "cv_recall": 0.8356,
+        "cv_fpr": 0.0025,
+        "threshold": 1.2352835711912662
+      }
+    },
+    "4.0": {
+      "0.01": {
+        "cv_recall": 0.9285,
+        "cv_fpr": 0.01,
+        "threshold": -0.28725840794184565
+      },
+      "0.005": {
+        "cv_recall": 0.8911,
+        "cv_fpr": 0.005,
+        "threshold": 0.5156800235350945
+      },
+      "0.0025": {
+        "cv_recall": 0.8559,
+        "cv_fpr": 0.0025,
+        "threshold": 0.9827652998306791
+      }
+    },
+    "16.0": {
+      "0.01": {
+        "cv_recall": 0.9285,
+        "cv_fpr": 0.01,
+        "threshold": -0.9268911128463291
+      },
+      "0.005": {
+        "cv_recall": 0.8911,
+        "cv_fpr": 0.005,
+        "threshold": 0.015717096148484266
+      },
+      "0.0025": {
+        "cv_recall": 0.8677,
+        "cv_fpr": 0.0025,
+        "threshold": 0.704085427402898
+      }
+    }
+  },
+  "chosen_c": 4.0,
+  "threshold": 0.5156800235350945,
+  "runtime_parity_max_abs_diff": 2.6140861084655853e-06
+}
