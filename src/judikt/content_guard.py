@@ -9,8 +9,12 @@ import urllib.parse
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from .injection_classifier import INSTRUCTION_CUE, default_classifier
+
 
 SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3}
+CLASSIFIER_SURFACES = frozenset({"tool_result", "tool_description"})
+CLASSIFIER_MIN_CHARS = 20
 VALID_SURFACES = {"tool_description", "tool_result", "tool_argument"}
 DEFAULT_THRESHOLDS = {
     "tool_description": "medium",
@@ -229,6 +233,7 @@ class ContentGuard:
         rules: dict[str, str] | None = None,
         thresholds: dict[str, str] | None = None,
         max_medium_findings: int = 3,
+        learned_classifier: bool = True,
     ) -> None:
         if mode not in {"fail_closed", "report_only", "disabled"}:
             raise ValueError("content inspection mode must be fail_closed, report_only, or disabled")
@@ -251,6 +256,10 @@ class ContentGuard:
             for name, pattern in MULTILINGUAL_INJECTION_RULES.items()
         }
         self._multilingual_substrings = MULTILINGUAL_INJECTION_SUBSTRINGS
+        # The learned classifier is deterministic and needs no model API. It
+        # scores tool results and descriptions, where injections enter; tool
+        # arguments are the agent's own actions and stay with policy.
+        self._classifier = default_classifier() if learned_classifier else None
 
     @classmethod
     def from_policy(cls, config: dict[str, Any]) -> "ContentGuard":
@@ -261,6 +270,7 @@ class ContentGuard:
             rules=settings.get("patterns") or None,
             thresholds=settings.get("thresholds") or None,
             max_medium_findings=int(settings.get("max_medium_findings", 3)),
+            learned_classifier=_classifier_enabled(settings.get("learned_classifier", {"enabled": True})),
         )
 
     def inspect(self, value: Any, *, surface: str = "tool_result") -> ContentInspection:
@@ -310,6 +320,19 @@ class ContentGuard:
                         suffix="__evasion_normalized",
                     )
                 segment_detected.extend(agent_directed)
+            if (
+                self._classifier is not None
+                and surface in CLASSIFIER_SURFACES
+                and len(segment.text) >= CLASSIFIER_MIN_CHARS
+                and not any(item.finding.severity in {"medium", "high"} for item in segment_detected)
+            ):
+                # Like the agent-directed signal, the classifier only adds a
+                # finding where the rules found nothing, and each flagged
+                # window is a medium span: redacted in tool results, blocking
+                # in tool descriptions, and a quarantine above the medium limit.
+                segment_detected.extend(
+                    self._classify(segment.text, segment.path, surface, segment.offset)
+                )
             detected.extend(segment_detected)
             normalized_segments.append(normalized)
             invisible = INVISIBLE_CONTROL_PATTERN.search(segment.text)
@@ -397,6 +420,21 @@ class ContentGuard:
             sanitized,
         )
 
+    def _classify(self, text: str, path: str, surface: str, offset: int) -> list[_Detected]:
+        assert self._classifier is not None
+        view = _classifier_view(text)
+        if view is None:
+            return []
+        hits = []
+        for start, end in self._classifier.flagged_spans(view):
+            # A window that only describes (no second person, request,
+            # question or command verb) cannot instruct an agent, so a hit
+            # there is reported but never redacts or blocks.
+            severity = "medium" if INSTRUCTION_CUE.search(view[start:end]) else "low"
+            finding = _finding("learned_injection_classifier", severity, surface, path, text[start:end])
+            hits.append(_Detected(finding, offset + start, offset + end, exact=True))
+        return hits
+
     def _decision(self, findings: list[ContentFinding], surface: str) -> tuple[bool, str]:
         if not findings:
             return True, "allow"
@@ -479,6 +517,45 @@ class ContentGuard:
                     hits.append(_Detected(finding))
                     break
         return hits
+
+
+def _classifier_view(text: str) -> str | None:
+    """What the classifier scores: ``text`` with quoted material blanked out.
+
+    Code, inline code and block quotes are replaced by spaces of equal length,
+    as are payloads explicitly framed as an example ("such as '...'") that
+    name no destination and address no agent, so a flagged span still maps
+    onto the original text. Security write-ups the rules already recognise are
+    not scored. A real payload wearing an example label stays visible.
+    """
+
+    if _SECURITY_DISCUSSION.search(text) and (
+        _SECURITY_DISCUSSION_OUTCOME.search(text) or re.search(r"\bthreat model\b", text, re.IGNORECASE)
+    ):
+        return None
+    characters = list(text)
+
+    def blank(start: int, end: int) -> None:
+        for index in range(start, end):
+            if characters[index] not in "\r\n":
+                characters[index] = " "
+
+    for match in _QUOTED_PATTERN.finditer(text):
+        blank(match.start(), match.end())
+    if _STRUCTURAL_MARKER.search(text) is None:
+        for match in _EXAMPLE_QUOTE.finditer(text):
+            quoted = match.group(2)
+            if not (_DESTINATION_CUE.search(quoted) or _AGENT_ADDRESS.search(quoted)):
+                blank(match.start(2), match.end(2))
+    return "".join(characters)
+
+
+def _classifier_enabled(setting: Any) -> bool:
+    if isinstance(setting, bool):
+        return setting
+    if isinstance(setting, dict) and isinstance(setting.get("enabled", True), bool):
+        return bool(setting.get("enabled", True))
+    raise ValueError("inbound_content_inspection.learned_classifier must be a boolean or {\"enabled\": boolean}")
 
 
 def quarantine_result(inspection: ContentInspection) -> dict[str, Any]:

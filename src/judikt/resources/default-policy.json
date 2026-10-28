@@ -67,6 +67,9 @@
     "mode": "fail_closed",
     "max_scan_bytes": 262144,
     "max_medium_findings": 3,
+    "learned_classifier": {
+      "enabled": true
+    },
     "thresholds": {
       "tool_description": "medium",
       "tool_argument": "medium",

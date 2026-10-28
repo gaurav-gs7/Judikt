@@ -525,7 +525,11 @@ class ExternalReviewRecallTest(unittest.TestCase):
         ):
             with self.subTest(text=text):
                 inspection = self._guard().inspect(text, surface="tool_result")
-                self.assertEqual(inspection.action, "allow")
+                # Never blocked or altered. A purely descriptive sentence may be
+                # reported by the learned classifier, but it cannot redact.
+                self.assertIn(inspection.action, {"allow", "report"})
+                self.assertTrue(inspection.allowed)
+                self.assertEqual(inspection.sanitized_value, text)
 
     def test_structural_markers_are_high_outside_code_only(self) -> None:
         for text in (
