@@ -16,6 +16,8 @@ A release publishes three things from one tag: the Python package on PyPI, the v
    - `charts/judikt/Chart.yaml` (`version` and `appVersion`).
 
    `tests/test_version_consistency.py` fails if they disagree.
+
+   In `CHANGELOG.md`, replace `(unreleased)` with the release date and make sure every change to a default is listed under **Upgrading**.
 2. **Run the release gates locally:**
 
    ```bash

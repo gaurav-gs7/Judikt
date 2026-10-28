@@ -742,7 +742,7 @@ The short design write-up is in [docs/DESIGN_NOTES.md](docs/DESIGN_NOTES.md), th
 
 ## Releasing
 
-Releases publish the PyPI package and the version-matched skill ZIP from a single `vX.Y.Z` tag. See [RELEASING.md](RELEASING.md).
+Releases publish the PyPI package and the version-matched skill ZIP from a single `vX.Y.Z` tag. See [RELEASING.md](RELEASING.md). Changes and upgrade notes for each version are in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
