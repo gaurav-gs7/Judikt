@@ -9,7 +9,7 @@ The scope must come from the user, before untrusted content can influence it:
 
 * ``operator``: the operator sets ``task_scope.write_tools`` in the policy, or
   ``judikt wrap --task-writes`` / ``JUDIKT_TASK_WRITES`` for one session.
-* ``agent``: the gateway also exposes ``judikt_declare_task``. The agent calls
+* ``agent`` (experimental): the gateway also exposes ``judikt_declare_task``. The agent calls
   it once, from the user's request, before any tool result has reached it. The
   first tool result seals the scope; an agent that never declared is sealed
   with an empty scope, so every later write needs approval.

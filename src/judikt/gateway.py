@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from .catalog import (
@@ -20,6 +21,13 @@ def serve_gateway(runtime: JudiktRuntime) -> None:
     try:
         local_identity = _local_stdio_identity(runtime)
         catalog = _GatewayCatalog(runtime, local_identity)
+        scope = getattr(getattr(runtime, "pipeline", None), "task_scope", None)
+        if scope is not None and scope.agent_declarations:
+            print(
+                "judikt: task_scope.mode 'agent' is experimental; the agent must call "
+                "judikt_declare_task before its first read",
+                file=sys.stderr,
+            )
 
         def call(tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
             server = catalog.server_for(tool)
