@@ -25,7 +25,11 @@ The guarded measurement includes:
 
 The report excludes HTTP transport, JWT validation, external MCP/network latency, Redis, SIEM, Argus, S3, and OTLP exporters. Rate-limit budgets are raised in the temporary policy so the benchmark measures successful enforcement overhead rather than intentionally triggering throttling. Temporary databases, pins, policies, and secrets are isolated and removed after each run.
 
-## Local Result
+## Latest Result (0.4.0)
+
+Measured on 2026-10-28 with 50 warm-ups and 500 measured calls on a 2-vCPU Linux x86_64 cloud container with CPython 3.12.3, after the learned classifier and the provenance gate were added: mean 3.150 ms, p50 2.917 ms, p95 4.379 ms, p99 5.242 ms, maximum 6.596 ms, 317.32 calls/second. Evidence: [evidence/performance-2026-10-28.json](evidence/performance-2026-10-28.json). It ran on different hardware from the result below, so the two are not a like-for-like comparison.
+
+## Earlier Local Result
 
 Measured on 2026-07-22 using CPython 3.14.0 on Darwin arm64. This was a local, single-process run with 50 warmups and 500 measured `platform.health` calls.
 

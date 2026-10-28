@@ -1,0 +1,63 @@
+{
+  "schema_version": "judikt.performance.v1",
+  "benchmark": {
+    "name": "in_process_guarded_tool_call",
+    "workload": "platform-ops/platform.health",
+    "iterations": 500,
+    "warmup_iterations": 50,
+    "rate_limits_raised_for_benchmark": true
+  },
+  "scope": {
+    "included": [
+      "policy and authorization",
+      "risk scoring",
+      "local rate limiting",
+      "tool metadata inspection and pin verification",
+      "built-in tool execution",
+      "inbound content inspection",
+      "redaction",
+      "hash-chained HMAC-signed SQLite audit",
+      "metrics accounting"
+    ],
+    "excluded": [
+      "HTTP transport and JWT validation",
+      "external MCP network latency",
+      "Redis, SIEM, Argus, S3, and OTLP exporters"
+    ],
+    "note": "Local single-process evidence; this is not a production SLA."
+  },
+  "environment": {
+    "python": "3.12.3",
+    "implementation": "CPython",
+    "operating_system": "Linux",
+    "release": "6.18.44-fc-v180",
+    "machine": "x86_64"
+  },
+  "baseline_backend_latency_ms": {
+    "mean": 0.0,
+    "p50": 0.0,
+    "p95": 0.0,
+    "p99": 0.001,
+    "max": 0.026
+  },
+  "guarded_latency_ms": {
+    "mean": 3.15,
+    "p50": 2.917,
+    "p95": 4.379,
+    "p99": 5.242,
+    "max": 6.596
+  },
+  "estimated_guard_overhead_ms": {
+    "mean": 3.15,
+    "p50": 2.917,
+    "p99": 5.241
+  },
+  "throughput_calls_per_second": 317.32,
+  "results": {
+    "allowed": 500,
+    "denied": 0,
+    "audit_events_verified": 1100,
+    "audit_chain_valid": true,
+    "audit_signed": true
+  }
+}

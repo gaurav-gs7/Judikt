@@ -1,0 +1,43 @@
+# Upstream MCP Servers
+
+Connecting independently built servers, timeouts and restarts, catalog caching, diagnostics, and result semantics. Back to the [README](../README.md).
+
+## External MCP Servers
+
+Set `JUDIKT_UPSTREAM_CONFIG` to a JSON file using the shape in [`config/upstreams.example.json`](../config/upstreams.example.json). Each entry configures exactly one local `command` or remote `url`. Commands are executed directly without a shell. Remote request headers accept only operator-brokered `from_env`, `from_aws_secret`, or `from_vault` values; Judikt never forwards the caller's Authorization header or tool-supplied credentials upstream.
+
+Remote endpoints require HTTPS except on localhost. Before connection and before every request, Judikt resolves the hostname and rejects private, loopback, link-local, reserved, unspecified, multicast, and cloud-metadata addresses unless `allow_private_network` is explicitly enabled. Redirects are refused, streamed HTTP responses and decoded MCP results are size-bounded, and remote list/call deadlines cancel the in-flight SDK request.
+
+Both stdio and Streamable HTTP clients receive policy- and pin-filtered native upstream tools with their original title, schema, output schema, metadata, and stricter-only annotations. HTTP calls use the same guarded pipeline and return standard MCP `CallToolResult` denials with `isError: true` and Judikt decision metadata. Live upstream `tools/list_changed` notifications rebuild the catalog and notify connected HTTP sessions. The deprecated `judikt.call_upstream` envelope is disabled by default and is available only when `http.legacy_call_upstream` is explicitly `true`.
+
+When independently built servers expose the same tool name, set a `tool_name_prefix` such as `"github."` on an upstream. Judikt validates the prefix and resulting names against MCP tool-name rules, then applies the exposed name consistently to policy, risk, pinning, audit, and routing.
+
+Upstream requests default to 30-second `initialize` and `tools/list` deadlines and a 120-second `tools/call` deadline. Set `JUDIKT_UPSTREAM_TIMEOUT_SECONDS` for one global deadline or add per-server `timeouts` with `initialize`, `list`, and `call` values in the registry. Timed-out calls receive MCP `notifications/cancelled`. Crashed stdio subprocesses restart with bounded exponential backoff and must pass tool-pin verification again before calls resume; remote sessions fail closed and are recreated by the owning Judikt process.
+
+After any upstream request times out, Judikt sends MCP `ping` off the request thread with a short liveness deadline (`JUDIKT_UPSTREAM_LIVENESS_TIMEOUT_SECONDS`, default 5, or per-server `liveness_timeout_seconds`). An upstream that answers is merely slow and keeps running. A stdio upstream that does not answer is treated as hung: pending requests fail, the process receives SIGTERM and then SIGKILL after a 2-second grace period, and the next request restarts it through the same backoff and restart budget, re-verifying tool pins. A remote session that does not answer is closed and recreated, and pins are re-verified. `judikt_upstream_liveness_probes_total`, `judikt_upstream_liveness_failures_total`, and `judikt_upstream_restarts_total` count probes, failed probes, and the resulting restarts or reconnections.
+
+Each upstream's tool catalog is cached instead of being fetched with `tools/list` on every call. The cache refreshes when the upstream sends `notifications/tools/list_changed`, after a restart or reconnection, and when its TTL expires (`JUDIKT_UPSTREAM_CATALOG_TTL_SECONDS`, default 30, or per-server `catalog_ttl_seconds`; `0` refreshes on every call). Pin verification runs on every refresh. The trade-off: an upstream that silently changes a tool definition without sending `list_changed` is detected at the first refresh after the TTL expires rather than on the next call, so the rug-pull detection window is at most one TTL. Use `catalog_ttl_seconds: 0` for upstreams where that window is unacceptable. If a refresh fails, Judikt keeps serving the last verified catalog (still subject to pins and policy, so only already-pinned, allowed tools run) for up to twice the TTL after the last successful fetch, then denies calls with rule `upstream_error`. A catalog refresh that times out or fails during a call is an audited denial (`upstream_timeout` or `upstream_error`, `isError: true`) that counts toward the circuit breaker; it never surfaces as a raw JSON-RPC error.
+
+The `platform-ops`, `kubernetes`, and `incident` adapters are walkthrough fixtures loaded only by `judikt demo` or the explicit `JUDIKT_DEMO_MODE=true` test harness. Production gateway commands load only operator-selected upstream servers.
+
+The test suite launches [`tests/fixtures/external_mcp_server.py`](../tests/fixtures/external_mcp_server.py) as an independent process and proves normal and text-only responses, paginated discovery, server-initiated requests, environment isolation, injected-result quarantine, and changed metadata blocking. The versioned [community interoperability harness](COMMUNITY_INTEROP.md) separately targets the official MCP Filesystem and Memory servers plus GitHub's official read-only server.
+
+## Troubleshooting Upstream Failures
+
+Agents never see upstream-controlled diagnostic text. When an upstream times out, exits, returns a JSON-RPC error, or a remote request fails, the agent receives a fixed Judikt-authored reason that interpolates only the configured server name, the MCP method, the timeout, a numeric JSON-RPC error code, or a transport category, for example `MCP upstream 'github' timed out during 'tools/call' after 30s` or `remote MCP upstream 'docs' request failed (TLS error)`. Upstream stderr, upstream JSON-RPC error messages, and transport exception text can carry secrets or prompt injection, so they are kept as an operator-only diagnostic:
+
+- in the audit record's `diagnostic` field (hash-chained and signed with the rest of the event), read it with the dashboard's recent-events view, `judikt.runtime_state`, or `sqlite3 <audit-db> "SELECT seq, rule, diagnostic FROM audit_events WHERE diagnostic IS NOT NULL ORDER BY seq DESC LIMIT 20"`;
+- on the gateway's own stderr as one `Judikt upstream diagnostic (correlation=... server=... tool=...)` line, which MCP clients write to their server log (for Claude Desktop, the `mcp-server-<name>.log` file);
+- as the `judikt.upstream.diagnostic` span attribute when tracing is enabled, capped at 4 KB.
+
+Every diagnostic passes the policy's `redacted_value_patterns`, Judikt's default secret patterns, and `key=value` credential redaction before it is stored or printed. Use the correlation ID shown to the agent to find the matching audit event. CLI startup errors from `judikt init`, `judikt wrap`, and `judikt pins accept` print the redacted diagnostic to the operator's terminal.
+
+To let agents see an upstream's JSON-RPC error message, set `"expose_error_messages": true` on that upstream. The message is then bounded to 500 characters, inspected as a `tool_result`, and policy-redacted; if inspection reports any finding, the agent receives only the fixed reason. An upstream tool result with `isError: true` is a tool result rather than a diagnostic: it is inspected, quarantined, or redacted like any other result.
+
+## MCP Result Semantics
+
+For an allowed stdio call, Judikt preserves the upstream MCP result: `content`, optional `structuredContent`, `isError`, and upstream `_meta`. Text is inspected and redacted before delivery; image, audio, resource-blob, and resource-link payloads pass through without binary rewriting. Judikt adds only `_meta["io.judikt/decision"]`, containing the correlation ID, policy rule, action, risk level, and an approval-token digest when applicable. An upstream `isError: true` remains a tool error.
+
+Policy denials, approval requirements, rate limits, timeouts, and quarantines return `isError: true`, one safe text block, and the same namespaced decision metadata. Unknown tool names are JSON-RPC invalid-parameter errors (`-32602`). The gateway forwards `title`, `annotations`, `outputSchema`, and `_meta` from tool definitions, but may tighten safety annotations. It advertises `tools.listChanged`; changed or newly discovered definitions are rechecked against policy and tool pins before clients are notified.
+
+**Breaking change:** older Judikt releases returned an `allowed`/`blocked` JSON envelope in `structuredContent`. Clients must now consume the upstream result directly and read Judikt's decision from `_meta["io.judikt/decision"]`. This restores MCP output-schema compatibility and prevents denials from being mistaken for successful tool results.
