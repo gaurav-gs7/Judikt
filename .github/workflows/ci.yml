@@ -45,7 +45,16 @@ jobs:
       - name: Test skill onboarding from a fresh wheel
         run: ./scripts/run_skill_acceptance.sh
       - name: Run unified Tier 1, 2, and 3 release qualification
-        run: ./scripts/run_release_tests.sh
+        run: |
+          set -o pipefail
+          mkdir -p build
+          if ! ./scripts/run_release_tests.sh 2>&1 | tee build/release-tests.log; then
+            # Surface the failure as annotations, readable without the raw log.
+            grep -E '^(FAIL|ERROR):|Error|error:|fail-under|failed|exceeded|below' build/release-tests.log \
+              | grep -v '^Judikt upstream diagnostic' | tail -25 | sed 's/^/::error::/'
+            tail -15 build/release-tests.log | sed 's/^/::error::tail: /'
+            exit 1
+          fi
       - uses: actions/upload-artifact@v6
         with:
           name: judikt-ci-evidence
