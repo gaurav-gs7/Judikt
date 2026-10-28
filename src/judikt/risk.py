@@ -82,6 +82,11 @@ class RiskEngine:
         score = min(score, 100)
         return RiskAssessment(score, self._level(score), evidence)
 
+    def tier(self, tool: str, tool_definition: dict[str, Any] | None = None) -> str:
+        """The effective tier: read, write or destructive."""
+
+        return self._classification(tool, tool_definition)[0]
+
     def action_for(self, level: str) -> str | None:
         return self.config["risk_actions"].get(level)
 

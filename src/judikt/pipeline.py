@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Protocol
 
 from .approval_replay import ApprovalReplayStore, ApprovalReplayUnavailable, approval_jti_digest
 from .audit import AuditStore
 from .content_guard import ContentGuard, quarantine_result
+from .provenance import ProvenanceTracker
 from .diagnostics import (
     MAX_EXPOSED_MESSAGE_CHARS,
     emit_operator_diagnostic,
@@ -138,6 +139,7 @@ class GuardedCallPipeline:
         metrics: Metrics,
         telemetry: Telemetry,
         approval_workflow: ApprovalWorkflow | None = None,
+        provenance: ProvenanceTracker | None = None,
     ) -> None:
         self.policy = policy
         self.identity_provider = identity_provider
@@ -153,6 +155,9 @@ class GuardedCallPipeline:
         self.metrics = metrics
         self.telemetry = telemetry
         self.approval_workflow = approval_workflow
+        self.provenance = provenance or ProvenanceTracker(
+            getattr(policy, "provenance", None)
+        )
 
     def list_tools(self) -> dict[str, list[dict[str, Any]]]:
         definitions = self.upstreams.definitions()
@@ -178,12 +183,14 @@ class GuardedCallPipeline:
         decision, definitions, diagnostic = self._pre_execution_decision(
             server, tool, arguments, actor
         )
+        self.provenance.observe_arguments(actor, strip_control_arguments(arguments))
         allowed = decision.allowed
         reason = decision.reason
         rule = decision.rule
         evidence = list(decision.evidence)
         result: Any = None
         mcp_result: dict[str, Any] | None = None
+        executed = False
 
         with self.telemetry.span(
             "judikt.call_tool",
@@ -226,6 +233,7 @@ class GuardedCallPipeline:
                         evidence=evidence,
                         definitions=definitions,
                     )
+                    executed = True
                 elif decision.action in {"DRY_RUN_ONLY", "SHADOW_MODE"}:
                     result = _evaluation_only_result(
                         decision.action, server, tool, safe_arguments
@@ -247,6 +255,9 @@ class GuardedCallPipeline:
                         evidence=evidence,
                         definitions=definitions,
                     )
+                    executed = True
+            if executed and result is not None:
+                self.provenance.observe_result(actor, server, tool, result)
             if allowed and result is not None:
                 result = self._maybe_annotate_incident(
                     arguments, server, tool, correlation_id, decision, result
@@ -257,9 +268,7 @@ class GuardedCallPipeline:
             request_span.set_json_output({"allowed": allowed, "result": result})
 
         duration_ms = (time.perf_counter() - started) * 1000
-        action = decision.action if allowed else (
-            "REQUIRE_APPROVAL" if rule == "approval_required" else "DENY"
-        )
+        action = decision.action if allowed else _refusal_action(rule, decision)
         self._record_outcome(
             correlation_id=correlation_id,
             server=server,
@@ -314,9 +323,7 @@ class GuardedCallPipeline:
         decision, _, diagnostic = self._pre_execution_decision(
             server, tool, arguments, actor
         )
-        action = "PROPOSE_ONLY" if decision.allowed else (
-            "REQUIRE_APPROVAL" if decision.rule == "approval_required" else "DENY"
-        )
+        action = "PROPOSE_ONLY" if decision.allowed else _refusal_action(decision.rule, decision)
         result = {
             "mode": "proposal_only",
             "executed": False,
@@ -457,8 +464,60 @@ class GuardedCallPipeline:
             )
             policy_span.set_attribute("judikt.risk.score", decision.risk_score)
             policy_span.set_attribute("judikt.risk.level", decision.risk_level)
+            decision = self._provenance_gate(
+                decision, server, tool, arguments, actor, tool_definition
+            )
+            policy_span.set_policy(
+                allowed=decision.allowed,
+                rule=decision.rule,
+                reason=decision.reason,
+            )
             policy_span.set_attribute("judikt.policy.action", decision.action)
             return decision, definitions, ""
+
+    def _provenance_gate(
+        self,
+        decision: PolicyDecision,
+        server: str,
+        tool: str,
+        arguments: dict[str, Any],
+        actor: str,
+        tool_definition: dict[str, Any] | None,
+    ) -> PolicyDecision:
+        """Hold a write that reuses a value first seen in untrusted tool output.
+
+        Read tools, calls the policy already refused, and dry runs pass through
+        unchanged. A valid approval token for this exact call lets it run.
+        """
+
+        config = self.provenance.config
+        if not config.enabled or not decision.allowed or decision.action != "ALLOW":
+            return decision
+        risk = getattr(self.policy, "risk", None)
+        if risk is None or risk.tier(tool, tool_definition) == "read":
+            return decision
+        matches = self.provenance.matches(actor, strip_control_arguments(arguments))
+        if not matches:
+            return decision
+        evidence = [*decision.evidence, *(match.evidence() for match in matches)]
+        if config.mode == "report" or self.policy.has_approval(server, tool, arguments):
+            return replace(decision, evidence=evidence)
+        sources = ", ".join(sorted({f"{m.source_server}/{m.source_tool}" for m in matches}))
+        kinds = ", ".join(sorted({m.kind for m in matches}))
+        reason = (
+            f"arguments reuse a value ({kinds}) that first appeared in untrusted "
+            f"output from {sources}"
+        )
+        if config.mode == "deny":
+            return replace(decision, allowed=False, reason=reason, rule="untrusted_provenance", action="DENY", evidence=evidence)
+        return replace(
+            decision,
+            allowed=False,
+            reason=reason + "; a human must approve this exact call",
+            rule="untrusted_provenance",
+            action="REQUIRE_APPROVAL",
+            evidence=evidence,
+        )
 
     def _execute_guarded(
         self,
@@ -731,6 +790,14 @@ class GuardedCallPipeline:
             )
             self.metrics.observe_finding(outcome)
         self.metrics.observe(server, tool, allowed, duration_ms)
+
+
+def _refusal_action(rule: str, decision: PolicyDecision) -> str:
+    if rule == "approval_required":
+        return "REQUIRE_APPROVAL"
+    if rule == "untrusted_provenance" and rule == decision.rule:
+        return decision.action
+    return "DENY"
 
 
 def _catalog_failure(server: str, exc: Exception) -> tuple[str, str]:

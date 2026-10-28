@@ -292,7 +292,7 @@ def gateway_result(guarded: ToolCallResult) -> dict[str, Any]:
         f"Judikt blocked this call: {guarded.reason} "
         f"(rule: {guarded.rule}, correlation: {guarded.correlation_id})"
     )
-    if guarded.rule == "approval_required":
+    if guarded.action == "REQUIRE_APPROVAL":
         message += (
             " A human must obtain approval through the configured Judikt "
             "approval workflow."

@@ -10,6 +10,7 @@ from .approval import ApprovalAuthority, ApprovalClaims, ApprovalTokenError
 from .content_guard import ContentGuard
 from .diagnostics import redact_diagnostic
 from .metrics import Metrics
+from .provenance import ProvenanceConfig
 from .models import (
     APPROVAL_TOKEN_ARGUMENT,
     DEMO_APPROVAL_ARGUMENT,
@@ -112,6 +113,10 @@ def validate_policy_config(config: Any, *, source: str = "policy") -> None:
         config["allow_demo_boolean_approval"], bool
     ):
         fail("'allow_demo_boolean_approval'", "must be true or false")
+    try:
+        ProvenanceConfig.from_policy(config)
+    except ValueError as exc:
+        raise PolicyConfigurationError(f"{source}: {exc}") from None
 
 
 class PolicyEngine:
@@ -128,6 +133,7 @@ class PolicyEngine:
         self.approvals = approval_authority or ApprovalAuthority()
         self.argument_guard = ContentGuard.from_policy(self.config)
         self.risk = RiskEngine(self.config)
+        self.provenance = ProvenanceConfig.from_policy(self.config)
         self._blocked = [re.compile(pattern, re.IGNORECASE) for pattern in self.config["blocked_argument_patterns"]]
         self._redacted_keys = [
             re.compile(pattern, re.IGNORECASE) for pattern in self.config["redacted_key_patterns"]
@@ -483,7 +489,12 @@ class PolicyEngine:
 
         if tool in self.config.get("approval_required", []):
             return True
+        if self.provenance.mode == "require_approval" and self.risk.tier(tool, tool_definition) != "read":
+            return True
         return self.risk.may_require_approval(tool, tool_definition)
+
+    def has_approval(self, server: str, tool: str, arguments: dict[str, Any]) -> bool:
+        return self._has_approval(server, tool, arguments)
 
     def _actor(self, arguments: dict[str, Any]) -> str:
         for field in self.config.get("identity_argument_fields", []):

@@ -63,6 +63,9 @@
     "upstream_token"
   ],
   "allowed_argument_values": {},
+  "untrusted_provenance": {
+    "mode": "require_approval"
+  },
   "inbound_content_inspection": {
     "mode": "fail_closed",
     "max_scan_bytes": 262144,
