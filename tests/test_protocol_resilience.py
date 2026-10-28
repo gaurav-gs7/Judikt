@@ -127,7 +127,9 @@ class StdioMCPResilienceTest(unittest.TestCase):
         client = self._client(
             "stderr-flood",
             stderr_buffer_bytes=65_536,
-            timeouts={"initialize": 0.9, "list": 0.9, "call": 0.9},
+            # A deadlock never returns, so a generous timeout still detects one;
+            # 0.9 s was too short for a shared CI runner under coverage.
+            timeouts={"initialize": 5.0, "list": 5.0, "call": 5.0},
         )
 
         result = client.call_tool("resilient.echo", {"value": "received"})
