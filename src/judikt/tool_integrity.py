@@ -195,6 +195,10 @@ class ToolIntegrityStore:
         self._lock = threading.Lock()
         self._warned_unsigned: set[str] = set()
         self._secret: bytes | None = None
+        # Canonical digests of exact tool lists that already passed content
+        # inspection. The guard is deterministic, so an identical list would
+        # pass again; any change to any definition is scanned afresh.
+        self._inspected: set[str] = set()
 
     def verify(self, server: str, tools: list[dict[str, Any]]) -> ToolIntegrityReport:
         self._inspect(server, tools)
@@ -378,12 +382,18 @@ class ToolIntegrityStore:
         return ToolPinPendingError(server, metadata.state_key, tool)
 
     def _inspect(self, server: str, tools: list[dict[str, Any]]) -> None:
+        fingerprint = _canonical_digest([server, tools])
+        if fingerprint in self._inspected:
+            return
         inspection = self.content_guard.inspect(tools, surface="tool_description")
         if not inspection.allowed:
             rules = sorted({finding.rule for finding in inspection.findings})
             raise ToolIntegrityError(
                 f"tool metadata from {server!r} was quarantined: {', '.join(rules)}"
             )
+        if len(self._inspected) >= 1024:
+            self._inspected.clear()
+        self._inspected.add(fingerprint)
 
     def _records(
         self,
