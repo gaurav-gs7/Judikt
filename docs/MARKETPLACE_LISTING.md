@@ -4,7 +4,7 @@
 
 **Name:** Judikt MCP Security<br>
 **Category:** Developer Tools / AI Security<br>
-**Runtime version:** `0.4.0`<br>
+**Runtime version:** `0.4.1`<br>
 **License:** Apache-2.0<br>
 **GitHub:** https://github.com/gaurav-gs7/Judikt
 

@@ -2,6 +2,15 @@
 
 All notable changes to Judikt. Versions follow [Semantic Versioning](https://semver.org/); while Judikt is 0.x, a minor release can change default behaviour, and every such change is listed under **Upgrading**.
 
+## 0.4.1 (2026-10-28)
+
+Documentation only; the code is identical to 0.4.0, so there is nothing to change when upgrading.
+
+- A shorter README with an at-a-glance results table and a four-step quick start. Reference material moved, unchanged, into `docs/CONFIGURATION.md`, `docs/UPSTREAMS.md`, `docs/OPERATIONS.md`, `docs/DEVELOPMENT.md` and `docs/THREAT_MODEL.md`.
+- The README uses absolute links and a text diagram, so the PyPI project page shows the demo and its links work.
+- A guarded-call latency measurement for 0.4.0 (p50 2.9 ms, p99 5.2 ms on a 2-vCPU cloud container).
+- The quick start's audit check points at the wrapped server's own audit database, and the `approve-writes` example pins tool definitions with `--accept-pins`.
+
 ## 0.4.0 (2026-10-28)
 
 ### Upgrading from 0.3.0
