@@ -22,3 +22,13 @@ No LLM belongs in Judikt's authorization path. Tool allowlists, identity, approv
 Only the smallest redacted context window needed for classification should leave the runtime. Configuration must identify the provider, endpoint, retention policy, timeout, and data region. Prompts and responses must not contain credentials or raw audit records, and neither should be logged.
 
 Timeouts, provider errors, invalid responses, and low-confidence classifications must preserve the deterministic decision. Operators should be able to run the detector in shadow mode, compare escalations against labelled traffic, and review precision, recall, false-positive rate, latency, and cost before enforcement is enabled.
+
+## What Published Detectors Show (reviewed 2026-10-28)
+
+A model-based detector is the only route to high recall on BIPIA-style text, but published results warn against chasing one benchmark:
+
+- A 2026 re-evaluation of 15 detectors ([arXiv 2610.03448](https://arxiv.org/abs/2610.03448)) found that rankings do not transfer: PIGuard detects 95.1% of BIPIA test attacks but 2.1% of AgentDojo injections at 1% false positives, and its training data overlaps BIPIA's train half and most InjecAgent attacker instructions. The detector that led both agent benchmarks (82.2% on AgentDojo) shared no data with them; it was trained on agent-style documents with planted instructions.
+- PIArena ([arXiv 2604.08499](https://arxiv.org/abs/2604.08499)) found that detectors which drive attack success near zero tend to do so by flagging benign inputs, and that adaptive attacks raise success sharply against every input filter.
+- On AgentDojo, the lowest attack-success defenses are architectural (CaMeL, MELON, tool filtering, firewalls), not detectors.
+
+So a semantic detector, if added, should be an optional ONNX backend with agent-style training data, evaluated on data it never saw (BIPIA test, InjecAgent, AgentDojo with leakage checks) and on benign tool outputs, and it should stay an escalation-only layer behind the provenance gate and approvals.

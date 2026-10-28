@@ -36,7 +36,7 @@ In local stdio mode, approvals and roles protect against prompt-injected calls a
 
 ## Generated Policy Boundary
 
-`judikt init` and policy-free `judikt wrap` generate an annotation-derived starter policy (read-only by default). MCP annotations are self-reported by the upstream and are not trusted security facts. They can only make generation stricter than the mutation-name check. Treat `tool_classification` and every generated permission as a starting point for operator review. `approve-writes` gates write and destructive tools with approvals; `permissive` allows all discovered tools and emits a warning. An explicit policy passed to `judikt wrap --policy` is used as-is.
+`judikt init` and policy-free `judikt wrap` generate an annotation-derived starter policy (read-only by default). MCP annotations are self-reported by the upstream and are not trusted security facts. They can only make generation stricter than the mutation-name check. Treat `tool_classification` and every generated permission as a starting point for operator review. `approve-writes` gates write and destructive tools with approvals; `permissive` allows all discovered tools and emits a warning. Under every profile, a write or destructive call whose arguments reuse an email address, URL, domain, account number, crypto address or handle that first appeared in a tool result needs approval (rule `untrusted_provenance`); `untrusted_provenance.mode` can be `require_approval` (default), `deny`, `report` or `off`. Do not switch it off to make a task pass; ask the user to approve the specific call. An explicit policy passed to `judikt wrap --policy` is used as-is.
 
 ## Content Inspection Boundary
 

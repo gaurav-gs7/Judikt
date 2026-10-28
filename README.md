@@ -61,16 +61,34 @@ Production targets require `idempotency_key`. Judikt stores the exact result and
 
 ### What A Hijacked Agent Can Actually Do
 
-The [InjecAgent replay benchmark](scripts/benchmarks/injecagent_replay.py) measures the controls, not detection. It takes all 1,054 InjecAgent cases, assumes the worst case (an agent that obeys every injection), and replays each attacker's intended tool calls through a real `judikt wrap` session against a server exposing InjecAgent's 330 tools. An attack counts as successful only if its final harmful call reaches the server.
+The [InjecAgent replay benchmark](scripts/benchmarks/injecagent_replay.py) measures the controls, not detection. It takes all 1,054 InjecAgent cases, assumes the worst case (an agent that obeys every injection), and replays each attacker's intended tool calls through a real `judikt wrap` session against a server exposing InjecAgent's 330 tools. Attacker calls carry the arguments a compliant agent would pass, with the attacker's own email address, account number or domain copied verbatim ([argument table](tests/fixtures/benchmarks/injecagent_attacker_arguments.json)). An attack counts as successful only if its final harmful call reaches the server.
 
 | Scenario | Harmful actions executed | User's own tool calls allowed | Tools visible to the agent |
 | --- | --- | --- | --- |
 | No gateway | 1,054 / 1,054 (100%) | 1,054 / 1,054 | 330 / 330 |
 | `judikt wrap` (read-only, the default) | **0 / 1,054 (0%)** | 1,054 / 1,054 | 174 / 330 |
 | `judikt wrap --profile approve-writes`, agent holds no approval token | **0 / 1,054 (0%)** | 1,054 / 1,054 | 330 / 330 |
+| `--profile permissive` (every write allowed), provenance gate off | 1,054 / 1,054 (100%) | 1,054 / 1,054 | 330 / 330 |
+| `--profile permissive`, provenance gate on (the default) | 680 / 1,054 (64.5%): data theft 192 of 544, direct harm 488 of 510 | 1,054 / 1,054 | 330 / 330 |
 | Read-only, but the server falsely marks every tool read-only | 374 / 1,054 (35.5%): direct harm 374 of 510, data theft 0 of 544 | 1,054 / 1,054 | 265 / 330 |
 
-InjecAgent's tools carry no MCP annotations, so the benchmark assigns them by one published verb rule that leans against Judikt (Download, Export, Verify and Sign count as read-only). The last row shows the limit of the name check that backs up self-reported annotations: it catches mutation verbs such as send, delete, update and execute, but not domain verbs such as transfer, unlock or withdraw. Review the generated `tool_classification` for any server you do not trust. Rate limits are lifted for the run, and attacker calls use placeholder arguments, so argument-pattern controls are not exercised. Evidence: [docs/evidence/injecagent-replay.json](docs/evidence/injecagent-replay.json).
+InjecAgent's tools carry no MCP annotations, so the benchmark assigns them by one published verb rule that leans against Judikt (Download, Export, Verify and Sign count as read-only). The last row shows the limit of the name check that backs up self-reported annotations: it catches mutation verbs such as send, delete, update and execute, but not domain verbs such as transfer, unlock or withdraw. Review the generated `tool_classification` for any server you do not trust. Rate limits are lifted for the run, and the provenance scenario starts a fresh gateway per case so that no state carries between cases. Evidence: [docs/evidence/injecagent-replay.json](docs/evidence/injecagent-replay.json).
+
+**Untrusted provenance.** When writes are allowed without approval, Judikt still notices a write that reuses a value the agent could only have learned from tool output. It records the email addresses, URLs and domains, IBANs, long account and phone numbers, crypto addresses and @handles in every result it returns, and holds a later write or destructive call whose arguments contain one, under rule `untrusted_provenance`, until a human approves that exact call. A value the agent used before any tool returned it counts as the user's and stays trusted. Configure it with `untrusted_provenance.mode` (`require_approval`, the default; `deny`; `report`; or `off`) and `untrusted_provenance.kinds`.
+
+In the permissive replay above, 697 of the 1,054 attacker instructions carry such a value. Judikt held 374 of those 697 attacks. Of the 323 that still executed, the content guard had already removed the attacker's value from what the agent saw in 289, so a real agent could not have copied it, and in 34 the user's own call (a shared-calendar lookup for that address) had used it first. The 357 instructions with nothing to trace (unlock a door, dispatch to a street address, move a folder) all executed: provenance cannot see them, and only approvals or read-only exposure stop them.
+
+The [AgentDojo ground-truth replay](scripts/benchmarks/agentdojo_provenance.py) measures both sides of that trade without a language model. It runs AgentDojo's own correct tool calls for every user task in its simulated environments, then plants each injection where the user task will read it and runs the attacker's correct calls. The content guard is left out, because Judikt's classifier was trained on AgentDojo data; the provenance gate learns nothing from any dataset.
+
+| AgentDojo v1.2 suite | Attacks held (attacker's write stopped for approval) | Legitimate user tasks that would hit one approval prompt |
+| --- | --- | --- |
+| Banking | 128 / 144 (88.9%) | 5 / 16 |
+| Slack | 84 / 84 (100%) | 5 / 21 |
+| Travel | 60 / 120 (50.0%) | 0 / 20 |
+| Workspace | 200 / 240 (83.3%) | 9 / 40 |
+| **All** | **472 / 588 (80.3%)** | **19 / 97 (19.6%; 19 of the 60 tasks that write)** |
+
+Every scored attack whose goal names a traceable value was held (472 of 472). The 116 that were not ask for something with nothing to trace, such as booking a named hotel, deleting file 13 or changing a password. Not scored: eight workspace injection tasks that ship without ground-truth calls, one travel task that only asks the agent to say something, and one Slack task that only reads a web page. The cost is real: one in three legitimate tasks that write, such as paying an IBAN read from a bill, inviting an address found on a web page, or adding meeting participants read from an email, would stop for a human. Those are also the exact patterns an attacker uses, which is why the default asks instead of allowing. Use `approve-writes` when every write should be reviewed, or `report` to measure the gate on your own traffic first. Evidence: [docs/evidence/agentdojo-provenance.json](docs/evidence/agentdojo-provenance.json).
 
 ### Content Security Pipeline
 
