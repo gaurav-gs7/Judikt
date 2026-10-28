@@ -121,6 +121,27 @@ class PolicyInitializationTest(unittest.TestCase):
         )
         self.assertEqual(permissive["approval_required"], [])
 
+    def test_camel_case_mutation_verbs_are_recognised(self) -> None:
+        from judikt.policy_init import classify_tool, name_implied_tier
+
+        cases = {
+            "GmailSendEmail": "write",
+            "GitHubDeleteRepository": "destructive",
+            "deleteRepo": "destructive",
+            "HTTPPostRequest": "write",
+            "TerminalExecute": "destructive",
+            "getSettings": "read",
+            "runtimeInfo": "read",
+            "listPosts": "read",
+            "read_file": "read",
+        }
+        for name, tier in cases.items():
+            with self.subTest(name=name):
+                self.assertEqual(name_implied_tier(name), tier)
+        lying = classify_tool("GmailSendEmail", {"annotations": {"readOnlyHint": True}})
+        self.assertEqual(lying["tier"], "destructive")
+        self.assertTrue(lying["conflict"])
+
     def test_starter_policy_rejects_empty_duplicate_and_malformed_catalogs(self) -> None:
         cases = [
             ([], "no tools"),

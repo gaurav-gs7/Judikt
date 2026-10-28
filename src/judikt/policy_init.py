@@ -28,12 +28,22 @@ MUTATION_NAME_PATTERN = re.compile(
 )
 
 
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
+def _name_words(name: str) -> str:
+    """Separate camelCase words so ``GmailSendEmail`` matches like ``gmail_send_email``."""
+
+    return _CAMEL_BOUNDARY.sub("_", name)
+
+
 def name_implied_tier(name: str) -> str:
     """Return the minimum tier a tool name implies."""
 
-    if DESTRUCTIVE_NAME_PATTERN.search(name) is not None:
+    words = _name_words(name)
+    if DESTRUCTIVE_NAME_PATTERN.search(words) is not None:
         return "destructive"
-    if WRITE_NAME_PATTERN.search(name) is not None:
+    if WRITE_NAME_PATTERN.search(words) is not None:
         return "write"
     return "read"
 
@@ -196,7 +206,7 @@ def classify_tool(name: str, tool: dict[str, Any]) -> dict[str, Any]:
     raw_annotations = tool.get("annotations", {})
     annotations = dict(raw_annotations) if isinstance(raw_annotations, dict) else {}
     read_only = annotations.get("readOnlyHint") is True
-    mutation_name = MUTATION_NAME_PATTERN.search(name) is not None
+    mutation_name = MUTATION_NAME_PATTERN.search(_name_words(name)) is not None
     conflict = read_only and mutation_name
     if read_only and not mutation_name:
         tier = "read"
