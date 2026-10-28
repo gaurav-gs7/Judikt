@@ -3,7 +3,7 @@
 Judikt is a security gateway for Model Context Protocol (MCP) servers. It sits between your AI agent and the tools it calls, decides deterministically what may run, inspects what comes back, and keeps a signed audit trail of both. No model sits in the allow/deny path, and the core runtime needs only Python.
 
 ```bash
-pip install "judikt==0.4.1"
+pip install "judikt==0.4.0"
 judikt wrap -- npx -y @modelcontextprotocol/server-filesystem /absolute/safe/path
 ```
 
