@@ -59,6 +59,19 @@ Production targets require `idempotency_key`. Judikt stores the exact result and
 
 `dry_run: true` still performs ownership, availability, and PDB preflight, then submits the eviction with `--dry-run=server`; it does not mutate the workload. Every `kubectl` invocation uses the configured `--context`, a fixed argument vector without a shell, and a bounded subprocess timeout.
 
+### What A Hijacked Agent Can Actually Do
+
+The [InjecAgent replay benchmark](scripts/benchmarks/injecagent_replay.py) measures the controls, not detection. It takes all 1,054 InjecAgent cases, assumes the worst case (an agent that obeys every injection), and replays each attacker's intended tool calls through a real `judikt wrap` session against a server exposing InjecAgent's 330 tools. An attack counts as successful only if its final harmful call reaches the server.
+
+| Scenario | Harmful actions executed | User's own tool calls allowed | Tools visible to the agent |
+| --- | --- | --- | --- |
+| No gateway | 1,054 / 1,054 (100%) | 1,054 / 1,054 | 330 / 330 |
+| `judikt wrap` (read-only, the default) | **0 / 1,054 (0%)** | 1,054 / 1,054 | 174 / 330 |
+| `judikt wrap --profile approve-writes`, agent holds no approval token | **0 / 1,054 (0%)** | 1,054 / 1,054 | 330 / 330 |
+| Read-only, but the server falsely marks every tool read-only | 374 / 1,054 (35.5%): direct harm 374 of 510, data theft 0 of 544 | 1,054 / 1,054 | 265 / 330 |
+
+InjecAgent's tools carry no MCP annotations, so the benchmark assigns them by one published verb rule that leans against Judikt (Download, Export, Verify and Sign count as read-only). The last row shows the limit of the name check that backs up self-reported annotations: it catches mutation verbs such as send, delete, update and execute, but not domain verbs such as transfer, unlock or withdraw. Review the generated `tool_classification` for any server you do not trust. Rate limits are lifted for the run, and attacker calls use placeholder arguments, so argument-pattern controls are not exercised. Evidence: [docs/evidence/injecagent-replay.json](docs/evidence/injecagent-replay.json).
+
 ### Content Security Pipeline
 
 Judikt treats MCP arguments, tool definitions, and tool results as untrusted content. Each inspected string is checked directly and through normalized variants that remove invisible controls, map common lookalike and leetspeak characters, and collapse spaced-letter obfuscation. Candidate base64, hex, and URL-encoded payloads are decoded and rescanned, while strings from the same object are also joined for a bounded pass that catches instructions split across JSON fields.
@@ -298,6 +311,7 @@ Judikt includes:
 - SHA-256 tool-definition pinning and fail-closed rug-pull detection
 - Deterministic direct and indirect prompt-injection inspection across tool arguments, metadata, and results
 - Evasion-resistant scanning for base64, hex, URL encoding, invisible Unicode, confusables, leetspeak, spaced-letter payloads, and injections split across JSON fields
+- An InjecAgent worst-case replay benchmark: with read-only or approve-writes policies, 0 of 1,054 hijacked-agent attacks executed
 - Narrow multilingual rules for common instruction-override and role-reassignment phrases in Spanish, French, German, Portuguese, Chinese, and Russian
 - Quarantine envelopes that do not return malicious text to the agent
 - Policy-as-code allowlists and blocked argument patterns
