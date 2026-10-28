@@ -49,10 +49,10 @@ jobs:
           set -o pipefail
           mkdir -p build
           if ! ./scripts/run_release_tests.sh 2>&1 | tee build/release-tests.log; then
-            # Surface the failure as annotations, readable without the raw log.
-            grep -E '^(FAIL|ERROR):|Error|error:|fail-under|failed|exceeded|below' build/release-tests.log \
-              | grep -v '^Judikt upstream diagnostic' | tail -25 | sed 's/^/::error::/'
-            tail -15 build/release-tests.log | sed 's/^/::error::tail: /'
+            # Surface the failure as one annotation (GitHub keeps only ten per
+            # step), readable without the raw log.
+            summary="$(grep -E '^(FAIL|ERROR):|^FAILED|^Ran [0-9]|fail-under|Coverage failure' build/release-tests.log | tail -20; echo '--- last lines ---'; tail -30 build/release-tests.log)"
+            echo "::error title=Release qualification failed::$(printf '%s' "$summary" | sed -e ':a' -e 'N' -e '$!ba' -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/\n/%0A/g')"
             exit 1
           fi
       - uses: actions/upload-artifact@v6
